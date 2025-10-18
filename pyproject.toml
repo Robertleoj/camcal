@@ -1,0 +1,36 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11", "numpy>=1.23"]
+build-backend = "scikit_build_core.build"
+
+
+[project]
+name = "camcal"
+version = "0.0.0"
+description = "DrCal for camera calibrations"
+authors = [{ name = "Robert Leo", email = "robert.leo.jonsson@gmail.com" }]
+
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = []
+
+[project.scripts]
+
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+
+[tool.cibuildwheel]
+skip = ["*musllinux", "*win"]
+
+[dependency-groups]
+dev = [
+    "fire>=0.7.1",
+    "pybind11>=3.0.1",
+    "pybind11-stubgen>=2.5.5",
+    "ruff>=0.14.1",
+]
+
+
+[tool.ruff]
+exclude = ["**/*.pyi"]

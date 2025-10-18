@@ -9,7 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
-cache
+.cache
 
 **/*.so
 vcpkg_installed
