@@ -13,3 +13,6 @@ wheels/
 
 **/*.so
 vcpkg_installed
+
+**/*.ipynb
+**/*.ini
