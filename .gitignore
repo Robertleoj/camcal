@@ -16,3 +16,5 @@ vcpkg_installed
 
 **/*.ipynb
 **/*.ini
+
+data/images/

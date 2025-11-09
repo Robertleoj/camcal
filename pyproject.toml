@@ -12,13 +12,19 @@ authors = [{ name = "Robert Leo", email = "robert.leo.jonsson@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.11"
 
-dependencies = ["numpy>=1.26"]
+dependencies = [
+    "jaxtyping>=0.3.3",
+    "numpy>=1.26",
+    "opencv-contrib-python>=4.11.0.86",
+    "tqdm>=4.67.1",
+]
 
 [project.scripts]
 
 
 [tool.scikit-build]
 minimum-version = "build-system.requires"
+build-dir = "build"
 
 [tool.cibuildwheel]
 skip = ["*musllinux", "*win"]
@@ -26,13 +32,28 @@ skip = ["*musllinux", "*win"]
 [dependency-groups]
 dev = [
     "fire>=0.7.1",
+    "imageio>=2.37.2",
     "ipykernel>=7.0.1",
+    "mediapy>=1.2.4",
     "pybind11>=3.0.1",
     "pybind11-stubgen>=2.5.5",
+    "pyright>=1.1.407",
     "ruff>=0.14.1",
+    "scikit-build-core>=0.11.6",
     "slamd>=2.1.12",
 ]
 
 
 [tool.ruff]
 exclude = ["**/*.pyi"]
+
+[tool.ruff.lint]
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+# Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
+select = ["E", "F", "I", "UP", "NPY201"]
+ignore = ["F722"]
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]

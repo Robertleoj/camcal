@@ -1,0 +1,20 @@
+Language: Cpp
+BasedOnStyle: Chromium
+AlignAfterOpenBracket: BlockIndent
+
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLambdasOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+BreakFunctionDefinitionParameters: true
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+
+BinPackArguments: false
+BinPackParameters: false
+PackConstructorInitializers: Never
+
+InsertBraces: true
+
+IndentWidth: 4
