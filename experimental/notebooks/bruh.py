@@ -1,16 +1,18 @@
 # %%
 from IPython import get_ipython
 
-import camcal.camera_models # type: ignore
+
 get_ipython().run_line_magic('load_ext', 'autoreload') # type: ignore
 get_ipython().run_line_magic('autoreload', '2') # type: ignore
 
 # %%
+from camcal.calibration.calibrate import calibrate_camera
+from camcal.camera_models import PinholeConfig, Pinhole
 import cv2
+import numpy as np
 import imageio.v3 as iio
 import mediapy
 from tqdm import tqdm
-import camcal
 from camcal._internal.charuco import detect_charuco
 from camcal._internal.paths import repo_root
 
@@ -36,17 +38,15 @@ board = cv2.aruco.CharucoBoard(
 detections = []
 for img in tqdm(imgs):
     detection = detect_charuco(img, board)
-    detections.append((detection.charuco_ids, detection.charuco_corners))
+    detections.append(detection)
 
-# %%
-detections[0][0].shape
 
 # %%
 img_height, img_width = imgs[0].shape[:2]
 img_height, img_width
 
 # %%
-camera_model_config = camcal.camera_models.PinholeConfig(
+camera_model_config = PinholeConfig(
     image_height=img_height,
     image_width=img_width
 )
@@ -54,24 +54,15 @@ camera_model_config = camcal.camera_models.PinholeConfig(
 
 # %%
 # N x 3
-obj_points = board.getChessboardCorners()
+obj_points = np.array(board.getChessboardCorners())
+print(obj_points.shape, obj_points.dtype)
 
-"""
-detections = [
-    (
-        point_indices, # M (int, which obj_points do the img_points correspond to)
-        img_points     # M x 2
-    ),
-]
-"""
-
-"""
-camcal.calibrate_camera(
+# %%
+calibration_result = calibrate_camera(
     obj_points,
-    detections
-    config=camera_model_config
+    detections,
+    camera_model_config=camera_model_config
 )
-"""
 
 
 # %%
@@ -84,3 +75,5 @@ camcal.calibrate_camera(
 # cam = CameraModel.load("model.cam")
 # cam.project()
 # cam.deproject()
+
+# Cell

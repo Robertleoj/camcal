@@ -1,7 +1,6 @@
 {
   "clangd.arguments": [
-    // "--compile-commands-dir=python_examples/build",
-    "--compile-commands-dir=examples/build",
+    "--compile-commands-dir=build",
     "--function-arg-placeholders=false",
     "--tweaks=-Wall",
     "--tweaks=-Wextra",

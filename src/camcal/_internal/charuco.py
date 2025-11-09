@@ -1,19 +1,11 @@
-from dataclasses import dataclass
-
 import cv2
 import numpy as np
-from jaxtyping import Float32, Int32
 
 from camcal._internal.image import to_gray
+from camcal.calibration.calibrate import Detection
 
 
-@dataclass
-class CharucoDetection:
-    charuco_ids: Int32[np.ndarray, " N"]
-    charuco_corners: Float32[np.ndarray, "N 2"]
-
-
-def detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> CharucoDetection:
+def detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Detection:
     charuco_params = cv2.aruco.CharucoParameters()
     charuco_params.minMarkers = 1
 
@@ -29,4 +21,4 @@ def detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> CharucoDet
         charuco_detector.detectBoard(gray)
     )
 
-    return CharucoDetection(charuco_ids.squeeze(), charuco_corners.squeeze(1))
+    return Detection(charuco_ids.squeeze(), charuco_corners.squeeze(1))

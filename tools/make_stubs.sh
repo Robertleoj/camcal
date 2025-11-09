@@ -1,0 +1,1 @@
+pybind11-stubgen camcal.camcal_bindings -o src

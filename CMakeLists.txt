@@ -28,7 +28,24 @@ endif()
 find_package(pybind11 CONFIG REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
 
+find_package(Ceres CONFIG REQUIRED)
+find_package(Eigen3 REQUIRED)
 
-pybind11_add_module(camcal_bindings MODULE cpp_src/main.cpp)
+
+pybind11_add_module(
+    camcal_bindings 
+    MODULE 
+
+    cpp_src/main.cpp
+    cpp_src/calibrate.cpp
+)
+
+target_link_libraries(
+    camcal_bindings
+    PRIVATE
+
+    Ceres::ceres
+    Eigen3::Eigen
+)
 
 install(TARGETS camcal_bindings DESTINATION camcal)

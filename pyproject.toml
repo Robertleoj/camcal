@@ -57,3 +57,7 @@ ignore = ["F722"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
+
+[tool.pyright]
+useLibraryCodeForTypes = true
+include = ["src/camcal/**"]
