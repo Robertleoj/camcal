@@ -1,5 +1,7 @@
 # %%
-from IPython import get_ipython # type: ignore
+from IPython import get_ipython
+
+import camcal.camera_models # type: ignore
 get_ipython().run_line_magic('load_ext', 'autoreload') # type: ignore
 get_ipython().run_line_magic('autoreload', '2') # type: ignore
 
@@ -8,8 +10,10 @@ import cv2
 import imageio.v3 as iio
 import mediapy
 from tqdm import tqdm
+import camcal
 from camcal._internal.charuco import detect_charuco
 from camcal._internal.paths import repo_root
+
 
 # %%
 # Load images
@@ -38,11 +42,14 @@ for img in tqdm(imgs):
 detections[0][0].shape
 
 # %%
-"""
-camera_model_config = camcal.CameraModelConfig(
-    model_type=camcal.SPLINE
+img_height, img_width = imgs[0].shape[:2]
+img_height, img_width
+
+# %%
+camera_model_config = camcal.camera_models.PinholeConfig(
+    image_height=img_height,
+    image_width=img_width
 )
-"""
 
 
 # %%
