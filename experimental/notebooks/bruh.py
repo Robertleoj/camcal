@@ -1,6 +1,7 @@
 # %%
-%load_ext autoreload
-%autoreload 2
+from IPython import get_ipython # type: ignore
+get_ipython().run_line_magic('load_ext', 'autoreload') # type: ignore
+get_ipython().run_line_magic('autoreload', '2') # type: ignore
 
 # %%
 import cv2
@@ -64,7 +65,6 @@ camcal.calibrate_camera(
     config=camera_model_config
 )
 """
-
 
 
 # %%

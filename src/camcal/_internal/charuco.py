@@ -1,10 +1,10 @@
-import cv2
-import numpy as np
 from dataclasses import dataclass
 
-from camcal._internal.image import to_gray
-
+import cv2
+import numpy as np
 from jaxtyping import Float32, Int32
+
+from camcal._internal.image import to_gray
 
 
 @dataclass

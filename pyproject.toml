@@ -45,7 +45,7 @@ dev = [
 
 
 [tool.ruff]
-exclude = ["**/*.pyi"]
+exclude = ["**/*.pyi", "experimental/**"]
 
 [tool.ruff.lint]
 # Allow unused variables when underscore-prefixed.
