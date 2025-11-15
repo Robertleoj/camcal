@@ -1,9 +1,10 @@
 from dataclasses import dataclass
-from jaxtyping import Float, Int
-import numpy as np
 
-from camcal.camera_models.base_model import CameraModel, CameraModelConfig
+import numpy as np
+from jaxtyping import Float, Int
+
 from camcal import camcal_bindings as cb
+from camcal.camera_models.base_model import CameraModel, CameraModelConfig
 
 
 @dataclass
@@ -29,15 +30,20 @@ def calibrate_camera(
 
     # call
     # camcal_bindings.
+    num_cameras = len(detections)
 
-    cb.calibrate_camera(
-        camera_model_name="opncv",
+    result = cb.calibrate_camera(
+        camera_model_name="pinhole",
         intrinsics_initial_value=[0, 0, 0, 0],
         intrinsics_param_optimize_mask=[True, True, True, True],
-        camera_poses_world=[np.array([0, 0, 0, 0, 0, 0], dtype=np.float32)],
+        camera_poses_world=[
+            np.array([0, 0, 0, 0, 0, 100], dtype=np.float32) for _ in range(num_cameras)
+        ],
         target_points=list(target_points),
         detections=[d.to_cpp() for d in detections],
     )
+
+    print(result)
 
     """
     intrinsics: 

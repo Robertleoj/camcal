@@ -1,9 +1,12 @@
 # %%
-from IPython import get_ipython
+try:
+    from IPython import get_ipython
 
 
-get_ipython().run_line_magic('load_ext', 'autoreload') # type: ignore
-get_ipython().run_line_magic('autoreload', '2') # type: ignore
+    get_ipython().run_line_magic('load_ext', 'autoreload') # type: ignore
+    get_ipython().run_line_magic('autoreload', '2') # type: ignore
+except:
+    pass
 
 # %%
 from camcal.calibration.calibrate import calibrate_camera

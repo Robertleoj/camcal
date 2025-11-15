@@ -31,6 +31,9 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
 find_package(Ceres CONFIG REQUIRED)
 find_package(Eigen3 REQUIRED)
 
+find_package(fmt CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
+
 
 pybind11_add_module(
     camcal_bindings 
@@ -46,6 +49,8 @@ target_link_libraries(
 
     Ceres::ceres
     Eigen3::Eigen
+    fmt::fmt
+    spdlog::spdlog
 )
 
 install(TARGETS camcal_bindings DESTINATION camcal)
