@@ -34,6 +34,7 @@ dev = [
     "fire>=0.7.1",
     "imageio>=2.37.2",
     "ipykernel>=7.0.1",
+    "jupytext>=1.18.1",
     "mediapy>=1.2.4",
     "pybind11>=3.0.1",
     "pybind11-stubgen>=2.5.5",

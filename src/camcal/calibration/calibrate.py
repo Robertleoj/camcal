@@ -26,16 +26,16 @@ def calibrate_camera(
     detections: list[Detection],
     camera_model_config: CameraModelConfig,
 ) -> CalibrationResult:
-    # figure out which optimization function to call
-
-    # call
-    # camcal_bindings.
     num_cameras = len(detections)
 
+    initial_intrinsics = camera_model_config.get_initial_value()
+    initial_params = initial_intrinsics.params()
+    intrinsics_param_optimize_mask = np.ones(len(initial_params), dtype=bool).tolist()
+
     result = cb.calibrate_camera(
-        camera_model_name="pinhole",
-        intrinsics_initial_value=[0, 0, 0, 0],
-        intrinsics_param_optimize_mask=[True, True, True, True],
+        camera_model_name=initial_intrinsics._camera_model_name(),
+        intrinsics_initial_value=initial_params,
+        intrinsics_param_optimize_mask=intrinsics_param_optimize_mask,
         camera_poses_world=[
             np.array([0, 0, 0, 0, 0, 100], dtype=np.float32) for _ in range(num_cameras)
         ],
@@ -43,28 +43,6 @@ def calibrate_camera(
         detections=[d.to_cpp() for d in detections],
     )
 
-    print(result)
+    optimized_intrinsics = initial_intrinsics.with_params(result["intrinsics"])
 
-    """
-    intrinsics: 
-    (
-        model name, e.g. "opencv5"
-        initial_value: list[float]
-        optimize_mask: list[bool]
-    )
-
-    poses: 
-    [
-        initial_value
-    ] (Frames)
-
-    target_points: N x 3
-    detections: 
-
-    Returns
-    optimized_intrinsics: list[float]
-    optimized_poses: list[Pose]
-
-
-
-    """
+    return CalibrationResult(camera_model=optimized_intrinsics)

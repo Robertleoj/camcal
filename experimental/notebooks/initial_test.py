@@ -10,7 +10,7 @@ except:
 
 # %%
 from camcal.calibration.calibrate import calibrate_camera
-from camcal.camera_models import PinholeConfig, Pinhole
+from camcal.camera_models import PinholeConfig, Pinhole, OpenCVConfig
 import cv2
 import numpy as np
 import imageio.v3 as iio
@@ -49,9 +49,10 @@ img_height, img_width = imgs[0].shape[:2]
 img_height, img_width
 
 # %%
-camera_model_config = PinholeConfig(
+camera_model_config = OpenCVConfig(
     image_height=img_height,
-    image_width=img_width
+    image_width=img_width,
+    initial_focal_length=1000
 )
 
 
@@ -69,14 +70,6 @@ calibration_result = calibrate_camera(
 
 
 # %%
-# calibration_result = camcal.calibrate_camera(detections, camera_model_config)
-#
-# camera_model = calibration_result.camera_model
-# camera_model.save("model.cam")
+calibration_result
 
 # %%
-# cam = CameraModel.load("model.cam")
-# cam.project()
-# cam.deproject()
-
-# Cell
