@@ -227,16 +227,16 @@ struct ReprojectionError {
 
 struct OptimizationState {
     std::vector<double> intrinsics;
-    std::vector<std::vector<double>> cameras_to_world;
+    std::vector<std::vector<double>> cameras_from_world;
     std::vector<std::vector<double>> target_points;
 
     static OptimizationState from_calibrate_camera_input(
         std::vector<double>& intrinsics_initial_value,
-        std::vector<Vec6<double>>& camera_poses_world,
+        std::vector<Vec6<double>>& cameras_from_world,
         std::vector<Vec3<double>>& target_points
     ) {
         std::vector<std::vector<double>> camera_poses_out;
-        for (auto& vec : camera_poses_world) {
+        for (auto& vec : cameras_from_world) {
             camera_poses_out.push_back(
                 std::vector<double>(vec.data(), vec.data() + vec.size())
             );
@@ -260,7 +260,7 @@ struct OptimizationState {
         py::dict result;
 
         result["intrinsics"] = this->intrinsics;
-        result["cameras_to_world"] = this->cameras_to_world;
+        result["cameras_from_world"] = this->cameras_from_world;
 
         return result;
     }
@@ -270,7 +270,7 @@ py::dict calibrate_camera(
     std::string camera_model_name,
     std::vector<double>& intrinsics_initial_value,
     std::vector<bool>& intrinsics_param_optimize_mask,
-    std::vector<Vec6<double>>& camera_poses_world,
+    std::vector<Vec6<double>>& cameras_from_world,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         detections
@@ -279,7 +279,7 @@ py::dict calibrate_camera(
 
     OptimizationState state = OptimizationState::from_calibrate_camera_input(
         intrinsics_initial_value,
-        camera_poses_world,
+        cameras_from_world,
         target_points
     );
 
@@ -299,7 +299,7 @@ py::dict calibrate_camera(
     );
     problem.SetManifold(state.intrinsics.data(), manifold);
 
-    for (auto& cam : state.cameras_to_world) {
+    for (auto& cam : state.cameras_from_world) {
         problem.AddParameterBlock(cam.data(), cam.size());
     }
 
@@ -318,7 +318,7 @@ py::dict calibrate_camera(
         auto& target_point_indices = std::get<0>(detections[camera_idx]);
         auto& observations = std::get<1>(detections[camera_idx]);
 
-        auto& camera_pose = state.cameras_to_world[camera_idx];
+        auto& camera_pose = state.cameras_from_world[camera_idx];
 
         size_t num_observations = observations.size();
 

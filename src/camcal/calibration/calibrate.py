@@ -4,6 +4,7 @@ import numpy as np
 from jaxtyping import Float, Int
 
 from camcal import camcal_bindings as cb
+from camcal.geometry.pose import Pose
 from camcal.camera_models.base_model import CameraModel, CameraModelConfig
 
 
@@ -18,7 +19,8 @@ class Detection:
 
 @dataclass
 class CalibrationResult:
-    camera_model: CameraModel
+    optimized_camera_model: CameraModel
+    optimized_cameras_from_world: list[Pose]
 
 
 def calibrate_camera(
@@ -36,7 +38,7 @@ def calibrate_camera(
         camera_model_name=initial_intrinsics._camera_model_name(),
         intrinsics_initial_value=initial_params,
         intrinsics_param_optimize_mask=intrinsics_param_optimize_mask,
-        camera_poses_world=[
+        cameras_from_world=[
             np.array([0, 0, 0, 0, 0, 100], dtype=np.float32) for _ in range(num_cameras)
         ],
         target_points=list(target_points),
@@ -45,4 +47,11 @@ def calibrate_camera(
 
     optimized_intrinsics = initial_intrinsics.with_params(result["intrinsics"])
 
-    return CalibrationResult(camera_model=optimized_intrinsics)
+    cameras_from_world = [
+        Pose.from_cpp(np.array(a)) for a in result["cameras_from_world"]
+    ]
+
+    return CalibrationResult(
+        optimized_camera_model=optimized_intrinsics,
+        optimized_cameras_from_world=cameras_from_world,
+    )

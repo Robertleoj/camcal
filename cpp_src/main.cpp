@@ -32,7 +32,7 @@ PYBIND11_MODULE(
         py::arg("camera_model_name"),
         py::arg("intrinsics_initial_value"),
         py::arg("intrinsics_param_optimize_mask"),
-        py::arg("camera_poses_world"),
+        py::arg("cameras_from_world"),
         py::arg("target_points"),
         py::arg("detections")
     );
