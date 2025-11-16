@@ -1,10 +1,10 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-import numpy as np
+
 import cv2
 import einops
-
-
+import numpy as np
 from jaxtyping import Float
 
 

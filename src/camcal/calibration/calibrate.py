@@ -4,8 +4,8 @@ import numpy as np
 from jaxtyping import Float, Int
 
 from camcal import camcal_bindings as cb
-from camcal.geometry.pose import Pose
 from camcal.camera_models.base_model import CameraModel, CameraModelConfig
+from camcal.geometry.pose import Pose
 
 
 @dataclass
