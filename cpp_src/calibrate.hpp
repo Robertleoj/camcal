@@ -1,23 +1,14 @@
 #pragma once
 
-// #include <Eigen/src/Core/Matrix.h>
 #include <pybind11/pybind11.h>
 #include <Eigen/Dense>
 #include <cmath>
 #include <vector>
+#include "./type_defs.hpp"
 
 namespace camcal {
 
 namespace py = pybind11;
-
-template <typename T>
-using Vec2 = Eigen::Matrix<T, 2, 1>;
-
-template <typename T>
-using Vec3 = Eigen::Matrix<T, 3, 1>;
-
-template <typename T>
-using Vec6 = Eigen::Matrix<T, 6, 1>;
 
 py::dict calibrate_camera(
     std::string camera_model_name,

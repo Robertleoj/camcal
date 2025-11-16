@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from camcal.camera_models.base_model import CameraModel, CameraModelConfig
+from camcal.camera_models.base_model import (
+    CameraModel,
+    CameraModelConfig,
+)
 
 
 @dataclass

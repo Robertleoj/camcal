@@ -118,7 +118,7 @@
   "C_Cpp.inlayHints.parameterNames.enabled": true,
   "C_Cpp.inlayHints.referenceOperator.enabled": true,
   //   "python.analysis.extraPaths": ["python_bindings/src/"],
-  "cmake.sourceDirectory": "/home/robert/projects/drcal",
+  "cmake.sourceDirectory": "/home/robert/projects/camcal",
   "python.analysis.exclude": [".git", ".venv/"],
   "python.analysis.logLevel": "Information",
   "search.followSymlinks": false,
