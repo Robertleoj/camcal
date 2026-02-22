@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import numpy as np
 from dataclasses import dataclass
+from jaxtyping import Bool
 
 
 @dataclass
@@ -11,6 +13,9 @@ class CameraModelConfig(ABC):
 
     @abstractmethod
     def get_initial_value(self) -> CameraModel: ...
+
+    @abstractmethod
+    def optimize_mask(self) -> Bool[np.ndarray, " N"]: ...
 
     @staticmethod
     @abstractmethod

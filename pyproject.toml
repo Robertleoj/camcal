@@ -63,3 +63,4 @@ fixable = ["ALL"]
 [tool.pyright]
 useLibraryCodeForTypes = true
 include = ["src/camcal/**"]
+exclude = ["**/build", "**/dist", "**/.venv", "**/__pycache__", "**/*.ipynb"]

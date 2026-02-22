@@ -110,7 +110,6 @@
     "**/.vs": true
   },
   "python.analysis.inlayHints.callArgumentNames": "all",
-  "python.analysis.typeCheckingMode": "standard",
   "C_Cpp.intelliSenseCacheSize": 0,
   "clang-format.executable": "/usr/bin/clang-format-19",
   "C_Cpp.inlayHints.autoDeclarationTypes.enabled": false,
@@ -119,8 +118,20 @@
   "C_Cpp.inlayHints.referenceOperator.enabled": true,
   //   "python.analysis.extraPaths": ["python_bindings/src/"],
   "cmake.sourceDirectory": "/home/robert/projects/camcal",
-  "python.analysis.exclude": [".git", ".venv/"],
   "python.analysis.logLevel": "Information",
   "search.followSymlinks": false,
-  "clangd.path": "clangd-19"
+  "clangd.path": "clangd-19",
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/target/**": true,
+    "**/build/**": true,
+    "**/.git/**": true,
+    "**/.venv/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/target": true,
+    "**/build": true,
+    "**/.venv": true
+  }
 }
