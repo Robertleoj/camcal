@@ -12,11 +12,12 @@ from camcal.camera_models.base_model import CameraModel, CameraModelConfig
 @dataclass
 class PinholeSplinedConfig(CameraModelConfig):
     initial_focal_length: float
-    num_knots_x: int
-    num_knots_y: int
 
     fov_deg_x: float
     fov_deg_y: float
+
+    num_knots_x: int
+    num_knots_y: int
 
     @staticmethod
     def camera_model_class():

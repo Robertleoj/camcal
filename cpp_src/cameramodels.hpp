@@ -1,6 +1,8 @@
 #pragma once
+#include <ceres/jet.h>
 #include <fmt/format.h>
 #include <stdint.h>
+#include <cmath>
 #include "./type_defs.hpp"
 
 namespace camcal {
@@ -88,9 +90,212 @@ void project_opencv(
     result << fx * x_distorted + cx, fy * y_distorted + cy;
 }
 
+inline int clamp_int(
+    int v,
+    int lo,
+    int hi
+) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+template <typename T>
+static inline void cubic_bspline_basis_uniform(
+    const T& u,
+    T w[4]
+) {
+    // u in [0,1)
+    const T u2 = u * u;
+    const T u3 = u2 * u;
+    // weights for control indices offsets [-1,0,1,2] relative to cell index
+    w[0] = (T(1) - T(3) * u + T(3) * u2 - u3) / T(6);  // (1-u)^3 / 6
+    w[1] = (T(4) - T(6) * u2 + T(3) * u3) / T(6);      // (3u^3 - 6u^2 + 4)/6
+    w[2] = (T(1) + T(3) * u + T(3) * u2 - T(3) * u3) /
+           T(6);       // (-3u^3 + 3u^2 + 3u + 1)/6
+    w[3] = u3 / T(6);  // u^3 / 6
+}
+
+template <typename T>
+static inline int clamp_int(
+    int v,
+    int lo,
+    int hi
+) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+template <typename T>
+static inline T clamp_T(
+    const T& v,
+    const T& lo,
+    const T& hi
+) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+// Generic case: T is double
+inline double scalar_value(
+    const double& x
+) {
+    return x;
+}
+
+// Jet specialization
+template <typename T, int N>
+inline double scalar_value(
+    const ceres::Jet<T, N>& x
+) {
+    return x.a;
+}
+
+template <typename T>
+static inline T eval_bspline2d_uniform_cubic_clamped(
+    const T* grid,  // row-major, size Ny*Nx
+    int Nx,
+    int Ny,
+    const T& x_spline,  // spline coordinate (control points at integer coords)
+    const T& y_spline
+) {
+    // We assume "clamped by edge replication" boundary behavior:
+    // indices outside [0..Nx-1]/[0..Ny-1] are clamped.
+    //
+    // For cubic, valid interior is [1, Nx-2) in spline coords for non-clamped;
+    // but with clamping we can evaluate anywhere and it'll replicate edges.
+    T gx = x_spline;
+    T gy = y_spline;
+
+    // Keep floor() stable near the upper edge if gx is exactly integer at
+    // boundary. (Not strictly necessary but avoids ix == Nx-1 leading to
+    // neighborhood beyond.)
+    const T eps = T(1e-12);
+    gx = clamp_T(gx, T(0), T(Nx - 1) - eps);
+    gy = clamp_T(gy, T(0), T(Ny - 1) - eps);
+
+    const int ix = static_cast<int>(std::floor(scalar_value(gx)));
+    const int iy = static_cast<int>(std::floor(scalar_value(gy)));
+
+    const T u = gx - T(ix);
+    const T v = gy - T(iy);
+
+    T wx[4], wy[4];
+    cubic_bspline_basis_uniform(u, wx);
+    cubic_bspline_basis_uniform(v, wy);
+
+    // neighborhood indices in each dimension: (i-1 .. i+2)
+    const int xs[4] = {
+        clamp_int(ix - 1, 0, Nx - 1),
+        clamp_int(ix + 0, 0, Nx - 1),
+        clamp_int(ix + 1, 0, Nx - 1),
+        clamp_int(ix + 2, 0, Nx - 1)
+    };
+    const int ys[4] = {
+        clamp_int(iy - 1, 0, Ny - 1),
+        clamp_int(iy + 0, 0, Ny - 1),
+        clamp_int(iy + 1, 0, Ny - 1),
+        clamp_int(iy + 2, 0, Ny - 1)
+    };
+
+    // tensor-product sum: wy^T * patch * wx
+    T acc = T(0);
+    for (int b = 0; b < 4; ++b) {
+        const int yy = ys[b];
+        const T wyb = wy[b];
+        const int row0 = yy * Nx;
+        for (int a = 0; a < 4; ++a) {
+            const int xx = xs[a];
+            acc += grid[row0 + xx] * (wyb * wx[a]);
+        }
+    }
+    return acc;
+}
+
+template <typename T>
+void project_pinhole_splined(
+    ModelConfig* model_config,
+    const T* const intrinsics,  // fx, fy, cx, cy, then dx grid, then dy grid
+    const Vec3<T>& point_in_camera,
+    Vec2<T>& result
+) {
+    // --- pinhole normalized coords
+    const T x_normalized = point_in_camera[0] / point_in_camera[2];
+    const T y_normalized = point_in_camera[1] / point_in_camera[2];
+
+    // --- spline grid config
+    const uint32_t num_knots_x_u32 = model_config->int_params.at("num_knots_x");
+    const uint32_t num_knots_y_u32 = model_config->int_params.at("num_knots_y");
+    const int Nx = static_cast<int>(num_knots_x_u32);
+    const int Ny = static_cast<int>(num_knots_y_u32);
+
+    const double fov_deg_x = model_config->double_params.at("fov_deg_x");
+    const double fov_deg_y = model_config->double_params.at("fov_deg_y");
+    const double fov_rad_x = fov_deg_x * M_PI / 180.0;
+    const double fov_rad_y = fov_deg_y * M_PI / 180.0;
+
+    // We define the spline domain over the normalized pinhole plane such that
+    // x_normalized in [-tan(fov_x/2), +tan(fov_x/2)] maps across the interior
+    // of the spline grid (with clamping outside).
+    const double half_x_range = std::tan(fov_rad_x / 2.0);
+    const double half_y_range = std::tan(fov_rad_y / 2.0);
+
+    const T x_range_start = T(-half_x_range);
+    const T x_range_end = T(+half_x_range);
+    const T y_range_start = T(-half_y_range);
+    const T y_range_end = T(+half_y_range);
+
+    const T fx = intrinsics[0];
+    const T fy = intrinsics[1];
+    const T cx = intrinsics[2];
+    const T cy = intrinsics[3];
+
+    // --- distortion grids (row-major, size Ny*Nx each)
+    const T* const dx_grid = intrinsics + 4;
+    const T* const dy_grid = intrinsics + 4 + (Nx * Ny);
+
+    // --- map (x_normalized, y_normalized) into spline coordinates where
+    // control points sit at integer coordinates 0..Nx-1 / 0..Ny-1.
+    //
+    // Like we discussed: the uniform cubic basis assumes unit spacing in its
+    // own coordinate system. We choose an affine map so the *interior*
+    // [1..Nx-2] spans the desired FOV range. This gives every evaluation a full
+    // 4-neighbor support in the interior; outside gets clamped.
+    //
+    // x_spline = 1 + (x - x_min) * (Nx - 3) / (x_max - x_min)
+    const T inv_x_span = T(1) / (x_range_end - x_range_start);
+    const T inv_y_span = T(1) / (y_range_end - y_range_start);
+
+    const T x_spline =
+        T(1) + (x_normalized - x_range_start) * T(Nx - 3) * inv_x_span;
+    const T y_spline =
+        T(1) + (y_normalized - y_range_start) * T(Ny - 3) * inv_y_span;
+
+    // --- evaluate spline surfaces
+    const T dx = eval_bspline2d_uniform_cubic_clamped(
+        dx_grid,
+        Nx,
+        Ny,
+        x_spline,
+        y_spline
+    );
+    const T dy = eval_bspline2d_uniform_cubic_clamped(
+        dy_grid,
+        Nx,
+        Ny,
+        x_spline,
+        y_spline
+    );
+
+    // --- apply distortion in normalized plane
+    const T x_distorted = x_normalized + dx;
+    const T y_distorted = y_normalized + dy;
+
+    // --- intrinsics to pixels
+    result[0] = fx * x_distorted + cx;
+    result[1] = fy * y_distorted + cy;
+}
+
 template <typename T>
 void project(
     const std::string& camera_model_name,
+    ModelConfig* model_config,
     const T* const intrinsics,
     const Vec3<T>& point_in_camera,
     Vec2<T>& result
@@ -102,6 +307,16 @@ void project(
 
     if (camera_model_name == "opencv") {
         project_opencv<T>(intrinsics, point_in_camera, result);
+        return;
+    }
+
+    if (camera_model_name == "pinhole_splined") {
+        project_pinhole_splined<T>(
+            model_config,
+            intrinsics,
+            point_in_camera,
+            result
+        );
         return;
     }
 

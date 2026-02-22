@@ -1,6 +1,7 @@
 #include "./calibrate.hpp"
 #include <ceres/autodiff_cost_function.h>
 #include <ceres/ceres.h>
+#include <ceres/dynamic_autodiff_cost_function.h>
 #include <ceres/rotation.h>
 #include <fmt/format.h>
 #include <pybind11/stl.h>
@@ -35,20 +36,24 @@ Eigen::Matrix<T, 3, 1> transform_point(
 struct ReprojectionError {
     ReprojectionError(
         const std::string& camera_model_name,
+        ModelConfig* model_config,
         const double observed_x,
         const double observed_y
     )
         : observed_x(observed_x),
           observed_y(observed_y),
+          model_config(model_config),
           camera_model_name(camera_model_name) {}
 
     template <typename T>
     bool operator()(
-        const T* const intrinsics,
-        const T* const camera_from_world,
-        const T* const point_in_world,
+        T const* const* params,
         T* residuals
     ) const {
+        const T* const intrinsics = params[0];
+        const T* const camera_from_world = params[1];
+        const T* const point_in_world = params[2];
+
         Vec6<T> eigen_camera_from_world(camera_from_world);
         Vec3<T> eigen_point_in_world(point_in_world);
 
@@ -58,53 +63,68 @@ struct ReprojectionError {
         Vec2<T> image_point;
         project(
             this->camera_model_name,
+            this->model_config,
             intrinsics,
             eigen_point_in_cam,
             image_point
         );
 
-        residuals[0] = image_point[0] - observed_x;
-        residuals[1] = image_point[1] - observed_y;
-
+        residuals[0] = image_point[0] - T(observed_x);
+        residuals[1] = image_point[1] - T(observed_y);
         return true;
     }
 
     static ceres::CostFunction* create(
         const std::string& camera_model_name,
+        ModelConfig* model_config,
         const double observed_x,
         const double observed_y
     ) {
+        // runtime intrinsics size
+        int intrinsics_size = 0;
+
         if (camera_model_name == "pinhole") {
-            // 4 parameters in intrinsics
-            return new ceres::AutoDiffCostFunction<
-                ReprojectionError,
-                2,
-                pinhole_num_params,
-                6,
-                3>(
-                new ReprojectionError(camera_model_name, observed_x, observed_y)
+            intrinsics_size = pinhole_num_params;  // 4
+        } else if (camera_model_name == "opencv") {
+            intrinsics_size = opencv_num_params;
+        } else if (camera_model_name == "pinhole_splined") {
+            const int nx =
+                static_cast<int>(model_config->int_params.at("num_knots_x"));
+            const int ny =
+                static_cast<int>(model_config->int_params.at("num_knots_y"));
+
+            // Your packing: [fx,fy,cx,cy] + dx_grid(nx*ny) + dy_grid(nx*ny)
+            intrinsics_size = 4 + 2 * (nx * ny);
+        } else {
+            throw std::runtime_error(
+                fmt::format("camera model {} does not exist", camera_model_name)
             );
         }
 
-        if (camera_model_name == "opencv") {
-            return new ceres::AutoDiffCostFunction<
-                ReprojectionError,
-                2,
-                opencv_num_params,
-                6,
-                3>(
-                new ReprojectionError(camera_model_name, observed_x, observed_y)
-            );
-        }
+        // The '4' here is the number of residuals? No. It's the max # of
+        // parameter blocks for internal bookkeeping; you can set it to 3 or 4.
+        // We'll use 3 blocks.
+        using CostT = ceres::DynamicAutoDiffCostFunction<ReprojectionError, 4>;
 
-        throw std::runtime_error(
-            fmt::format("camera model {} does not exist", camera_model_name)
-        );
+        auto* cost = new CostT(new ReprojectionError(
+            camera_model_name,
+            model_config,
+            observed_x,
+            observed_y
+        ));
+
+        cost->AddParameterBlock(intrinsics_size);  // intrinsics (runtime sized)
+        cost->AddParameterBlock(6);                // camera_from_world
+        cost->AddParameterBlock(3);                // point_in_world
+        cost->SetNumResiduals(2);
+
+        return cost;
     }
 
-    std::string camera_model_name;
     double observed_x;
     double observed_y;
+    ModelConfig* model_config;
+    std::string camera_model_name;
 };
 
 struct OptimizationState {
@@ -214,6 +234,7 @@ py::dict calibrate_camera(
             problem.AddResidualBlock(
                 ReprojectionError::create(
                     camera_model_name,
+                    &model_config,
                     observation(0, 0),
                     observation(1, 0)
                 ),
