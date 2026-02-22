@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
-from jaxtyping import Float, Bool
+from jaxtyping import Bool, Float
 
 from camcal.camera_models.base_model import CameraModel, CameraModelConfig
-from enum import Enum, auto
-
 
 K1, K2, P1, P2, K3, K4, K5, K6, S1, S2, S3, S4 = range(12)
 
 
-def _mask(*idx: int) -> Bool[np.ndarray, "12"]:
+def _mask(*idx: int) -> Bool[np.ndarray, 12]:
     m = np.zeros(12, dtype=bool)
     m[list(idx)] = True
     return m
