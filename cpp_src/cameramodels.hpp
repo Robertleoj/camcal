@@ -1,8 +1,14 @@
 #pragma once
 #include <fmt/format.h>
+#include <stdint.h>
 #include "./type_defs.hpp"
 
 namespace camcal {
+
+struct ModelConfig {
+    std::unordered_map<std::string, double> double_params;
+    std::unordered_map<std::string, uint32_t> int_params;
+};
 
 template <typename T>
 void project_pinhole(

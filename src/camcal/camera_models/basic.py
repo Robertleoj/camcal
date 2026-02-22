@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from jaxtyping import Bool
+import numpy as np
+
 
 from camcal.camera_models.base_model import (
     CameraModel,

@@ -3,6 +3,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from camcal import camcal_bindings as cb
+
+
 import numpy as np
 from jaxtyping import Bool
 
@@ -15,8 +18,8 @@ class CameraModelConfig(ABC):
     @abstractmethod
     def get_initial_value(self) -> CameraModel: ...
 
-    @abstractmethod
-    def optimize_mask(self) -> Bool[np.ndarray, " N"]: ...
+    def optimize_mask(self) -> Bool[np.ndarray, " N"] | None:
+        return None
 
     @staticmethod
     @abstractmethod
@@ -40,4 +43,10 @@ class CameraModel(ABC):
     def params(self) -> list[float]: ...
 
     @abstractmethod
-    def with_params(self, params: list[float]) -> CameraModel: ...
+    def with_params(
+        self,
+        params: list[float],
+    ) -> CameraModel: ...
+
+    def get_cpp_config(self) -> cb.ModelConfig:
+        return cb.ModelConfig()

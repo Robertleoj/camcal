@@ -32,10 +32,17 @@ def calibrate_camera(
 
     initial_intrinsics = camera_model_config.get_initial_value()
     initial_params = initial_intrinsics.params()
-    intrinsics_param_optimize_mask = camera_model_config.optimize_mask().tolist()
+    mask = camera_model_config.optimize_mask()
+    if mask is None:
+        intrinsics_param_optimize_mask = np.ones(
+            len(initial_params), dtype=bool
+        ).tolist()
+    else:
+        intrinsics_param_optimize_mask = mask.tolist()
 
     result = cb.calibrate_camera(
         camera_model_name=initial_intrinsics._camera_model_name(),
+        config=initial_intrinsics.get_cpp_config(),
         intrinsics_initial_value=initial_params,
         intrinsics_param_optimize_mask=intrinsics_param_optimize_mask,
         cameras_from_world=[

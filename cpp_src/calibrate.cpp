@@ -150,6 +150,7 @@ struct OptimizationState {
 
 py::dict calibrate_camera(
     std::string camera_model_name,
+    ModelConfig& model_config,
     std::vector<double>& intrinsics_initial_value,
     std::vector<bool>& intrinsics_param_optimize_mask,
     std::vector<Vec6<double>>& cameras_from_world,

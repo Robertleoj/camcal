@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <cmath>
 #include <vector>
+#include "./cameramodels.hpp"
 #include "./type_defs.hpp"
 
 namespace camcal {
@@ -12,6 +13,7 @@ namespace py = pybind11;
 
 py::dict calibrate_camera(
     std::string camera_model_name,
+    ModelConfig& config,
     std::vector<double>& intrinsics_initial_value,
     std::vector<bool>& intrinsics_param_optimize_mask,
     std::vector<Vec6<double>>& cameras_from_world,
