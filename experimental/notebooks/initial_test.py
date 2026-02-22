@@ -62,8 +62,8 @@ camera_model_config = PinholeSplinedConfig(
     image_height=img_height,
     image_width=img_width,
     initial_focal_length=1000,
-    num_knots_x=30,
-    num_knots_y=25,
+    num_knots_x=20,
+    num_knots_y=15,
     fov_deg_x=160.0,
     fov_deg_y=140.0
 )

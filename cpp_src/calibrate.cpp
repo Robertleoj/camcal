@@ -127,6 +127,59 @@ struct ReprojectionError {
     std::string camera_model_name;
 };
 
+struct SplineZeroPrior {
+    SplineZeroPrior(
+        int nx,
+        int ny,
+        double lambda
+    )
+        : nx(nx),
+          ny(ny),
+          sqrt_lambda(std::sqrt(lambda)) {}
+
+    template <typename T>
+    bool operator()(
+        T const* const* params,
+        T* residuals
+    ) const {
+        const T* const intrinsics = params[0];
+
+        const int n = nx * ny;
+        const int offset = 4;  // [fx, fy, cx, cy] then dx(n) then dy(n)
+
+        // dx grid
+        for (int i = 0; i < n; ++i) {
+            residuals[i] = T(sqrt_lambda) * intrinsics[offset + i];
+        }
+        // dy grid
+        for (int i = 0; i < n; ++i) {
+            residuals[n + i] = T(sqrt_lambda) * intrinsics[offset + n + i];
+        }
+
+        return true;
+    }
+
+    static ceres::CostFunction* create(
+        int nx,
+        int ny,
+        double lambda,
+        int intrinsics_size
+    ) {
+        const int n = nx * ny;
+        const int num_residuals = 2 * n;
+
+        using CostT = ceres::DynamicAutoDiffCostFunction<SplineZeroPrior, 4>;
+        auto* cost = new CostT(new SplineZeroPrior(nx, ny, lambda));
+        cost->AddParameterBlock(intrinsics_size);
+        cost->SetNumResiduals(num_residuals);
+        return cost;
+    }
+
+    int nx;
+    int ny;
+    double sqrt_lambda;
+};
+
 struct OptimizationState {
     std::vector<double> intrinsics;
     std::vector<std::vector<double>> cameras_from_world;
@@ -246,13 +299,35 @@ py::dict calibrate_camera(
         }
     }
 
+    if (camera_model_name == "pinhole_splined") {
+        const int nx =
+            static_cast<int>(model_config.int_params.at("num_knots_x"));
+        const int ny =
+            static_cast<int>(model_config.int_params.at("num_knots_y"));
+
+        // Regularization strength (tweak as needed)
+        // If you want, wire this into
+        // model_config.double_params["spline_zero_prior_lambda"]
+        const double lambda = 1e-5;
+
+        const int intrinsics_size = static_cast<int>(state.intrinsics.size());
+
+        problem.AddResidualBlock(
+            SplineZeroPrior::create(nx, ny, lambda, intrinsics_size),
+            nullptr,
+            state.intrinsics.data()
+        );
+
+        spdlog::info("Added spline zero prior: lambda={}", lambda);
+    }
+
     spdlog::info("Added residual blocks");
 
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::ITERATIVE_SCHUR;
     options.preconditioner_type = ceres::SCHUR_JACOBI;
 
-    options.use_nonmonotonic_steps = true;
+    options.use_nonmonotonic_steps = false;
     options.max_num_iterations = 10'000;
 
     options.minimizer_progress_to_stdout = true;
