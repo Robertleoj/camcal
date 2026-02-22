@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 import numpy as np
-from jaxtyping import Bool, Float
+from jaxtyping import Float
 
 from camcal import camcal_bindings as cb
 from camcal.camera_models.base_model import CameraModel, CameraModelConfig
-from camcal.camera_models.basic import Pinhole
 
 
 @dataclass
