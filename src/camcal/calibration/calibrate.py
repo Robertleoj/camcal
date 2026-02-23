@@ -1,15 +1,15 @@
-from dataclasses import dataclass, replace
+import logging
+from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 from jaxtyping import Float, Int
-from typing import cast
 
 from camcal import camcal_bindings as cb
 from camcal.camera_models.base_model import CameraModel, CameraModelConfig
-from camcal.camera_models.pinhole_splined import PinholeSplinedConfig, PinholeSplined
-from camcal.camera_models.opencv import OpenCVConfig, OpenCV
+from camcal.camera_models.opencv import OpenCV, OpenCVConfig
+from camcal.camera_models.pinhole_splined import PinholeSplined, PinholeSplinedConfig
 from camcal.geometry.pose import Pose
-import logging
 
 LOG = logging.getLogger(__name__)
 
@@ -77,7 +77,6 @@ def _calibrate_pinhole_splined(
     detections: list[Detection],
     config: PinholeSplinedConfig,
 ) -> CalibrationResult:
-
     opencv_config = OpenCVConfig(
         image_height=config.image_height,
         image_width=config.image_width,

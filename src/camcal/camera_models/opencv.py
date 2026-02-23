@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-import cv2
 
+import cv2
 import numpy as np
 from jaxtyping import Bool, Float
 
