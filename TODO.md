@@ -1,4 +1,7 @@
 * Make it faster somehow
+    * optimize with opencv model, then fit splined model to the opencv model
+    * Then optimize everything with the real data
 * Make exposed projection functions
 * Make undistortion functions
 * Allow exporting undistortion maps
+* Make the conditional logic between "normal" models and splined models cleaner

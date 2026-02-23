@@ -1,7 +1,7 @@
 {
-  "dependencies": [
-    "ceres",
-    "fmt",
-    "spdlog"
-  ]
+    "dependencies": [
+        "ceres",
+        "fmt",
+        "spdlog"
+    ]
 }

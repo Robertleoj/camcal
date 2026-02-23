@@ -211,7 +211,9 @@ static inline T eval_bspline2d_uniform_cubic_clamped(
 template <typename T>
 void project_pinhole_splined(
     ModelConfig* model_config,
-    const T* const intrinsics,  // fx, fy, cx, cy, then dx grid, then dy grid
+    const T* const k4,       // fx, fy, cx, cy, then dx grid, then dy grid
+    const T* const dx_grid,  // fx, fy, cx, cy, then dx grid, then dy grid
+    const T* const dy_grid,
     const Vec3<T>& point_in_camera,
     Vec2<T>& result
 ) {
@@ -241,14 +243,10 @@ void project_pinhole_splined(
     const T y_range_start = T(-half_y_range);
     const T y_range_end = T(+half_y_range);
 
-    const T fx = intrinsics[0];
-    const T fy = intrinsics[1];
-    const T cx = intrinsics[2];
-    const T cy = intrinsics[3];
-
-    // --- distortion grids (row-major, size Ny*Nx each)
-    const T* const dx_grid = intrinsics + 4;
-    const T* const dy_grid = intrinsics + 4 + (Nx * Ny);
+    const T fx = k4[0];
+    const T fy = k4[1];
+    const T cx = k4[2];
+    const T cy = k4[3];
 
     // --- map (x_normalized, y_normalized) into spline coordinates where
     // control points sit at integer coordinates 0..Nx-1 / 0..Ny-1.
@@ -307,16 +305,6 @@ void project(
 
     if (camera_model_name == "opencv") {
         project_opencv<T>(intrinsics, point_in_camera, result);
-        return;
-    }
-
-    if (camera_model_name == "pinhole_splined") {
-        project_pinhole_splined<T>(
-            model_config,
-            intrinsics,
-            point_in_camera,
-            result
-        );
         return;
     }
 

@@ -50,62 +50,60 @@ struct ReprojectionError {
         T const* const* params,
         T* residuals
     ) const {
-        const T* const intrinsics = params[0];
-        const T* const camera_from_world = params[1];
-        const T* const point_in_world = params[2];
-
-        Vec6<T> eigen_camera_from_world(camera_from_world);
-        Vec3<T> eigen_point_in_world(point_in_world);
-
-        Vec3<T> eigen_point_in_cam =
-            transform_point(eigen_camera_from_world, eigen_point_in_world);
-
         Vec2<T> image_point;
-        project(
-            this->camera_model_name,
-            this->model_config,
-            intrinsics,
-            eigen_point_in_cam,
-            image_point
-        );
+
+        if (camera_model_name == "pinhole_splined") {
+            const T* const k4 = params[0];  // [fx,fy,cx,cy]
+            const T* const x_knots = params[1];
+            const T* const y_knots = params[2];
+            const T* const camera_from_world = params[3];
+            const T* const point_in_world = params[4];
+
+            Vec6<T> eigen_camera_from_world(camera_from_world);
+            Vec3<T> eigen_point_in_world(point_in_world);
+
+            Vec3<T> eigen_point_in_cam =
+                transform_point(eigen_camera_from_world, eigen_point_in_world);
+
+            project_pinhole_splined(
+                this->model_config,
+                k4,
+                x_knots,
+                y_knots,
+                eigen_point_in_cam,
+                image_point
+            );
+        } else {
+            const T* const intrinsics = params[0];
+            const T* const camera_from_world = params[1];
+            const T* const point_in_world = params[2];
+
+            Vec6<T> eigen_camera_from_world(camera_from_world);
+            Vec3<T> eigen_point_in_world(point_in_world);
+
+            Vec3<T> eigen_point_in_cam =
+                transform_point(eigen_camera_from_world, eigen_point_in_world);
+
+            project(
+                this->camera_model_name,
+                this->model_config,
+                intrinsics,
+                eigen_point_in_cam,
+                image_point
+            );
+        }
 
         residuals[0] = image_point[0] - T(observed_x);
         residuals[1] = image_point[1] - T(observed_y);
         return true;
     }
-
     static ceres::CostFunction* create(
         const std::string& camera_model_name,
         ModelConfig* model_config,
         const double observed_x,
         const double observed_y
     ) {
-        // runtime intrinsics size
-        int intrinsics_size = 0;
-
-        if (camera_model_name == "pinhole") {
-            intrinsics_size = pinhole_num_params;  // 4
-        } else if (camera_model_name == "opencv") {
-            intrinsics_size = opencv_num_params;
-        } else if (camera_model_name == "pinhole_splined") {
-            const int nx =
-                static_cast<int>(model_config->int_params.at("num_knots_x"));
-            const int ny =
-                static_cast<int>(model_config->int_params.at("num_knots_y"));
-
-            // Your packing: [fx,fy,cx,cy] + dx_grid(nx*ny) + dy_grid(nx*ny)
-            intrinsics_size = 4 + 2 * (nx * ny);
-        } else {
-            throw std::runtime_error(
-                fmt::format("camera model {} does not exist", camera_model_name)
-            );
-        }
-
-        // The '4' here is the number of residuals? No. It's the max # of
-        // parameter blocks for internal bookkeeping; you can set it to 3 or 4.
-        // We'll use 3 blocks.
-        using CostT = ceres::DynamicAutoDiffCostFunction<ReprojectionError, 4>;
-
+        using CostT = ceres::DynamicAutoDiffCostFunction<ReprojectionError, 5>;
         auto* cost = new CostT(new ReprojectionError(
             camera_model_name,
             model_config,
@@ -113,11 +111,31 @@ struct ReprojectionError {
             observed_y
         ));
 
-        cost->AddParameterBlock(intrinsics_size);  // intrinsics (runtime sized)
-        cost->AddParameterBlock(6);                // camera_from_world
-        cost->AddParameterBlock(3);                // point_in_world
-        cost->SetNumResiduals(2);
+        if (camera_model_name == "pinhole") {
+            cost->AddParameterBlock((int)pinhole_num_params);  // intrinsics
+            cost->AddParameterBlock(6);
+            cost->AddParameterBlock(3);
+        } else if (camera_model_name == "opencv") {
+            cost->AddParameterBlock((int)opencv_num_params);  // intrinsics
+            cost->AddParameterBlock(6);
+            cost->AddParameterBlock(3);
+        } else if (camera_model_name == "pinhole_splined") {
+            const int nx = (int)model_config->int_params.at("num_knots_x");
+            const int ny = (int)model_config->int_params.at("num_knots_y");
+            const int n = nx * ny;
 
+            cost->AddParameterBlock(4);  // [fx,fy,cx,cy]
+            cost->AddParameterBlock(n);  // x_knots
+            cost->AddParameterBlock(n);  // y_knots
+            cost->AddParameterBlock(6);  // camera_from_world
+            cost->AddParameterBlock(3);  // point_in_world
+        } else {
+            throw std::runtime_error(
+                fmt::format("camera model {} does not exist", camera_model_name)
+            );
+        }
+
+        cost->SetNumResiduals(2);
         return cost;
     }
 
@@ -142,36 +160,30 @@ struct SplineZeroPrior {
         T const* const* params,
         T* residuals
     ) const {
-        const T* const intrinsics = params[0];
-
+        const T* const x = params[0];
+        const T* const y = params[1];
         const int n = nx * ny;
-        const int offset = 4;  // [fx, fy, cx, cy] then dx(n) then dy(n)
 
-        // dx grid
         for (int i = 0; i < n; ++i) {
-            residuals[i] = T(sqrt_lambda) * intrinsics[offset + i];
+            residuals[i] = T(sqrt_lambda) * x[i];
         }
-        // dy grid
         for (int i = 0; i < n; ++i) {
-            residuals[n + i] = T(sqrt_lambda) * intrinsics[offset + n + i];
+            residuals[n + i] = T(sqrt_lambda) * y[i];
         }
-
         return true;
     }
 
     static ceres::CostFunction* create(
         int nx,
         int ny,
-        double lambda,
-        int intrinsics_size
+        double lambda
     ) {
         const int n = nx * ny;
-        const int num_residuals = 2 * n;
-
-        using CostT = ceres::DynamicAutoDiffCostFunction<SplineZeroPrior, 4>;
+        using CostT = ceres::DynamicAutoDiffCostFunction<SplineZeroPrior, 2>;
         auto* cost = new CostT(new SplineZeroPrior(nx, ny, lambda));
-        cost->AddParameterBlock(intrinsics_size);
-        cost->SetNumResiduals(num_residuals);
+        cost->AddParameterBlock(n);  // x_knots
+        cost->AddParameterBlock(n);  // y_knots
+        cost->SetNumResiduals(2 * n);
         return cost;
     }
 
@@ -239,7 +251,81 @@ py::dict calibrate_camera(
         target_points
     );
 
-    problem.AddParameterBlock(state.intrinsics.data(), state.intrinsics.size());
+    double* intr = state.intrinsics.data();
+    const int intr_size = (int)state.intrinsics.size();
+
+    double* k4 = intr;  // [0..3]
+
+    double* x_knots = nullptr;
+    double* y_knots = nullptr;
+    int n_knots = 0;
+
+    if (camera_model_name == "pinhole_splined") {
+        const int nx = (int)model_config.int_params.at("num_knots_x");
+        const int ny = (int)model_config.int_params.at("num_knots_y");
+        n_knots = nx * ny;
+
+        x_knots = intr + 4;
+        y_knots = intr + 4 + n_knots;
+
+        // 3 separate parameter blocks
+        problem.AddParameterBlock(k4, 4);
+        problem.AddParameterBlock(x_knots, n_knots);
+        problem.AddParameterBlock(y_knots, n_knots);
+
+        // SubsetManifold for each block using the *same* optimize mask you
+        // already have
+        std::vector<int> fixed_k4, fixed_x, fixed_y;
+        fixed_k4.reserve(4);
+        fixed_x.reserve(n_knots);
+        fixed_y.reserve(n_knots);
+
+        // [fx,fy,cx,cy]
+        for (int i = 0; i < 4; ++i) {
+            if (!intrinsics_param_optimize_mask[i]) {
+                fixed_k4.push_back(i);
+            }
+        }
+        // x_knots live at [4 .. 4+n_knots)
+        for (int i = 0; i < n_knots; ++i) {
+            if (!intrinsics_param_optimize_mask[4 + i]) {
+                fixed_x.push_back(i);
+            }
+        }
+        // y_knots live at [4+n_knots .. 4+2*n_knots)
+        for (int i = 0; i < n_knots; ++i) {
+            if (!intrinsics_param_optimize_mask[4 + n_knots + i]) {
+                fixed_y.push_back(i);
+            }
+        }
+
+        problem.SetManifold(k4, new ceres::SubsetManifold(4, fixed_k4));
+        problem.SetManifold(
+            x_knots,
+            new ceres::SubsetManifold(n_knots, fixed_x)
+        );
+        problem.SetManifold(
+            y_knots,
+            new ceres::SubsetManifold(n_knots, fixed_y)
+        );
+    } else {
+        // old behavior: single intrinsics block
+        problem.AddParameterBlock(intr, intr_size);
+
+        std::vector<int> fixed_intrinsics_param_indices;
+        fixed_intrinsics_param_indices.reserve(intr_size);
+        for (int i = 0; i < intr_size; ++i) {
+            if (!intrinsics_param_optimize_mask[i]) {
+                fixed_intrinsics_param_indices.push_back(i);
+            }
+        }
+
+        problem.SetManifold(
+            intr,
+            new ceres::SubsetManifold(intr_size, fixed_intrinsics_param_indices)
+        );
+    }
+
     std::vector<int> fixed_intrinsics_param_indices;
     for (size_t param_idx = 0; param_idx < state.intrinsics.size();
          param_idx++) {
@@ -248,12 +334,6 @@ py::dict calibrate_camera(
             fixed_intrinsics_param_indices.push_back(param_idx);
         }
     }
-
-    auto* manifold = new ceres::SubsetManifold(
-        state.intrinsics.size(),
-        fixed_intrinsics_param_indices
-    );
-    problem.SetManifold(state.intrinsics.data(), manifold);
 
     for (auto& cam : state.cameras_from_world) {
         problem.AddParameterBlock(cam.data(), cam.size());
@@ -284,18 +364,35 @@ py::dict calibrate_camera(
             auto& target =
                 state.target_points[target_point_indices[observation_idx]];
 
-            problem.AddResidualBlock(
-                ReprojectionError::create(
-                    camera_model_name,
-                    &model_config,
-                    observation(0, 0),
-                    observation(1, 0)
-                ),
-                nullptr,
-                state.intrinsics.data(),
-                camera_pose.data(),
-                target.data()
-            );
+            if (camera_model_name == "pinhole_splined") {
+                problem.AddResidualBlock(
+                    ReprojectionError::create(
+                        camera_model_name,
+                        &model_config,
+                        observation(0, 0),
+                        observation(1, 0)
+                    ),
+                    nullptr,
+                    k4,
+                    x_knots,
+                    y_knots,
+                    camera_pose.data(),
+                    target.data()
+                );
+            } else {
+                problem.AddResidualBlock(
+                    ReprojectionError::create(
+                        camera_model_name,
+                        &model_config,
+                        observation(0, 0),
+                        observation(1, 0)
+                    ),
+                    nullptr,
+                    state.intrinsics.data(),
+                    camera_pose.data(),
+                    target.data()
+                );
+            }
         }
     }
 
@@ -313,11 +410,11 @@ py::dict calibrate_camera(
         const int intrinsics_size = static_cast<int>(state.intrinsics.size());
 
         problem.AddResidualBlock(
-            SplineZeroPrior::create(nx, ny, lambda, intrinsics_size),
+            SplineZeroPrior::create(nx, ny, lambda),
             nullptr,
-            state.intrinsics.data()
+            x_knots,
+            y_knots
         );
-
         spdlog::info("Added spline zero prior: lambda={}", lambda);
     }
 
@@ -329,6 +426,9 @@ py::dict calibrate_camera(
 
     options.use_nonmonotonic_steps = false;
     options.max_num_iterations = 10'000;
+
+    options.num_threads =
+        std::min(std::max(1, (int)std::thread::hardware_concurrency()), 16);
 
     options.minimizer_progress_to_stdout = true;
 
