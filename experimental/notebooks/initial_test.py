@@ -10,7 +10,7 @@ except:
 
 # %%
 from camcal.calibration.calibrate import calibrate_camera
-from camcal.camera_models import PinholeConfig, Pinhole, OpenCVConfig, PinholeSplinedConfig, PinholeSplined
+from camcal.camera_models import OpenCVConfig, PinholeSplinedConfig, PinholeSplined
 import cv2
 import numpy as np
 import imageio.v3 as iio
@@ -31,7 +31,7 @@ img_paths = img_directory.glob("*.png")
 imgs = [iio.imread(pth) for pth in img_paths]
 
 # %%
-mediapy.show_image(imgs[0], width=500)
+mediapy.show_image(imgs[0], width=1000)
 
 # %%
 # detect charuco
@@ -52,21 +52,21 @@ img_height, img_width = imgs[0].shape[:2]
 img_height, img_width
 
 # %%
-# camera_model_config = OpenCVConfig(
-#     image_height=img_height,
-#     image_width=img_width,
-#     initial_focal_length=1000,
-#     included_distoriton_coefficients=OpenCVConfig.FULL_12
-# )
-camera_model_config = PinholeSplinedConfig(
+camera_model_config = OpenCVConfig(
     image_height=img_height,
     image_width=img_width,
     initial_focal_length=1000,
-    num_knots_x=40,
-    num_knots_y=30,
-    fov_deg_x=160.0,
-    fov_deg_y=140.0
+    included_distoriton_coefficients=OpenCVConfig.FULL_12
 )
+# camera_model_config = PinholeSplinedConfig(
+#     image_height=img_height,
+#     image_width=img_width,
+#     initial_focal_length=1000,
+#     num_knots_x=40,
+#     num_knots_y=30,
+#     fov_deg_x=160.0,
+#     fov_deg_y=140.0
+# )
 
 
 # %%

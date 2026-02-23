@@ -98,7 +98,7 @@ def _calibrate_pinhole_splined(
         fov_deg_x=config.fov_deg_x,
         fov_deg_y=config.fov_deg_y,
         num_knots_x=config.num_knots_x,
-        num_knots_y=config.num_knots_y
+        num_knots_y=config.num_knots_y,
     )
 
     # Final, full bundle adjustment to fine-tune the spline model.
@@ -116,6 +116,6 @@ def calibrate_camera(
         )
 
     if isinstance(camera_model_config, OpenCVConfig):
-        return _pinhole_direct_calibrate(target_points, detections, camera_model_config)
+        return _opencv_calibrate(target_points, detections, camera_model_config)
 
     raise RuntimeError("Invalid config")
