@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+import cv2
 
 import numpy as np
 from jaxtyping import Bool, Float
@@ -84,3 +85,19 @@ class OpenCV(CameraModel):
         return replace(
             self, fx=fx, fy=fy, cx=cx, cy=cy, distortion_coeffs=distortion_coeffs
         )
+
+    def project_points(
+        self,
+        points_in_cam: Float[np.ndarray, "N 3"],
+    ) -> Float[np.ndarray, "N 2"]:
+        camera_matrix = np.array(
+            [[self.fx, 0, self.cx], [0, self.fy, self.cy], [0, 0, 1]]
+        )
+
+        return cv2.projectPoints(
+            points_in_cam,
+            rvec=np.zeros(3),
+            tvec=np.zeros(3),
+            cameraMatrix=camera_matrix,
+            distCoeffs=self.distortion_coeffs,
+        )[0].reshape(-1, 2)

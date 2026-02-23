@@ -6,7 +6,7 @@ from typing import cast
 
 from camcal import camcal_bindings as cb
 from camcal.camera_models.base_model import CameraModel, CameraModelConfig
-from camcal.camera_models.pinhole_splined import PinholeSplinedConfig
+from camcal.camera_models.pinhole_splined import PinholeSplinedConfig, PinholeSplined
 from camcal.camera_models.opencv import OpenCVConfig, OpenCV
 from camcal.geometry.pose import Pose
 import logging
@@ -106,6 +106,25 @@ def _calibrate_pinhole_splined(
 
     print(x_knots)
     print(y_knots)
+
+    output_model = PinholeSplined(
+        image_height=config.image_height,
+        image_width=config.image_width,
+        fx=opencv_model.fx,
+        fy=opencv_model.fy,
+        cx=opencv_model.cx,
+        cy=opencv_model.cy,
+        undistortion_knots_x=x_knots,
+        undistortion_knots_y=y_knots,
+        num_knots_x=config.num_knots_x,
+        num_knots_y=config.num_knots_y,
+        fov_deg_x=config.fov_deg_x,
+        fov_deg_y=config.fov_deg_y,
+    )
+
+    return CalibrationResult(
+        output_model, opencv_calibration_result.optimized_cameras_from_world
+    )
 
     # Final, full bundle adjustment to fine-tune the spline model.
     # should have a prior to stay at the opencv distortion values

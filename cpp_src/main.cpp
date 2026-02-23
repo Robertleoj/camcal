@@ -3,6 +3,7 @@
 #include <pybind11/stl.h>
 #include "calibrate.hpp"
 #include "cameramodels.hpp"
+#include "./python_project.hpp"
 
 namespace py = pybind11;
 
@@ -74,5 +75,32 @@ PYBIND11_MODULE(
         py::arg("fov_deg_y"),
         py::arg("num_knots_x"),
         py::arg("num_knots_y")
+    );
+
+    m.def(
+        "project_pinhole_splined_points",
+        &camcal::project_pinhole_splined_pywrapper,
+        py::arg("fov_deg_x"),
+        py::arg("fov_deg_y"),
+        py::arg("num_knots_x"),
+        py::arg("num_knots_y"),
+        py::arg("k4"),
+        py::arg("dx_grid"),
+        py::arg("dy_grid"),
+        py::arg("points_in_camera"),
+        R"doc(
+Vectorized pinhole+splined projection over points_in_camera.
+
+Args:
+  fov_deg_x, fov_deg_y: FOV in degrees
+  num_knots_x, num_knots_y: knot grid size
+  k4: numpy array shape (4,) -> [fx, fy, cx, cy]
+  dx_grid: numpy array shape (num_knots_y, num_knots_x), C-order (row-major)
+  dy_grid: numpy array shape (num_knots_y, num_knots_x), C-order (row-major)
+  points_in_camera: numpy array shape (N, 3), C-order
+
+Returns:
+  numpy array shape (N, 2)
+)doc"
     );
 }

@@ -227,9 +227,12 @@ static inline T eval_bspline2d_uniform_cubic_clamped(
 
 template <typename T>
 void project_pinhole_splined(
-    ModelConfig* model_config,
-    const T* const k4,       // fx, fy, cx, cy, then dx grid, then dy grid
-    const T* const dx_grid,  // fx, fy, cx, cy, then dx grid, then dy grid
+    const double fov_deg_x,
+    const double fov_deg_y,
+    const uint32_t num_knots_x,
+    const uint32_t num_knots_y,
+    const T* const k4,  // fx, fy, cx, cy
+    const T* const dx_grid,
     const T* const dy_grid,
     const Vec3<T>& point_in_camera,
     Vec2<T>& result
@@ -238,14 +241,9 @@ void project_pinhole_splined(
     const T x_normalized = point_in_camera[0] / point_in_camera[2];
     const T y_normalized = point_in_camera[1] / point_in_camera[2];
 
-    // --- spline grid config
-    const uint32_t num_knots_x_u32 = model_config->int_params.at("num_knots_x");
-    const uint32_t num_knots_y_u32 = model_config->int_params.at("num_knots_y");
-    const int Nx = static_cast<int>(num_knots_x_u32);
-    const int Ny = static_cast<int>(num_knots_y_u32);
+    const int Nx = static_cast<int>(num_knots_x);
+    const int Ny = static_cast<int>(num_knots_y);
 
-    const double fov_deg_x = model_config->double_params.at("fov_deg_x");
-    const double fov_deg_y = model_config->double_params.at("fov_deg_y");
     const double fov_rad_x = fov_deg_x * M_PI / 180.0;
     const double fov_rad_y = fov_deg_y * M_PI / 180.0;
 
@@ -265,15 +263,6 @@ void project_pinhole_splined(
     const T cx = k4[2];
     const T cy = k4[3];
 
-    // --- map (x_normalized, y_normalized) into spline coordinates where
-    // control points sit at integer coordinates 0..Nx-1 / 0..Ny-1.
-    //
-    // Like we discussed: the uniform cubic basis assumes unit spacing in its
-    // own coordinate system. We choose an affine map so the *interior*
-    // [1..Nx-2] spans the desired FOV range. This gives every evaluation a full
-    // 4-neighbor support in the interior; outside gets clamped.
-    //
-    // x_spline = 1 + (x - x_min) * (Nx - 3) / (x_max - x_min)
     const T inv_x_span = T(1) / (x_range_end - x_range_start);
     const T inv_y_span = T(1) / (y_range_end - y_range_start);
 

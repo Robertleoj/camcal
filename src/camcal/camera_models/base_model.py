@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import numpy as np
-from jaxtyping import Bool
+from jaxtyping import Bool, Float
 
 from camcal import camcal_bindings as cb
 
@@ -49,3 +49,9 @@ class CameraModel(ABC):
 
     def get_cpp_config(self) -> cb.ModelConfig:
         return cb.ModelConfig()
+
+    @abstractmethod
+    def project_points(
+        self,
+        points_in_cam: Float[np.ndarray, "N 3"],
+    ) -> Float[np.ndarray, "N 2"]: ...

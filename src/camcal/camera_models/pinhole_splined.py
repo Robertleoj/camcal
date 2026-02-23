@@ -51,8 +51,8 @@ class PinholeSplined(CameraModel):
     cx: float
     cy: float
 
-    undistortion_knots_x: Float[np.ndarray, "Kx Ky"]
-    undistortion_knots_y: Float[np.ndarray, "Kx Ky"]
+    undistortion_knots_x: Float[np.ndarray, "Ky Kx"]
+    undistortion_knots_y: Float[np.ndarray, "Ky Kx"]
 
     num_knots_x: int
     num_knots_y: int
@@ -100,8 +100,8 @@ class PinholeSplined(CameraModel):
         params = params[total_knots_per_map:]
         y_knots_list = params[:total_knots_per_map]
 
-        x_knots = np.array(x_knots_list).reshape(self.num_knots_x, self.num_knots_y)
-        y_knots = np.array(y_knots_list).reshape(self.num_knots_x, self.num_knots_y)
+        x_knots = np.array(x_knots_list).reshape(self.num_knots_y, self.num_knots_x)
+        y_knots = np.array(y_knots_list).reshape(self.num_knots_y, self.num_knots_x)
 
         return replace(
             self,
@@ -111,4 +111,19 @@ class PinholeSplined(CameraModel):
             cy=cy,
             undistortion_knots_x=x_knots,
             undistortion_knots_y=y_knots,
+        )
+
+    def project_points(
+        self,
+        points_in_cam: Float[np.ndarray, "N 3"],
+    ) -> Float[np.ndarray, "N 2"]:
+        return cb.project_pinhole_splined_points(
+            self.fov_deg_x,
+            self.fov_deg_y,
+            self.num_knots_x,
+            self.num_knots_y,
+            np.array([self.fx, self.fy, self.cx, self.cy], dtype=float),
+            dx_grid=self.undistortion_knots_x,
+            dy_grid=self.undistortion_knots_y,
+            points_in_camera=points_in_cam,
         )
