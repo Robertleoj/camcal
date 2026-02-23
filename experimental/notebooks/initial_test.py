@@ -52,21 +52,21 @@ img_height, img_width = imgs[0].shape[:2]
 img_height, img_width
 
 # %%
-camera_model_config = OpenCVConfig(
-    image_height=img_height,
-    image_width=img_width,
-    initial_focal_length=1000,
-    included_distoriton_coefficients=OpenCVConfig.FULL_12
-)
-# camera_model_config = PinholeSplinedConfig(
+# camera_model_config = OpenCVConfig(
 #     image_height=img_height,
 #     image_width=img_width,
 #     initial_focal_length=1000,
-#     num_knots_x=40,
-#     num_knots_y=30,
-#     fov_deg_x=160.0,
-#     fov_deg_y=140.0
+#     included_distoriton_coefficients=OpenCVConfig.FULL_12
 # )
+camera_model_config = PinholeSplinedConfig(
+    image_height=img_height,
+    image_width=img_width,
+    initial_focal_length=1000,
+    num_knots_x=40,
+    num_knots_y=30,
+    fov_deg_x=160.0,
+    fov_deg_y=140.0
+)
 
 
 # %%
@@ -113,7 +113,7 @@ test_sample_idx = 2
 
 debug_img = cv2.cvtColor(imgs[test_sample_idx].copy(), cv2.COLOR_GRAY2RGB)
 
-mediapy.show_image(debug_img, width=500)
+mediapy.show_image(debug_img, width=1000)
 
 
 # %%
@@ -164,7 +164,7 @@ for pt_idx in detection.point_ids:
 # %%
 debug_img = draw_points(debug_img, np.array(projected), color=(0, 255, 0), r=4)
 
-mediapy.show_image(debug_img, width=2000)
+mediapy.show_image(debug_img, width=1000)
 
 # %%
 residuals = []
