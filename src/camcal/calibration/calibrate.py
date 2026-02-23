@@ -7,7 +7,6 @@ from typing import cast
 from camcal import camcal_bindings as cb
 from camcal.camera_models.base_model import CameraModel, CameraModelConfig
 from camcal.camera_models.pinhole_splined import PinholeSplinedConfig
-from camcal.camera_models.basic import PinholeConfig
 from camcal.camera_models.opencv import OpenCVConfig
 from camcal.geometry.pose import Pose
 import logging
@@ -33,7 +32,7 @@ class CalibrationResult:
 def _pinhole_direct_calibrate(
     target_points: Float[np.ndarray, "N 3"],
     detections: list[Detection],
-    config: PinholeConfig | OpenCVConfig,
+    config: OpenCVConfig,
 ) -> CalibrationResult:
     num_cameras = len(detections)
 
@@ -101,7 +100,7 @@ def calibrate_camera(
             target_points, detections, camera_model_config
         )
 
-    if isinstance(camera_model_config, PinholeConfig | OpenCVConfig):
+    if isinstance(camera_model_config, OpenCVConfig):
         return _pinhole_direct_calibrate(target_points, detections, camera_model_config)
     
     raise RuntimeError("Invalid config")

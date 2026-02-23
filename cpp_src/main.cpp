@@ -57,10 +57,8 @@ PYBIND11_MODULE(
         });
 
     m.def(
-        "calibrate_camera",
-        &camcal::calibrate_camera,
-        py::arg("camera_model_name"),
-        py::arg("config"),
+        "calibrate_opencv",
+        &camcal::calibrate_opencv,
         py::arg("intrinsics_initial_value"),
         py::arg("intrinsics_param_optimize_mask"),
         py::arg("cameras_from_world"),

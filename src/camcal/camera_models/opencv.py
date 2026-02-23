@@ -12,7 +12,8 @@ K1, K2, P1, P2, K3, K4, K5, K6, S1, S2, S3, S4 = range(12)
 
 def _mask(*idx: int) -> Bool[np.ndarray, 12]:
     m = np.zeros(12, dtype=bool)
-    m[list(idx)] = True
+    if len(idx) > 0:
+        m[list(idx)] = True
     return m
 
 
@@ -23,6 +24,7 @@ class OpenCVConfig(CameraModelConfig):
         default_factory=lambda: OpenCVConfig.STANDARD
     )
 
+    NONE = _mask()
     STANDARD = _mask(K1, K2, P1, P2, K3)
     RADIAL_6 = _mask(K1, K2, K3, K4, K5, K6)
     TANGENTIAL = _mask(P1, P2)

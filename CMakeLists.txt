@@ -40,7 +40,7 @@ pybind11_add_module(
     MODULE 
 
     cpp_src/main.cpp
-    cpp_src/calibrate.cpp
+    cpp_src/calibrate_opencv.cpp
 )
 
 target_link_libraries(

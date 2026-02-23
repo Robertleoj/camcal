@@ -290,27 +290,4 @@ void project_pinhole_splined(
     result[1] = fy * y_distorted + cy;
 }
 
-template <typename T>
-void project(
-    const std::string& camera_model_name,
-    ModelConfig* model_config,
-    const T* const intrinsics,
-    const Vec3<T>& point_in_camera,
-    Vec2<T>& result
-) {
-    if (camera_model_name == "pinhole") {
-        project_pinhole<T>(intrinsics, point_in_camera, result);
-        return;
-    }
-
-    if (camera_model_name == "opencv") {
-        project_opencv<T>(intrinsics, point_in_camera, result);
-        return;
-    }
-
-    throw std::runtime_error(
-        fmt::format("Unknown camera model {}", camera_model_name)
-    );
-}
-
 }  // namespace camcal
