@@ -65,4 +65,14 @@ PYBIND11_MODULE(
         py::arg("target_points"),
         py::arg("detections")
     );
+
+    m.def(
+        "get_matching_spline_distortion_model",
+        &camcal::get_matching_spline_distortion_model,
+        py::arg("opencv_distortion_params"),
+        py::arg("fov_deg_x"),
+        py::arg("fov_deg_y"),
+        py::arg("num_knots_x"),
+        py::arg("num_knots_y")
+    );
 }

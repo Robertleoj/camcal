@@ -13,26 +13,6 @@ namespace camcal {
 constexpr size_t pinhole_num_params = 4;
 constexpr size_t opencv_num_params = 4 + 12;
 
-template <typename T>
-Eigen::Matrix<T, 3, 1> transform_point(
-    const Vec6<T>& pose,        // [rx ry rz tx ty tz]
-    const Vec3<T>& point_world  // [x y z]
-) {
-    Vec3<T> rotated;
-    ceres::AngleAxisRotatePoint(
-        pose.data(),
-        point_world.data(),
-        rotated.data()
-    );
-
-    // Add translation
-    rotated[0] += pose[3];
-    rotated[1] += pose[4];
-    rotated[2] += pose[5];
-
-    return rotated;
-}
-
 struct ReprojectionError {
     ReprojectionError(
         const std::string& camera_model_name,

@@ -29,35 +29,28 @@ void project_pinhole(
 }
 
 template <typename T>
-void project_opencv(
-    const T* const intrinsics,  // fx, fy, cx, cy, k1..k6, s1..s4
-    const Vec3<T>& point_in_camera,
+void distort_opencv(
+    const T* const distortion_parameters,
+    const Vec2<T>& normalized_point,
     Vec2<T>& result
 ) {
-    // Normalized coordinates
-    T x = point_in_camera[0] / point_in_camera[2];
-    T y = point_in_camera[1] / point_in_camera[2];
-
-    // Intrinsics
-    const T fx = intrinsics[0];
-    const T fy = intrinsics[1];
-    const T cx = intrinsics[2];
-    const T cy = intrinsics[3];
-
     // Distortion coeffs in OpenCV order:
     // (k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4)
-    const T k1 = intrinsics[4];
-    const T k2 = intrinsics[5];
-    const T p1 = intrinsics[6];
-    const T p2 = intrinsics[7];
-    const T k3 = intrinsics[8];
-    const T k4 = intrinsics[9];
-    const T k5 = intrinsics[10];
-    const T k6 = intrinsics[11];
-    const T s1 = intrinsics[12];
-    const T s2 = intrinsics[13];
-    const T s3 = intrinsics[14];
-    const T s4 = intrinsics[15];
+    const T k1 = distortion_parameters[0];
+    const T k2 = distortion_parameters[1];
+    const T p1 = distortion_parameters[2];
+    const T p2 = distortion_parameters[3];
+    const T k3 = distortion_parameters[4];
+    const T k4 = distortion_parameters[5];
+    const T k5 = distortion_parameters[6];
+    const T k6 = distortion_parameters[7];
+    const T s1 = distortion_parameters[8];
+    const T s2 = distortion_parameters[9];
+    const T s3 = distortion_parameters[10];
+    const T s4 = distortion_parameters[11];
+
+    const T x = normalized_point[0];
+    const T y = normalized_point[1];
 
     // r^2 etc.
     const T r2 = x * x + y * y;
@@ -86,8 +79,32 @@ void project_opencv(
     const T x_distorted = x_radial + x_tan + x_prism;
     const T y_distorted = y_radial + y_tan + y_prism;
 
+    result << x_distorted, y_distorted;
+}
+
+template <typename T>
+void project_opencv(
+    const T* const intrinsics,  // fx, fy, cx, cy, k1..k6, s1..s4
+    const Vec3<T>& point_in_camera,
+    Vec2<T>& result
+) {
+    Vec2<T> normalized(
+        point_in_camera[0] / point_in_camera[2],
+        point_in_camera[1] / point_in_camera[2]
+    );
+    Vec2<T> distorted_normalized;
+
+    distort_opencv(intrinsics + 4, normalized, distorted_normalized);
+
+    // Intrinsics
+    const T fx = intrinsics[0];
+    const T fy = intrinsics[1];
+    const T cx = intrinsics[2];
+    const T cy = intrinsics[3];
+
     // Back to pixels
-    result << fx * x_distorted + cx, fy * y_distorted + cy;
+    result << fx * distorted_normalized[0] + cx,
+        fy * distorted_normalized[1] + cy;
 }
 
 inline int clamp_int(

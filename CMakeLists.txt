@@ -41,6 +41,7 @@ pybind11_add_module(
 
     cpp_src/main.cpp
     cpp_src/calibrate_opencv.cpp
+    cpp_src/matching_spline_model.cpp
 )
 
 target_link_libraries(

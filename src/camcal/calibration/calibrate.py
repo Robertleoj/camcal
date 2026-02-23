@@ -7,7 +7,7 @@ from typing import cast
 from camcal import camcal_bindings as cb
 from camcal.camera_models.base_model import CameraModel, CameraModelConfig
 from camcal.camera_models.pinhole_splined import PinholeSplinedConfig
-from camcal.camera_models.opencv import OpenCVConfig
+from camcal.camera_models.opencv import OpenCVConfig, OpenCV
 from camcal.geometry.pose import Pose
 import logging
 
@@ -29,7 +29,7 @@ class CalibrationResult:
     optimized_cameras_from_world: list[Pose]
 
 
-def _pinhole_direct_calibrate(
+def _opencv_calibrate(
     target_points: Float[np.ndarray, "N 3"],
     detections: list[Detection],
     config: OpenCVConfig,
@@ -52,9 +52,7 @@ def _pinhole_direct_calibrate(
         np.array([0, 0, 0, 0, 0, 100], dtype=np.float32) for _ in range(num_cameras)
     ]
 
-    result = cb.calibrate_camera(
-        camera_model_name=initial_intrinsics._camera_model_name(),
-        config=initial_intrinsics.get_cpp_config(),
+    result = cb.calibrate_opencv(
         intrinsics_initial_value=initial_params,
         intrinsics_param_optimize_mask=intrinsics_param_optimize_mask,
         cameras_from_world=cameras_from_world,
@@ -79,15 +77,32 @@ def _calibrate_pinhole_splined(
     detections: list[Detection],
     config: PinholeSplinedConfig,
 ) -> CalibrationResult:
+
+    opencv_config = OpenCVConfig(
+        image_height=config.image_height,
+        image_width=config.image_width,
+        initial_focal_length=config.initial_focal_length,
+        included_distoriton_coefficients=OpenCVConfig.FULL_12,
+    )
+
     # calibrate using full opencv distortion model
+    opencv_calibration_result = _opencv_calibrate(
+        target_points, detections, opencv_config
+    )
 
     # Optimize splined distortion to match opencv distortion model
+    opencv_model = cast(OpenCV, opencv_calibration_result.optimized_camera_model)
 
-    # Final, full bundle adjustment to fine-tune the spline model. 
+    x_knots, y_knots = cb.get_matching_spline_distortion_model(
+        opencv_model.distortion_coeffs.tolist(),
+        fov_deg_x=config.fov_deg_x,
+        fov_deg_y=config.fov_deg_y,
+        num_knots_x=config.num_knots_x,
+        num_knots_y=config.num_knots_y
+    )
+
+    # Final, full bundle adjustment to fine-tune the spline model.
     # should have a prior to stay at the opencv distortion values
-
-
-    
 
 
 def calibrate_camera(
@@ -102,5 +117,5 @@ def calibrate_camera(
 
     if isinstance(camera_model_config, OpenCVConfig):
         return _pinhole_direct_calibrate(target_points, detections, camera_model_config)
-    
+
     raise RuntimeError("Invalid config")
