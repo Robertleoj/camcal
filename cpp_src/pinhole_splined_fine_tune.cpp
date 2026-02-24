@@ -241,6 +241,18 @@ py::dict fine_tune_pinhole_splined(
 
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
+
+    py::dict out;
+    out["dx_grid"] = intrinsics_parameters.dx_grid;
+    out["dy_grid"] = intrinsics_parameters.dy_grid;
+
+    std::vector<std::vector<double>> poses_out;
+    for (auto& cam : cameras_from_world) {
+        poses_out.push_back(std::vector<double>(cam.data(), cam.data() + cam.size()));
+    }
+    out["cameras_from_world"] = poses_out;
+
+    return out;
 }
 
 }  // namespace camcal
