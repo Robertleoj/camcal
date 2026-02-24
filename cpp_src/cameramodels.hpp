@@ -1,14 +1,27 @@
 #pragma once
 #include <ceres/jet.h>
 #include <fmt/format.h>
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
 #include <stdint.h>
 #include <cmath>
 #include "./type_defs.hpp"
-#include <pybind11/numpy.h>
-#include <pybind11/pybind11.h>
 
 namespace py = pybind11;
 namespace camcal {
+
+struct PinholeSplinedConfig {
+    double fov_deg_x;
+    double fov_deg_y;
+    uint32_t num_knots_x;
+    uint32_t num_knots_y;
+};
+
+struct PinholeSplinedIntrinsicsParameters {
+    py::array_t<double, py::array::c_style | py::array::forcecast> k4;
+    py::array_t<double, py::array::c_style | py::array::forcecast> dx_grid;
+    py::array_t<double, py::array::c_style | py::array::forcecast> dy_grid;
+};
 
 template <typename T>
 void project_pinhole(
@@ -225,10 +238,7 @@ static inline T eval_bspline2d_uniform_cubic_clamped(
 
 template <typename T>
 void project_pinhole_splined(
-    const double fov_deg_x,
-    const double fov_deg_y,
-    const uint32_t num_knots_x,
-    const uint32_t num_knots_y,
+    PinholeSplinedConfig* config,
     const T* const k4,  // fx, fy, cx, cy
     const T* const dx_grid,
     const T* const dy_grid,
@@ -239,11 +249,11 @@ void project_pinhole_splined(
     const T x_normalized = point_in_camera[0] / point_in_camera[2];
     const T y_normalized = point_in_camera[1] / point_in_camera[2];
 
-    const int Nx = static_cast<int>(num_knots_x);
-    const int Ny = static_cast<int>(num_knots_y);
+    const int Nx = static_cast<int>(config->num_knots_x);
+    const int Ny = static_cast<int>(config->num_knots_y);
 
-    const double fov_rad_x = fov_deg_x * M_PI / 180.0;
-    const double fov_rad_y = fov_deg_y * M_PI / 180.0;
+    const double fov_rad_x = config->fov_deg_x * M_PI / 180.0;
+    const double fov_rad_y = config->fov_deg_y * M_PI / 180.0;
 
     // We define the spline domain over the normalized pinhole plane such that
     // x_normalized in [-tan(fov_x/2), +tan(fov_x/2)] maps across the interior
@@ -293,18 +303,5 @@ void project_pinhole_splined(
     result[0] = fx * x_distorted + cx;
     result[1] = fy * y_distorted + cy;
 }
-
-struct PinholeSplinedConfig {
-    double fov_deg_x;
-    double fov_deg_y;
-    uint32_t num_knots_x;
-    uint32_t num_knots_y;
-};
-
-struct PinholeSplinedIntrinsicsParameters {
-    py::array_t<double, py::array::c_style | py::array::forcecast> k4;
-    py::array_t<double, py::array::c_style | py::array::forcecast> dx_grid;
-    py::array_t<double, py::array::c_style | py::array::forcecast> dy_grid;
-};
 
 }  // namespace camcal
