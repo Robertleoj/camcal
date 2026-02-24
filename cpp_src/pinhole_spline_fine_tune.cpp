@@ -214,7 +214,6 @@ struct OptimizationState {
 };
 
 py::dict fine_tune_pinhole_splined(
-    ModelConfig& model_config,
     std::vector<double>& intrinsics_initial_value,
     std::vector<bool>& intrinsics_param_optimize_mask,
     std::vector<Vec6<double>>& cameras_from_world,

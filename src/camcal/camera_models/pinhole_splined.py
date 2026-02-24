@@ -78,17 +78,6 @@ class PinholeSplined(CameraModel):
             *self.undistortion_knots_y.ravel().tolist(),
         ]
 
-    def get_cpp_config(self) -> cb.ModelConfig:
-        return cb.ModelConfig(
-            double_params={"fov_deg_x": self.fov_deg_x, "fov_deg_y": self.fov_deg_y},
-            int_params={
-                "image_height": self.image_height,
-                "image_width": self.image_width,
-                "num_knots_x": self.num_knots_x,
-                "num_knots_y": self.num_knots_y,
-            },
-        )
-
     def with_params(self, params: list[float]) -> PinholeSplined:
         fx, fy, cx, cy = params[:4]
 

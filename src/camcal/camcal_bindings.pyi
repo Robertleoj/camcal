@@ -6,24 +6,7 @@ import collections.abc
 import numpy
 import numpy.typing
 import typing
-__all__: list[str] = ['ModelConfig', 'add', 'calibrate_opencv', 'get_matching_spline_distortion_model', 'project_pinhole_splined_points']
-class ModelConfig:
-    def __init__(self, double_params: collections.abc.Mapping[str, typing.SupportsFloat] = {}, int_params: collections.abc.Mapping[str, typing.SupportsInt] = {}) -> None:
-        ...
-    def __repr__(self) -> str:
-        ...
-    @property
-    def double_params(self) -> dict[str, float]:
-        ...
-    @double_params.setter
-    def double_params(self, arg0: collections.abc.Mapping[str, typing.SupportsFloat]) -> None:
-        ...
-    @property
-    def int_params(self) -> dict[str, int]:
-        ...
-    @int_params.setter
-    def int_params(self, arg0: collections.abc.Mapping[str, typing.SupportsInt]) -> None:
-        ...
+__all__: list[str] = ['add', 'calibrate_opencv', 'get_matching_spline_distortion_model', 'project_pinhole_splined_points']
 def add(a: typing.SupportsInt, b: typing.SupportsInt) -> int:
     """
     Add two integers together - test

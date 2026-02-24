@@ -47,9 +47,6 @@ class CameraModel(ABC):
         params: list[float],
     ) -> CameraModel: ...
 
-    def get_cpp_config(self) -> cb.ModelConfig:
-        return cb.ModelConfig()
-
     @abstractmethod
     def project_points(
         self,
