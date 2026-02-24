@@ -42,19 +42,13 @@ PYBIND11_MODULE(
         "get_matching_spline_distortion_model",
         &camcal::get_matching_spline_distortion_model,
         py::arg("opencv_distortion_params"),
-        py::arg("fov_deg_x"),
-        py::arg("fov_deg_y"),
-        py::arg("num_knots_x"),
-        py::arg("num_knots_y")
+        py::arg("model_config")
     );
 
     m.def(
         "project_pinhole_splined_points",
         &camcal::project_pinhole_splined_pywrapper,
-        py::arg("fov_deg_x"),
-        py::arg("fov_deg_y"),
-        py::arg("num_knots_x"),
-        py::arg("num_knots_y"),
+        py::arg("model_config"),
         py::arg("k4"),
         py::arg("dx_grid"),
         py::arg("dy_grid"),
@@ -74,4 +68,32 @@ Returns:
   numpy array shape (N, 2)
 )doc"
     );
+
+    py::class_<camcal::PinholeSplinedConfig>(m, "PinholeSplinedConfig")
+        .def(
+            py::init<double, double, uint32_t, uint32_t>(),
+            py::arg("fov_deg_x"),
+            py::arg("fov_deg_y"),
+            py::arg("num_knots_x"),
+            py::arg("num_knots_y")
+        )
+        .def_readwrite("fov_deg_x", &camcal::PinholeSplinedConfig::fov_deg_x)
+        .def_readwrite("fov_deg_y", &camcal::PinholeSplinedConfig::fov_deg_y)
+        .def_readwrite(
+            "num_knots_x",
+            &camcal::PinholeSplinedConfig::num_knots_x
+        )
+        .def_readwrite(
+            "num_knots_y",
+            &camcal::PinholeSplinedConfig::num_knots_y
+        )
+        .def("__repr__", [](const camcal::PinholeSplinedConfig& self) {
+            std::ostringstream oss;
+            oss << "PinholeSplinedConfig("
+                << "fov_deg_x=" << self.fov_deg_x
+                << ", fov_deg_y=" << self.fov_deg_y
+                << ", num_knots_x=" << self.num_knots_x
+                << ", num_knots_y=" << self.num_knots_y << ")";
+            return oss.str();
+        });
 }

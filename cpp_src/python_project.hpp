@@ -19,10 +19,7 @@ static void require(
 }
 
 static py::array_t<double> project_pinhole_splined_pywrapper(
-    double fov_deg_x,
-    double fov_deg_y,
-    uint32_t num_knots_x,
-    uint32_t num_knots_y,
+    camcal::PinholeSplinedConfig& model_config,
     py::array_t<double, py::array::c_style | py::array::forcecast> k4,
     py::array_t<double, py::array::c_style | py::array::forcecast> dx_grid,
     py::array_t<double, py::array::c_style | py::array::forcecast> dy_grid,
@@ -40,13 +37,13 @@ static py::array_t<double> project_pinhole_splined_pywrapper(
     require(dxb.ndim == 2, "dx_grid must be a 2D numpy array");
     require(dyb.ndim == 2, "dy_grid must be a 2D numpy array");
     require(
-        (uint32_t)dxb.shape[0] == num_knots_y &&
-            (uint32_t)dxb.shape[1] == num_knots_x,
+        (uint32_t)dxb.shape[0] == model_config.num_knots_y &&
+            (uint32_t)dxb.shape[1] == model_config.num_knots_x,
         "dx_grid must have shape (num_knots_y, num_knots_x)"
     );
     require(
-        (uint32_t)dyb.shape[0] == num_knots_y &&
-            (uint32_t)dyb.shape[1] == num_knots_x,
+        (uint32_t)dyb.shape[0] == model_config.num_knots_y &&
+            (uint32_t)dyb.shape[1] == model_config.num_knots_x,
         "dy_grid must have shape (num_knots_y, num_knots_x)"
     );
 
@@ -76,10 +73,10 @@ static py::array_t<double> project_pinhole_splined_pywrapper(
 
         Vec2<double> r;
         project_pinhole_splined<double>(
-            fov_deg_x,
-            fov_deg_y,
-            num_knots_x,
-            num_knots_y,
+            model_config.fov_deg_x,
+            model_config.fov_deg_y,
+            model_config.num_knots_x,
+            model_config.num_knots_y,
             k4p,  // fx, fy, cx, cy
             dxp,  // row-major contiguous (C-order)
             dyp,  // row-major contiguous (C-order)

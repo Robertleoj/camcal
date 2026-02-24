@@ -22,10 +22,7 @@ py::dict calibrate_opencv(
 
 py::dict get_matching_spline_distortion_model(
     std::vector<double>& opencv_distortion_params,
-    double fov_deg_x,
-    double fov_deg_y,
-    uint32_t num_knots_x,
-    uint32_t num_knots_y
+    PinholeSplinedConfig& model_config
 );
 
 }  // namespace camcal

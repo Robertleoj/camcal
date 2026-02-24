@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 #include "./calibrate.hpp"
 #include "./utils.hpp"
+#include "cameramodels.hpp"
 
 namespace camcal {
 
@@ -141,13 +142,10 @@ struct DistortionError {
 
 py::dict get_matching_spline_distortion_model(
     std::vector<double>& opencv_distortion_params,
-    double fov_deg_x,
-    double fov_deg_y,
-    uint32_t num_knots_x,
-    uint32_t num_knots_y
+    PinholeSplinedConfig& model_config
 ) {
-    const double fov_rad_x = fov_deg_x * M_PI / 180.0;
-    const double fov_rad_y = fov_deg_y * M_PI / 180.0;
+    const double fov_rad_x = model_config.fov_deg_x * M_PI / 180.0;
+    const double fov_rad_y = model_config.fov_deg_y * M_PI / 180.0;
 
     const double half_x_range = std::tan(fov_rad_x / 2.0);
     const double half_y_range = std::tan(fov_rad_y / 2.0);
@@ -157,18 +155,26 @@ py::dict get_matching_spline_distortion_model(
     const double y_range_start = -half_y_range;
     const double y_range_end = +half_y_range;
 
-    const uint32_t num_samples_x = num_knots_x * 5;
-    const uint32_t num_samples_y = num_knots_y * 5;
+    const uint32_t num_samples_x = model_config.num_knots_x * 5;
+    const uint32_t num_samples_y = model_config.num_knots_y * 5;
 
     // y-major storage: knots[y][x]
-    auto x_knots = vector_mat<double>(num_knots_y, num_knots_x, 0);
-    auto y_knots = vector_mat<double>(num_knots_y, num_knots_x, 0);
+    auto x_knots = vector_mat<double>(
+        model_config.num_knots_y,
+        model_config.num_knots_x,
+        0
+    );
+    auto y_knots = vector_mat<double>(
+        model_config.num_knots_y,
+        model_config.num_knots_x,
+        0
+    );
 
     ceres::Problem problem;
 
     // add all control points (y-major)
-    for (size_t y = 0; y < num_knots_y; ++y) {
-        for (size_t x = 0; x < num_knots_x; ++x) {
+    for (size_t y = 0; y < model_config.num_knots_y; ++y) {
+        for (size_t x = 0; x < model_config.num_knots_x; ++x) {
             problem.AddParameterBlock(&x_knots[y][x], 1);
             problem.AddParameterBlock(&y_knots[y][x], 1);
         }
@@ -204,16 +210,22 @@ py::dict get_matching_spline_distortion_model(
 
             // spline coords in knot index space
             double x_spline =
-                1.0 + (x_normalized - x_range_start) *
-                          (static_cast<double>(num_knots_x) - 3.0) * inv_x_span;
+                1.0 +
+                (x_normalized - x_range_start) *
+                    (static_cast<double>(model_config.num_knots_x) - 3.0) *
+                    inv_x_span;
 
             double y_spline =
-                1.0 + (y_normalized - y_range_start) *
-                          (static_cast<double>(num_knots_y) - 3.0) * inv_y_span;
+                1.0 +
+                (y_normalized - y_range_start) *
+                    (static_cast<double>(model_config.num_knots_y) - 3.0) *
+                    inv_y_span;
 
             const double eps = 1e-12;
-            const double x_max = static_cast<double>(num_knots_x) - 2.0;
-            const double y_max = static_cast<double>(num_knots_y) - 2.0;
+            const double x_max =
+                static_cast<double>(model_config.num_knots_x) - 2.0;
+            const double y_max =
+                static_cast<double>(model_config.num_knots_y) - 2.0;
             x_spline = std::min(std::max(x_spline, 1.0), x_max - eps);
             y_spline = std::min(std::max(y_spline, 1.0), y_max - eps);
 
@@ -282,14 +294,18 @@ py::dict get_matching_spline_distortion_model(
     spdlog::info(summary.BriefReport());
 
     // Return NumPy arrays in y-major shape (Y, X)
-    py::array_t<double> x_array({num_knots_y, num_knots_x});
-    py::array_t<double> y_array({num_knots_y, num_knots_x});
+    py::array_t<double> x_array(
+        {model_config.num_knots_y, model_config.num_knots_x}
+    );
+    py::array_t<double> y_array(
+        {model_config.num_knots_y, model_config.num_knots_x}
+    );
 
     auto x_buf = x_array.mutable_unchecked<2>();
     auto y_buf = y_array.mutable_unchecked<2>();
 
-    for (size_t y = 0; y < num_knots_y; ++y) {
-        for (size_t x = 0; x < num_knots_x; ++x) {
+    for (size_t y = 0; y < model_config.num_knots_y; ++y) {
+        for (size_t x = 0; x < model_config.num_knots_x; ++x) {
             x_buf(y, x) = x_knots[y][x];
             y_buf(y, x) = y_knots[y][x];
         }

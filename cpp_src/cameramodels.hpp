@@ -291,4 +291,11 @@ void project_pinhole_splined(
     result[1] = fy * y_distorted + cy;
 }
 
+struct PinholeSplinedConfig {
+    double fov_deg_x;
+    double fov_deg_y;
+    uint32_t num_knots_x;
+    uint32_t num_knots_y;
+};
+
 }  // namespace camcal
