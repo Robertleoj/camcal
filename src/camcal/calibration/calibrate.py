@@ -84,12 +84,10 @@ def _calibrate_pinhole_splined(
         included_distoriton_coefficients=OpenCVConfig.FULL_12,
     )
 
-    # calibrate using full opencv distortion model
     opencv_calibration_result = _opencv_calibrate(
         target_points, detections, opencv_config
     )
 
-    # Optimize splined distortion to match opencv distortion model
     opencv_model = cast(OpenCV, opencv_calibration_result.optimized_camera_model)
 
     out_dict = cb.get_matching_spline_distortion_model(
@@ -98,9 +96,6 @@ def _calibrate_pinhole_splined(
 
     x_knots = out_dict["x_knots"]
     y_knots = out_dict["y_knots"]
-
-    print(x_knots)
-    print(y_knots)
 
     prior_model = PinholeSplined(
         image_height=config.image_height,
