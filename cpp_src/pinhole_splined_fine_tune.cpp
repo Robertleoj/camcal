@@ -566,21 +566,6 @@ py::dict fine_tune_pinhole_splined(
 
     SplineMap map(model_config);
 
-    // ceres::Solver::Options options;
-    // // options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
-    // // options.sparse_linear_algebra_library_type = ceres::SUITE_SPARSE;
-
-    // options.minimizer_progress_to_stdout = true;
-    // options.use_nonmonotonic_steps = false;
-    // options.num_threads =
-    //     std::min(std::max(1, (int)std::thread::hardware_concurrency()), 16);
-
-    // // IMPORTANT: callback needs this so it sees updated params each iter
-    // options.update_state_every_iteration = true;
-
-    // // inner-iterations per rebuild cycle (you can crank this up)
-    // options.max_num_iterations = 50;
-
     ceres::Solver::Options options;
 
     // No SuiteSparse needed:

@@ -1,7 +1,5 @@
 - Rename to Lens Boy
-- Make it faster somehow
-  - optimize with opencv model, then fit splined model to the opencv model
-  - Then optimize everything with the real data
+- Outlier filtering
 - Make exposed projection functions
 - Make undistortion functions
 - Allow exporting undistortion maps
