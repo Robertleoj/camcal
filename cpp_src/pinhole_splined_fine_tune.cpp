@@ -1,11 +1,12 @@
-#include "./calibrate.hpp"
 #include <ceres/autodiff_cost_function.h>
 #include <ceres/ceres.h>
 #include <ceres/dynamic_autodiff_cost_function.h>
 #include <ceres/rotation.h>
 #include <fmt/format.h>
+#include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 #include <spdlog/spdlog.h>
+#include "./calibrate.hpp"
 #include "./cameramodels.hpp"
 
 namespace camcal {
@@ -214,8 +215,10 @@ struct OptimizationState {
 };
 
 py::dict fine_tune_pinhole_splined(
-    std::vector<double>& intrinsics_initial_value,
-    std::vector<bool>& intrinsics_param_optimize_mask,
+    camcal::PinholeSplinedConfig& model_config,
+    py::array_t<double, py::array::c_style | py::array::forcecast> k4,
+    py::array_t<double, py::array::c_style | py::array::forcecast> dx_grid,
+    py::array_t<double, py::array::c_style | py::array::forcecast> dy_grid,
     std::vector<Vec6<double>>& cameras_from_world,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&

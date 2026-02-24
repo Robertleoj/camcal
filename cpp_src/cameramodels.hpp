@@ -4,7 +4,10 @@
 #include <stdint.h>
 #include <cmath>
 #include "./type_defs.hpp"
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
 
+namespace py = pybind11;
 namespace camcal {
 
 template <typename T>
@@ -296,6 +299,12 @@ struct PinholeSplinedConfig {
     double fov_deg_y;
     uint32_t num_knots_x;
     uint32_t num_knots_y;
+};
+
+struct PinholeSplinedIntrinsicsParameters {
+    py::array_t<double, py::array::c_style | py::array::forcecast> k4;
+    py::array_t<double, py::array::c_style | py::array::forcecast> dx_grid;
+    py::array_t<double, py::array::c_style | py::array::forcecast> dy_grid;
 };
 
 }  // namespace camcal

@@ -35,12 +35,8 @@ class PinholeSplinedConfig(CameraModelConfig):
             fov_deg_y=self.fov_deg_y,
             num_knots_x=self.num_knots_x,
             num_knots_y=self.num_knots_y,
-            undistortion_knots_x=np.zeros(
-                (self.num_knots_x, self.num_knots_y), dtype=float
-            ),
-            undistortion_knots_y=np.zeros(
-                (self.num_knots_x, self.num_knots_y), dtype=float
-            ),
+            dx_grid=np.zeros((self.num_knots_x, self.num_knots_y), dtype=float),
+            dy_grid=np.zeros((self.num_knots_x, self.num_knots_y), dtype=float),
         )
 
     def _cpp_config(self) -> cb.PinholeSplinedConfig:
@@ -56,8 +52,8 @@ class PinholeSplined(CameraModel):
     cx: float
     cy: float
 
-    undistortion_knots_x: Float[np.ndarray, "Ky Kx"]
-    undistortion_knots_y: Float[np.ndarray, "Ky Kx"]
+    dx_grid: Float[np.ndarray, "Ky Kx"]
+    dy_grid: Float[np.ndarray, "Ky Kx"]
 
     num_knots_x: int
     num_knots_y: int
@@ -79,8 +75,8 @@ class PinholeSplined(CameraModel):
             self.fy,
             self.cx,
             self.cy,
-            *self.undistortion_knots_x.ravel().tolist(),
-            *self.undistortion_knots_y.ravel().tolist(),
+        *self.dx_grid.ravel().tolist(),
+            *self.dy_grid.ravel().tolist(),
         ]
 
     def with_params(self, params: list[float]) -> PinholeSplined:
@@ -112,14 +108,20 @@ class PinholeSplined(CameraModel):
             self.fov_deg_x, self.fov_deg_y, self.num_knots_x, self.num_knots_y
         )
 
+    def _k4(self) -> Float[np.ndarray, " 4"]:
+        return np.array([self.fx, self.fy, self.cx, self.cy], dtype=float)
+
+    def _cpp_params(self) -> cb.PinholeSplinedIntrinsicsParameters:
+        return cb.PinholeSplinedIntrinsicsParameters(
+            self._k4(), self.dx_grid, self.dy_grid
+        )
+
     def project_points(
         self,
         points_in_cam: Float[np.ndarray, "N 3"],
     ) -> Float[np.ndarray, "N 2"]:
         return cb.project_pinhole_splined_points(
             self._cpp_config(),
-            np.array([self.fx, self.fy, self.cx, self.cy], dtype=float),
-            dx_grid=self.undistortion_knots_x,
-            dy_grid=self.undistortion_knots_y,
+            self._cpp_params(),
             points_in_camera=points_in_cam,
         )

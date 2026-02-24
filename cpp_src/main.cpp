@@ -49,24 +49,8 @@ PYBIND11_MODULE(
         "project_pinhole_splined_points",
         &camcal::project_pinhole_splined_pywrapper,
         py::arg("model_config"),
-        py::arg("k4"),
-        py::arg("dx_grid"),
-        py::arg("dy_grid"),
-        py::arg("points_in_camera"),
-        R"doc(
-Vectorized pinhole+splined projection over points_in_camera.
-
-Args:
-  fov_deg_x, fov_deg_y: FOV in degrees
-  num_knots_x, num_knots_y: knot grid size
-  k4: numpy array shape (4,) -> [fx, fy, cx, cy]
-  dx_grid: numpy array shape (num_knots_y, num_knots_x), C-order (row-major)
-  dy_grid: numpy array shape (num_knots_y, num_knots_x), C-order (row-major)
-  points_in_camera: numpy array shape (N, 3), C-order
-
-Returns:
-  numpy array shape (N, 2)
-)doc"
+        py::arg("intrinsics"),
+        py::arg("points_in_camera")
     );
 
     py::class_<camcal::PinholeSplinedConfig>(m, "PinholeSplinedConfig")
@@ -96,4 +80,63 @@ Returns:
                 << ", num_knots_y=" << self.num_knots_y << ")";
             return oss.str();
         });
+
+    py::class_<camcal::PinholeSplinedIntrinsicsParameters>(
+        m,
+        "PinholeSplinedIntrinsicsParameters"
+    )
+        .def(
+            py::init([](py::array_t<double> k4,
+                        py::array_t<double> dx_grid,
+                        py::array_t<double> dy_grid) {
+                using A = py::array_t<
+                    double,
+                    py::array::c_style | py::array::forcecast>;
+                auto k4_ = A(k4);
+                auto dx_ = A(dx_grid);
+                auto dy_ = A(dy_grid);
+
+                auto k4b = k4_.request();
+                if (k4b.ndim != 1 || k4b.shape[0] != 4)
+                    throw py::value_error("k4 must have shape (4,)");
+
+                auto dxb = dx_.request();
+                auto dyb = dy_.request();
+                if (dxb.ndim != 2)
+                    throw py::value_error("dx_grid must be a 2D array");
+                if (dyb.ndim != 2)
+                    throw py::value_error("dy_grid must be a 2D array");
+
+                return camcal::PinholeSplinedIntrinsicsParameters{
+                    k4_,
+                    dx_,
+                    dy_};
+            }),
+            py::arg("k4"),
+            py::arg("dx_grid"),
+            py::arg("dy_grid")
+        )
+        .def_readwrite(
+            "k4",
+            &camcal::PinholeSplinedIntrinsicsParameters::k4
+        )
+        .def_readwrite(
+            "dx_grid",
+            &camcal::PinholeSplinedIntrinsicsParameters::dx_grid
+        )
+        .def_readwrite(
+            "dy_grid",
+            &camcal::PinholeSplinedIntrinsicsParameters::dy_grid
+        )
+        .def(
+            "__repr__",
+            [](const camcal::PinholeSplinedIntrinsicsParameters& self) {
+                auto dxb = self.dx_grid.request();
+                std::ostringstream oss;
+                oss << "PinholeSplinedIntrinsicsParameters("
+                    << "dx_grid_shape=(" << dxb.shape[0] << ", "
+                    << dxb.shape[1] << "))";
+                return oss.str();
+            }
+        );
 }
