@@ -3,11 +3,10 @@
 #include <ceres/dynamic_autodiff_cost_function.h>
 #include <ceres/rotation.h>
 #include <fmt/format.h>
-#include <pybind11/numpy.h>
-#include <pybind11/stl.h>
 #include <spdlog/spdlog.h>
 #include "./calibrate.hpp"
 #include "./cameramodels.hpp"
+#include "./pybind_utils.hpp"
 
 namespace camcal {
 
@@ -132,47 +131,6 @@ struct SplineZeroPrior {
     double sqrt_lambda;
 };
 
-struct OptimizationState {
-    std::vector<double> intrinsics;
-    std::vector<std::vector<double>> cameras_from_world;
-    std::vector<std::vector<double>> target_points;
-
-    static OptimizationState from_calibrate_camera_input(
-        std::vector<double>& intrinsics_initial_value,
-        std::vector<Vec6<double>>& cameras_from_world,
-        std::vector<Vec3<double>>& target_points
-    ) {
-        std::vector<std::vector<double>> camera_poses_out;
-        for (auto& vec : cameras_from_world) {
-            camera_poses_out.push_back(
-                std::vector<double>(vec.data(), vec.data() + vec.size())
-            );
-        }
-
-        std::vector<std::vector<double>> target_points_out;
-        for (auto& vec : target_points) {
-            target_points_out.push_back(
-                std::vector<double>(vec.data(), vec.data() + vec.size())
-            );
-        }
-
-        return OptimizationState{
-            intrinsics_initial_value,
-            std::move(camera_poses_out),
-            std::move(target_points_out),
-        };
-    }
-
-    py::dict make_dict() {
-        py::dict result;
-
-        result["intrinsics"] = this->intrinsics;
-        result["cameras_from_world"] = this->cameras_from_world;
-
-        return result;
-    }
-};
-
 py::dict fine_tune_pinhole_splined(
     camcal::PinholeSplinedConfig& model_config,
     camcal::PinholeSplinedIntrinsicsParameters& intrinsics_parameters,
@@ -183,50 +141,41 @@ py::dict fine_tune_pinhole_splined(
 ) {
     ceres::Problem problem;
 
-    OptimizationState state = OptimizationState::from_calibrate_camera_input(
-        intrinsics_initial_value,
-        cameras_from_world,
-        target_points
+    // --- grids: must match model_config dimensions ---
+    auto dxb = intrinsics_parameters.dx_grid.request();
+    auto dyb = intrinsics_parameters.dy_grid.request();
+    require(
+        (uint32_t)dxb.shape[0] == model_config.num_knots_y &&
+            (uint32_t)dxb.shape[1] == model_config.num_knots_x,
+        "dx_grid must have shape (num_knots_y, num_knots_x)"
+    );
+    require(
+        (uint32_t)dyb.shape[0] == model_config.num_knots_y &&
+            (uint32_t)dyb.shape[1] == model_config.num_knots_x,
+        "dy_grid must have shape (num_knots_y, num_knots_x)"
     );
 
-    double* intr = state.intrinsics.data();
-    const int intr_size = (int)state.intrinsics.size();
-
-    double* k4 = intr;  // [0..3]
-
-    double* x_knots = nullptr;
-    double* y_knots = nullptr;
-    int n_knots = 0;
+    double* k4p = static_cast<double*>(intrinsics_parameters.k4.request().ptr);
+    double* dxp = static_cast<double*>(dxb.ptr);
+    double* dyp = static_cast<double*>(dyb.ptr);
 
     const int nx = model_config.num_knots_x;
     const int ny = model_config.num_knots_y;
 
-    n_knots = nx * ny;
-
-    x_knots = intr + 4;
-    y_knots = intr + 4 + n_knots;
+    int n_knots = nx * ny;
 
     // 3 separate parameter blocks
-    problem.AddParameterBlock(k4, 4);
-    problem.AddParameterBlock(x_knots, n_knots);
-    problem.AddParameterBlock(y_knots, n_knots);
+    problem.AddParameterBlock(k4p, 4);
+    problem.AddParameterBlock(dxp, n_knots);
+    problem.AddParameterBlock(dyp, n_knots);
 
-    // SubsetManifold for each block using the *same* optimize mask you
-    // already have
-    std::vector<int> fixed_k4, fixed_x, fixed_y;
-    fixed_k4.reserve(4);
-    fixed_x.reserve(n_knots);
-    fixed_y.reserve(n_knots);
+    problem.SetParameterBlockConstant(k4p);
 
-    problem.SetManifold(k4, new ceres::SubsetManifold(4, fixed_k4));
-    problem.SetManifold(x_knots, new ceres::SubsetManifold(n_knots, fixed_x));
-    problem.SetManifold(y_knots, new ceres::SubsetManifold(n_knots, fixed_y));
-
-    for (auto& cam : state.cameras_from_world) {
+    for (auto& cam : cameras_from_world) {
         problem.AddParameterBlock(cam.data(), cam.size());
     }
 
-    for (auto& pt : state.target_points) {
+    for (auto& pt : target_points) {
         problem.AddParameterBlock(pt.data(), pt.size());
 
         // don't optimize target points
@@ -241,15 +190,14 @@ py::dict fine_tune_pinhole_splined(
         auto& target_point_indices = std::get<0>(detections[camera_idx]);
         auto& observations = std::get<1>(detections[camera_idx]);
 
-        auto& camera_pose = state.cameras_from_world[camera_idx];
+        auto& camera_pose = cameras_from_world[camera_idx];
 
         size_t num_observations = observations.size();
 
         for (size_t observation_idx = 0; observation_idx < num_observations;
              observation_idx++) {
             auto& observation = observations[observation_idx];
-            auto& target =
-                state.target_points[target_point_indices[observation_idx]];
+            auto& target = target_points[target_point_indices[observation_idx]];
 
             problem.AddResidualBlock(
                 ReprojectionError::create(
@@ -258,9 +206,9 @@ py::dict fine_tune_pinhole_splined(
                     observation(1, 0)
                 ),
                 nullptr,
-                k4,
-                x_knots,
-                y_knots,
+                k4p,
+                dxp,
+                dyp,
                 camera_pose.data(),
                 target.data()
             );
@@ -269,13 +217,11 @@ py::dict fine_tune_pinhole_splined(
 
     const double lambda = 1e-5;
 
-    const int intrinsics_size = static_cast<int>(state.intrinsics.size());
-
     problem.AddResidualBlock(
         SplineZeroPrior::create(nx, ny, lambda),
         nullptr,
-        x_knots,
-        y_knots
+        dxp,
+        dyp
     );
     spdlog::info("Added spline zero prior: lambda={}", lambda);
 
@@ -295,8 +241,6 @@ py::dict fine_tune_pinhole_splined(
 
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
-
-    return state.make_dict();
 }
 
 }  // namespace camcal

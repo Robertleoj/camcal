@@ -1,4 +1,3 @@
-// pybind_project_pinhole_splined.cpp
 #include "./pybind_utils.hpp"
 #include "cameramodels.hpp"
 
@@ -34,10 +33,10 @@ static py::array_t<double> project_pinhole_splined_pywrapper(
 
     const ssize_t N = pb.shape[0];
 
-    const auto* k4p = static_cast<const double*>(intrinsics.k4.request().ptr);
-    const auto* dxp = static_cast<const double*>(dxb.ptr);
-    const auto* dyp = static_cast<const double*>(dyb.ptr);
-    const auto* P = static_cast<const double*>(pb.ptr);
+    const double* k4p = static_cast<const double*>(intrinsics.k4.request().ptr);
+    const double* dxp = static_cast<const double*>(dxb.ptr);
+    const double* dyp = static_cast<const double*>(dyb.ptr);
+    const double* P = static_cast<const double*>(pb.ptr);
 
     // Output: (N, 2), C contiguous
     py::array_t<double> out({N, (ssize_t)2});
@@ -54,10 +53,7 @@ static py::array_t<double> project_pinhole_splined_pywrapper(
 
         Vec2<double> r;
         project_pinhole_splined<double>(
-            model_config.fov_deg_x,
-            model_config.fov_deg_y,
-            model_config.num_knots_x,
-            model_config.num_knots_y,
+            &model_config,
             k4p,  // fx, fy, cx, cy
             dxp,  // row-major contiguous (C-order)
             dyp,  // row-major contiguous (C-order)
