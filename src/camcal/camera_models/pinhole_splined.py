@@ -43,6 +43,11 @@ class PinholeSplinedConfig(CameraModelConfig):
             ),
         )
 
+    def _cpp_config(self) -> cb.PinholeSplinedConfig:
+        return cb.PinholeSplinedConfig(
+            self.fov_deg_x, self.fov_deg_y, self.num_knots_x, self.num_knots_y
+        )
+
 
 @dataclass
 class PinholeSplined(CameraModel):
@@ -102,15 +107,17 @@ class PinholeSplined(CameraModel):
             undistortion_knots_y=y_knots,
         )
 
+    def _cpp_config(self) -> cb.PinholeSplinedConfig:
+        return cb.PinholeSplinedConfig(
+            self.fov_deg_x, self.fov_deg_y, self.num_knots_x, self.num_knots_y
+        )
+
     def project_points(
         self,
         points_in_cam: Float[np.ndarray, "N 3"],
     ) -> Float[np.ndarray, "N 2"]:
         return cb.project_pinhole_splined_points(
-            self.fov_deg_x,
-            self.fov_deg_y,
-            self.num_knots_x,
-            self.num_knots_y,
+            self._cpp_config(),
             np.array([self.fx, self.fy, self.cx, self.cy], dtype=float),
             dx_grid=self.undistortion_knots_x,
             dy_grid=self.undistortion_knots_y,
