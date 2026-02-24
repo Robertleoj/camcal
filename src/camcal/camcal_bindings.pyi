@@ -6,7 +6,7 @@ import collections.abc
 import numpy
 import numpy.typing
 import typing
-__all__: list[str] = ['PinholeSplinedConfig', 'PinholeSplinedIntrinsicsParameters', 'add', 'calibrate_opencv', 'get_matching_spline_distortion_model', 'project_pinhole_splined_points']
+__all__: list[str] = ['PinholeSplinedConfig', 'PinholeSplinedIntrinsicsParameters', 'add', 'calibrate_opencv', 'fine_tune_pinhole_splined', 'get_matching_spline_distortion_model', 'project_pinhole_splined_points']
 class PinholeSplinedConfig:
     def __init__(self, fov_deg_x: typing.SupportsFloat, fov_deg_y: typing.SupportsFloat, num_knots_x: typing.SupportsInt, num_knots_y: typing.SupportsInt) -> None:
         ...
@@ -64,6 +64,8 @@ def add(a: typing.SupportsInt, b: typing.SupportsInt) -> int:
     Add two integers together - test
     """
 def calibrate_opencv(intrinsics_initial_value: collections.abc.Sequence[typing.SupportsFloat], intrinsics_param_optimize_mask: collections.abc.Sequence[bool], cameras_from_world: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"]], target_points: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]], detections: collections.abc.Sequence[tuple[collections.abc.Sequence[typing.SupportsInt], collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]]]]) -> dict:
+    ...
+def fine_tune_pinhole_splined(model_config: ..., intrinsics_parameters: ..., cameras_from_world: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"]], target_points: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]], detections: collections.abc.Sequence[tuple[collections.abc.Sequence[typing.SupportsInt], collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]]]]) -> dict:
     ...
 def get_matching_spline_distortion_model(opencv_distortion_params: collections.abc.Sequence[typing.SupportsFloat], model_config: ...) -> dict:
     ...

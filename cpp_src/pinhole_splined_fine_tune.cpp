@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 #include "./calibrate.hpp"
 #include "./cameramodels.hpp"
+#include "./ceres_geometry.hpp"
 #include "./pybind_utils.hpp"
 
 namespace camcal {
@@ -84,15 +85,19 @@ struct ReprojectionError {
     double observed_y;
 };
 
-struct SplineZeroPrior {
-    SplineZeroPrior(
+struct SplineInitialValuePrior {
+    SplineInitialValuePrior(
         int nx,
         int ny,
-        double lambda
+        double lambda,
+        std::vector<double> x_initial,
+        std::vector<double> y_initial
     )
         : nx(nx),
           ny(ny),
-          sqrt_lambda(std::sqrt(lambda)) {}
+          sqrt_lambda(std::sqrt(lambda)),
+          x_initial(std::move(x_initial)),
+          y_initial(std::move(y_initial)) {}
 
     template <typename T>
     bool operator()(
@@ -104,10 +109,10 @@ struct SplineZeroPrior {
         const int n = nx * ny;
 
         for (int i = 0; i < n; ++i) {
-            residuals[i] = T(sqrt_lambda) * x[i];
+            residuals[i] = T(sqrt_lambda) * (x[i] - T(x_initial[i]));
         }
         for (int i = 0; i < n; ++i) {
-            residuals[n + i] = T(sqrt_lambda) * y[i];
+            residuals[n + i] = T(sqrt_lambda) * (y[i] - T(y_initial[i]));
         }
         return true;
     }
@@ -115,11 +120,20 @@ struct SplineZeroPrior {
     static ceres::CostFunction* create(
         int nx,
         int ny,
-        double lambda
+        double lambda,
+        const double* dxp,
+        const double* dyp
     ) {
         const int n = nx * ny;
-        using CostT = ceres::DynamicAutoDiffCostFunction<SplineZeroPrior, 2>;
-        auto* cost = new CostT(new SplineZeroPrior(nx, ny, lambda));
+        using CostT =
+            ceres::DynamicAutoDiffCostFunction<SplineInitialValuePrior, 2>;
+        auto* cost = new CostT(new SplineInitialValuePrior(
+            nx,
+            ny,
+            lambda,
+            std::vector<double>(dxp, dxp + n),
+            std::vector<double>(dyp, dyp + n)
+        ));
         cost->AddParameterBlock(n);  // x_knots
         cost->AddParameterBlock(n);  // y_knots
         cost->SetNumResiduals(2 * n);
@@ -129,6 +143,8 @@ struct SplineZeroPrior {
     int nx;
     int ny;
     double sqrt_lambda;
+    std::vector<double> x_initial;
+    std::vector<double> y_initial;
 };
 
 py::dict fine_tune_pinhole_splined(
@@ -218,7 +234,7 @@ py::dict fine_tune_pinhole_splined(
     const double lambda = 1e-5;
 
     problem.AddResidualBlock(
-        SplineZeroPrior::create(nx, ny, lambda),
+        SplineInitialValuePrior::create(nx, ny, lambda, dxp, dyp),
         nullptr,
         dxp,
         dyp
@@ -248,7 +264,9 @@ py::dict fine_tune_pinhole_splined(
 
     std::vector<std::vector<double>> poses_out;
     for (auto& cam : cameras_from_world) {
-        poses_out.push_back(std::vector<double>(cam.data(), cam.data() + cam.size()));
+        poses_out.push_back(
+            std::vector<double>(cam.data(), cam.data() + cam.size())
+        );
     }
     out["cameras_from_world"] = poses_out;
 

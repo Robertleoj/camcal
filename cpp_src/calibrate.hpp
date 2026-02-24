@@ -25,4 +25,13 @@ py::dict get_matching_spline_distortion_model(
     PinholeSplinedConfig& model_config
 );
 
+py::dict fine_tune_pinhole_splined(
+    PinholeSplinedConfig& model_config,
+    PinholeSplinedIntrinsicsParameters& intrinsics_parameters,
+    std::vector<Vec6<double>>& cameras_from_world,
+    std::vector<Vec3<double>>& target_points,
+    std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
+        detections
+);
+
 }  // namespace camcal

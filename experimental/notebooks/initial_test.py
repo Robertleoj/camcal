@@ -135,11 +135,8 @@ camera_pose = calibration_result.optimized_cameras_from_world[test_sample_idx]
 # %%
 intrinsics = calibration_result.optimized_camera_model
 
-camera_matrix = np.array([
-    [intrinsics.fx, 0, intrinsics.cx],
-    [0, intrinsics.fy, intrinsics.cy],
-    [0, 0, 1]
-])
+# %%
+intrinsics.dx_grid
 
 # %%
 projected = []
@@ -148,13 +145,10 @@ for pt_idx in detection.point_ids:
     pt_world = obj_points[pt_idx]
     pt_cam = camera_pose.apply1(pt_world)
 
-    img_pt = cv2.projectPoints(
+
+    img_pt = intrinsics.project_points(
         pt_cam[None, :],
-        rvec=np.zeros(3),
-        tvec=np.zeros(3),
-        cameraMatrix=camera_matrix,
-        distCoeffs=intrinsics.distortion_coeffs
-    )[0]
+    )
 
     projected.append(img_pt.squeeze())
 
@@ -180,13 +174,10 @@ for i, detection in enumerate(detections):
     points_in_cam = camera_pose.apply(points_in_world)
 
 
-    projected = cv2.projectPoints(
-        points_in_cam.astype(np.float32),
-        rvec=np.zeros(3),
-        tvec=np.zeros(3),
-        cameraMatrix=camera_matrix,
-        distCoeffs=intrinsics.distortion_coeffs
-    )[0].reshape(-1, 2)
+    projected = intrinsics.project_points(
+        points_in_cam.astype(np.float32)
+    )
+
 
     measured = detection.points
 

@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import cast
 
 import numpy as np
@@ -102,7 +102,7 @@ def _calibrate_pinhole_splined(
     print(x_knots)
     print(y_knots)
 
-    output_model = PinholeSplined(
+    prior_model = PinholeSplined(
         image_height=config.image_height,
         image_width=config.image_width,
         fx=opencv_model.fx,
@@ -117,12 +117,29 @@ def _calibrate_pinhole_splined(
         fov_deg_y=config.fov_deg_y,
     )
 
-    return CalibrationResult(
-        output_model, opencv_calibration_result.optimized_cameras_from_world
+    fine_tune_result = cb.fine_tune_pinhole_splined(
+        model_config=prior_model._cpp_config(),
+        intrinsics_parameters=prior_model._cpp_params(),
+        cameras_from_world=[
+            pose.to_cpp()
+            for pose in opencv_calibration_result.optimized_cameras_from_world
+        ],
+        target_points=list(target_points),
+        detections=[d.to_cpp() for d in detections],
     )
 
-    # Final, full bundle adjustment to fine-tune the spline model.
-    # should have a prior to stay at the opencv distortion values
+    cameras_from_world = [
+        Pose.from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_world"]
+    ]
+
+    fine_tuned_dx_grid = fine_tune_result["dx_grid"]
+    fine_tuned_dy_grid = fine_tune_result["dy_grid"]
+
+    final_model = replace(
+        prior_model, dx_grid=fine_tuned_dx_grid, dy_grid=fine_tuned_dy_grid
+    )
+
+    return CalibrationResult(final_model, cameras_from_world)
 
 
 def calibrate_camera(

@@ -46,6 +46,16 @@ PYBIND11_MODULE(
     );
 
     m.def(
+        "fine_tune_pinhole_splined",
+        &camcal::fine_tune_pinhole_splined,
+        py::arg("model_config"),
+        py::arg("intrinsics_parameters"),
+        py::arg("cameras_from_world"),
+        py::arg("target_points"),
+        py::arg("detections")
+    );
+
+    m.def(
         "project_pinhole_splined_points",
         &camcal::project_pinhole_splined_pywrapper,
         py::arg("model_config"),
@@ -89,37 +99,37 @@ PYBIND11_MODULE(
             py::init([](py::array_t<double> k4,
                         py::array_t<double> dx_grid,
                         py::array_t<double> dy_grid) {
-                using A = py::array_t<
-                    double,
-                    py::array::c_style | py::array::forcecast>;
+                using A = py::
+                    array_t<double, py::array::c_style | py::array::forcecast>;
                 auto k4_ = A(k4);
                 auto dx_ = A(dx_grid);
                 auto dy_ = A(dy_grid);
 
                 auto k4b = k4_.request();
-                if (k4b.ndim != 1 || k4b.shape[0] != 4)
+                if (k4b.ndim != 1 || k4b.shape[0] != 4) {
                     throw py::value_error("k4 must have shape (4,)");
+                }
 
                 auto dxb = dx_.request();
                 auto dyb = dy_.request();
-                if (dxb.ndim != 2)
+                if (dxb.ndim != 2) {
                     throw py::value_error("dx_grid must be a 2D array");
-                if (dyb.ndim != 2)
+                }
+                if (dyb.ndim != 2) {
                     throw py::value_error("dy_grid must be a 2D array");
+                }
 
                 return camcal::PinholeSplinedIntrinsicsParameters{
                     k4_,
                     dx_,
-                    dy_};
+                    dy_
+                };
             }),
             py::arg("k4"),
             py::arg("dx_grid"),
             py::arg("dy_grid")
         )
-        .def_readwrite(
-            "k4",
-            &camcal::PinholeSplinedIntrinsicsParameters::k4
-        )
+        .def_readwrite("k4", &camcal::PinholeSplinedIntrinsicsParameters::k4)
         .def_readwrite(
             "dx_grid",
             &camcal::PinholeSplinedIntrinsicsParameters::dx_grid
@@ -134,8 +144,8 @@ PYBIND11_MODULE(
                 auto dxb = self.dx_grid.request();
                 std::ostringstream oss;
                 oss << "PinholeSplinedIntrinsicsParameters("
-                    << "dx_grid_shape=(" << dxb.shape[0] << ", "
-                    << dxb.shape[1] << "))";
+                    << "dx_grid_shape=(" << dxb.shape[0] << ", " << dxb.shape[1]
+                    << "))";
                 return oss.str();
             }
         );
