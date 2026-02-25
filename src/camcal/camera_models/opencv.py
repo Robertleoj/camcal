@@ -50,10 +50,6 @@ class OpenCVConfig(CameraModelConfig):
             distortion_coeffs=np.zeros(12, dtype=np.float64),
         )
 
-    @staticmethod
-    def camera_model_class():
-        return OpenCV
-
 
 @dataclass
 class OpenCV(CameraModel):
@@ -67,10 +63,6 @@ class OpenCV(CameraModel):
     @staticmethod
     def _camera_model_name() -> str:
         return "opencv"
-
-    @staticmethod
-    def config_class():
-        return OpenCVConfig
 
     def params(self):
         return [self.fx, self.fy, self.cx, self.cy, *self.distortion_coeffs]

@@ -19,10 +19,6 @@ class PinholeSplinedConfig(CameraModelConfig):
     num_knots_x: int
     num_knots_y: int
 
-    @staticmethod
-    def camera_model_class():
-        return PinholeSplined
-
     def get_initial_value(self) -> PinholeSplined:
         return PinholeSplined(
             image_height=self.image_height,
@@ -65,17 +61,13 @@ class PinholeSplined(CameraModel):
     def _camera_model_name() -> str:
         return "pinhole_splined"
 
-    @staticmethod
-    def config_class():
-        return PinholeSplinedConfig
-
     def params(self):
         return [
             self.fx,
             self.fy,
             self.cx,
             self.cy,
-        *self.dx_grid.ravel().tolist(),
+            *self.dx_grid.ravel().tolist(),
             *self.dy_grid.ravel().tolist(),
         ]
 

@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass, replace
-from typing import cast
+from typing import Generic, TypeVar, cast, overload
 
 import numpy as np
 from jaxtyping import Float, Int
@@ -23,9 +23,12 @@ class Detection:
         return (self.point_ids.tolist(), list(self.points))
 
 
+T = TypeVar("T", bound=CameraModel)
+
+
 @dataclass
-class CalibrationResult:
-    optimized_camera_model: CameraModel
+class CalibrationResult(Generic[T]):
+    optimized_camera_model: T
     optimized_cameras_from_world: list[Pose]
 
 
@@ -76,7 +79,7 @@ def _calibrate_pinhole_splined(
     target_points: Float[np.ndarray, "N 3"],
     detections: list[Detection],
     config: PinholeSplinedConfig,
-) -> CalibrationResult:
+) -> CalibrationResult[PinholeSplined]:
     opencv_config = OpenCVConfig(
         image_height=config.image_height,
         image_width=config.image_width,
@@ -135,6 +138,22 @@ def _calibrate_pinhole_splined(
     )
 
     return CalibrationResult(final_model, cameras_from_world)
+
+
+@overload
+def calibrate_camera(
+    target_points,
+    detections,
+    camera_model_config: PinholeSplinedConfig,
+) -> CalibrationResult[PinholeSplined]: ...
+
+
+@overload
+def calibrate_camera(
+    target_points,
+    detections,
+    camera_model_config: OpenCVConfig,
+) -> CalibrationResult[OpenCV]: ...
 
 
 def calibrate_camera(
