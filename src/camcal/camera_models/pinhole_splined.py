@@ -12,6 +12,9 @@ from camcal.camera_models.pinhole_remapped import PinholeRemapped
 
 @dataclass
 class PinholeSplinedConfig(CameraModelConfig):
+    image_height: int
+    image_width: int
+
     initial_focal_length: float
 
     fov_deg_x: float

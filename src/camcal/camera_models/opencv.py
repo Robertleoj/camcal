@@ -20,6 +20,9 @@ def _mask(*idx: int) -> Bool[np.ndarray, 12]:
 
 @dataclass
 class OpenCVConfig(CameraModelConfig):
+    image_height: int
+    image_width: int
+
     initial_focal_length: float
     included_distoriton_coefficients: Bool[np.ndarray, " 12"] = field(
         default_factory=lambda: OpenCVConfig.STANDARD

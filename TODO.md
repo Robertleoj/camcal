@@ -6,3 +6,4 @@
 - Write good README
 - Package and publish on pypi
 - remove logging, so the user doesn't get spammed
+- Implement saving and loading the models (json works)

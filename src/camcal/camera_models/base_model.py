@@ -6,9 +6,6 @@ from dataclasses import dataclass
 
 @dataclass
 class CameraModelConfig(ABC):
-    image_height: int
-    image_width: int
-
     @abstractmethod
     def get_initial_value(self) -> CameraModel: ...
 
