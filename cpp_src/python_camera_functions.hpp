@@ -71,7 +71,9 @@ static py::array_t<double> project_pinhole_splined_pywrapper(
 
 static py::tuple make_undistortion_maps_pinhole_splined(
     camcal::PinholeSplinedConfig& model_config,
-    camcal::PinholeSplinedIntrinsicsParameters& intrinsics
+    camcal::PinholeSplinedIntrinsicsParameters& intrinsics,
+    py::array_t<double, py::array::c_style | py::array::forcecast> k4,
+    std::pair<int, int> image_size_wh
 ) {
     // --- grids: must match model_config dimensions ---
     auto dxb = intrinsics.dx_grid.request();
@@ -90,22 +92,47 @@ static py::tuple make_undistortion_maps_pinhole_splined(
     const int Nx = (int)model_config.num_knots_x;
     const int Ny = (int)model_config.num_knots_y;
 
-    const double* k4p = static_cast<const double*>(intrinsics.k4.request().ptr);
-    const double fx = k4p[0];
-    const double fy = k4p[1];
-    const double cx = k4p[2];
-    const double cy = k4p[3];
+    // Distorted/input camera k4 (used for mapping into source image)
+    auto k4b_in = intrinsics.k4.request();
+    require(
+        k4b_in.ndim == 1 && k4b_in.shape[0] == 4,
+        "intrinsics.k4 must have shape (4,)"
+    );
+    const double* k4_in = static_cast<const double*>(k4b_in.ptr);
+
+    const double fx_in = k4_in[0];
+    const double fy_in = k4_in[1];
+    const double cx_in = k4_in[2];
+    const double cy_in = k4_in[3];
+    require(
+        fx_in != 0.0 && fy_in != 0.0,
+        "intrinsics.k4 fx/fy must be non-zero"
+    );
+
+    // Undistorted/output camera k4 (controls output view)
+    double k4_out_storage[4];
+
+    auto k4b = k4.request();
+    require(k4b.ndim == 1 && k4b.shape[0] == 4, "new_k4 must have shape (4,)");
+    const double* p = static_cast<const double*>(k4b.ptr);
+    for (int i = 0; i < 4; ++i) {
+        k4_out_storage[i] = p[i];
+    }
+    const double* k4_out = k4_out_storage;
+
+    const double fx_out = k4_out[0];
+    const double fy_out = k4_out[1];
+    const double cx_out = k4_out[2];
+    const double cy_out = k4_out[3];
+    require(fx_out != 0.0 && fy_out != 0.0, "new_k4 fx/fy must be non-zero");
 
     const double* dxp = static_cast<const double*>(dxb.ptr);
     const double* dyp = static_cast<const double*>(dyb.ptr);
 
-    // --- output image size ---
-    // Assumes model_config has image_width/image_height (common pattern).
-    const int W = (int)model_config.image_width;
-    const int H = (int)model_config.image_height;
-    require(W > 0 && H > 0, "model_config.image_width/height must be > 0");
+    int W = image_size_wh.first;
+    int H = image_size_wh.second;
 
-    // Output maps: float32 (what cv2.remap likes)
+    require(W > 0 && H > 0, "Image width/height must be > 0");
     py::array_t<float> map_x({(ssize_t)H, (ssize_t)W});
     py::array_t<float> map_y({(ssize_t)H, (ssize_t)W});
     auto mx = map_x.request();
@@ -113,7 +140,7 @@ static py::tuple make_undistortion_maps_pinhole_splined(
     float* MX = static_cast<float*>(mx.ptr);
     float* MY = static_cast<float*>(my.ptr);
 
-    // Precompute spline domain mapping terms (same as project_pinhole_splined)
+    // Precompute spline domain mapping terms
     const double fov_rad_x = model_config.fov_deg_x * M_PI / 180.0;
     const double fov_rad_y = model_config.fov_deg_y * M_PI / 180.0;
     const double half_x_range = std::tan(fov_rad_x / 2.0);
@@ -128,20 +155,15 @@ static py::tuple make_undistortion_maps_pinhole_splined(
     const double inv_y_span = 1.0 / (y_range_end - y_range_start);
 
     for (int y = 0; y < H; ++y) {
-        // ideal/undistorted normalized y for this row (pinhole)
-        const double y_norm = (double(y) - cy) / fy;
-
+        const double y_norm = (double(y) - cy_out) / fy_out;
         for (int x = 0; x < W; ++x) {
-            const double x_norm = (double(x) - cx) / fx;
+            const double x_norm = (double(x) - cx_out) / fx_out;
 
-            // map normalized coords -> spline coords (control points at integer
-            // coords)
             const double x_spline =
                 1.0 + (x_norm - x_range_start) * double(Nx - 3) * inv_x_span;
             const double y_spline =
                 1.0 + (y_norm - y_range_start) * double(Ny - 3) * inv_y_span;
 
-            // forward distortion in normalized plane
             const double dx = eval_bspline2d_uniform_cubic_clamped(
                 dxp,
                 Nx,
@@ -160,13 +182,9 @@ static py::tuple make_undistortion_maps_pinhole_splined(
             const double x_dist = x_norm + dx;
             const double y_dist = y_norm + dy;
 
-            // back to pixels => source coords in *distorted* image
-            const float u_src = (float)(fx * x_dist + cx);
-            const float v_src = (float)(fy * y_dist + cy);
-
             const int idx = y * W + x;
-            MX[idx] = u_src;
-            MY[idx] = v_src;
+            MX[idx] = (float)(fx_in * x_dist + cx_in);
+            MY[idx] = (float)(fy_in * y_dist + cy_in);
         }
     }
 

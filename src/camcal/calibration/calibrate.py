@@ -40,7 +40,7 @@ def _opencv_calibrate(
     num_cameras = len(detections)
 
     initial_intrinsics = config.get_initial_value()
-    initial_params = initial_intrinsics.params()
+    initial_params = initial_intrinsics._params()
 
     mask = config.optimize_mask()
     if mask is None:
@@ -63,7 +63,7 @@ def _opencv_calibrate(
         detections=[d.to_cpp() for d in detections],
     )
 
-    optimized_intrinsics = initial_intrinsics.with_params(result["intrinsics"])
+    optimized_intrinsics = initial_intrinsics._with_params(result["intrinsics"])
 
     cameras_from_world = [
         Pose.from_cpp(np.array(a)) for a in result["cameras_from_world"]

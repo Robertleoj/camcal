@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import numpy as np
-from functools import cached_property
 from jaxtyping import Float
 
 from camcal import camcal_bindings as cb
 from camcal.camera_models.base_model import CameraModel, CameraModelConfig
+from camcal.camera_models.pinhole_remapped import PinholeRemapped
 
 
 @dataclass
@@ -49,6 +49,9 @@ class PinholeSplinedConfig(CameraModelConfig):
 
 @dataclass
 class PinholeSplined(CameraModel):
+    image_width: int
+    image_height: int
+
     fx: float
     fy: float
     cx: float
@@ -67,40 +70,6 @@ class PinholeSplined(CameraModel):
     def _camera_model_name() -> str:
         return "pinhole_splined"
 
-    def params(self):
-        return [
-            self.fx,
-            self.fy,
-            self.cx,
-            self.cy,
-            *self.dx_grid.ravel().tolist(),
-            *self.dy_grid.ravel().tolist(),
-        ]
-
-    def with_params(self, params: list[float]) -> PinholeSplined:
-        fx, fy, cx, cy = params[:4]
-
-        params = params[4:]
-
-        total_knots_per_map = self.num_knots_x * self.num_knots_y
-
-        x_knots_list = params[:total_knots_per_map]
-        params = params[total_knots_per_map:]
-        y_knots_list = params[:total_knots_per_map]
-
-        x_knots = np.array(x_knots_list).reshape(self.num_knots_y, self.num_knots_x)
-        y_knots = np.array(y_knots_list).reshape(self.num_knots_y, self.num_knots_x)
-
-        return replace(
-            self,
-            fx=fx,
-            fy=fy,
-            cx=cx,
-            cy=cy,
-            undistortion_knots_x=x_knots,
-            undistortion_knots_y=y_knots,
-        )
-
     def _cpp_config(self) -> cb.PinholeSplinedConfig:
         return cb.PinholeSplinedConfig(
             self.image_width,
@@ -110,9 +79,6 @@ class PinholeSplined(CameraModel):
             self.num_knots_x,
             self.num_knots_y,
         )
-
-    def _k4(self) -> Float[np.ndarray, " 4"]:
-        return np.array([self.fx, self.fy, self.cx, self.cy], dtype=float)
 
     def _cpp_params(self) -> cb.PinholeSplinedIntrinsicsParameters:
         return cb.PinholeSplinedIntrinsicsParameters(
@@ -129,19 +95,40 @@ class PinholeSplined(CameraModel):
             points_in_camera=points_in_cam,
         )
 
-    def _get_K(self) -> Float[np.ndarray, "3 3"]:
-        return np.array(
-            [[self.fx, 0, self.cx], [self.fy, 0, self.cy], [0, 0, 1]], dtype=float
-        )
+    def _k4(self):
+        return (self.fx, self.fy, self.cx, self.cy)
 
-    def get_undistortion_maps(
-        self, *args, **kwargs
-    ) -> tuple[
-        Float[np.ndarray, "3 3"], Float[np.ndarray, "H w"], Float[np.ndarray, "H w"]
-    ]:
-        K = self._get_K()
+    def get_pinhole_model(
+        self,
+        new_k4: tuple[float, float, float, float] | None = None,
+        new_image_size_wh: tuple[int, int] | None = None,
+    ) -> PinholeRemapped:
+        if new_k4 is not None:
+            k4 = new_k4
+        else:
+            k4 = self._k4()
+
+        if new_image_size_wh is not None:
+            image_wh = new_image_size_wh
+        else:
+            image_wh = (self.image_width, self.image_height)
+
         map_x, map_y = cb.make_undistortion_maps_pinhole_splined(
-            self._cpp_config(), self._cpp_params()
+            self._cpp_config(),
+            self._cpp_params(),
+            np.array(k4, dtype=float),
+            new_image_size_wh=image_wh,
         )
 
-        return K, map_x, map_y
+        return PinholeRemapped(
+            image_width=image_wh[0],
+            image_height=image_wh[1],
+            input_image_width=self.image_width,
+            input_image_height=self.image_height,
+            fx=k4[0],
+            fy=k4[1],
+            cx=k4[2],
+            cy=k4[3],
+            map_x=map_x,
+            map_y=map_y,
+        )

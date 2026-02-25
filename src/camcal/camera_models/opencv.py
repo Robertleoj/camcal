@@ -53,6 +53,9 @@ class OpenCVConfig(CameraModelConfig):
 
 @dataclass
 class OpenCV(CameraModel):
+    image_width: int
+    image_height: int
+
     fx: float
     fy: float
     cx: float
@@ -60,14 +63,10 @@ class OpenCV(CameraModel):
 
     distortion_coeffs: Float[np.ndarray, " 12"]
 
-    @staticmethod
-    def _camera_model_name() -> str:
-        return "opencv"
-
-    def params(self):
+    def _params(self):
         return [self.fx, self.fy, self.cx, self.cy, *self.distortion_coeffs]
 
-    def with_params(self, params: list[float]) -> CameraModel:
+    def _with_params(self, params: list[float]) -> CameraModel:
         assert len(params) == 4 + 12
 
         fx, fy, cx, cy = params[:4]
@@ -82,67 +81,13 @@ class OpenCV(CameraModel):
         self,
         points_in_cam: Float[np.ndarray, "N 3"],
     ) -> Float[np.ndarray, "N 2"]:
-        camera_matrix = np.array(
-            [[self.fx, 0, self.cx], [0, self.fy, self.cy], [0, 0, 1]]
-        )
-
         return cv2.projectPoints(
             points_in_cam,
             rvec=np.zeros(3),
             tvec=np.zeros(3),
-            cameraMatrix=camera_matrix,
+            cameraMatrix=self.K(),
             distCoeffs=self.distortion_coeffs,
         )[0].reshape(-1, 2)
 
-    def get_undistortion_maps(
-        self,
-        *,
-        image_height: int,
-        image_width: int,
-        new_camera_matrix: Float[np.ndarray, "3 3"] | None = None,
-        alpha: float = 0.0,
-        center_principal_point: bool = False,
-        m1type: int = cv2.CV_32FC1,
-    ) -> tuple[
-        Float[np.ndarray, "3 3"],
-        Float[np.ndarray, "H W"],
-        Float[np.ndarray, "H W"],
-    ]:
-        H = int(image_height)
-        W = int(image_width)
-        if H <= 0 or W <= 0:
-            raise ValueError("image_height and image_width must be > 0")
-
-        K = np.array(
-            [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]],
-            dtype=np.float64,
-        )
-        D = self.distortion_coeffs.astype(np.float64, copy=False).reshape(-1, 1)
-
-        if new_camera_matrix is None:
-            K_new, _roi = cv2.getOptimalNewCameraMatrix(
-                K,
-                D,
-                (W, H),
-                alpha,
-                newImgSize=(W, H),
-                centerPrincipalPoint=center_principal_point,
-            )
-        else:
-            K_new = np.asarray(new_camera_matrix, dtype=np.float64)
-            if K_new.shape != (3, 3):
-                raise ValueError(f"new_camera_matrix must be (3,3), got {K_new.shape}")
-
-        map_x, map_y = cv2.initUndistortRectifyMap(
-            cameraMatrix=K,
-            distCoeffs=D,
-            R=np.eye(3, dtype=np.float64),
-            newCameraMatrix=K_new,
-            size=(W, H),
-            m1type=m1type,
-        )
-
-        # Ensure nice dtypes (OpenCV already returns float32 for CV_32FC1)
-        map_x = np.asarray(map_x)
-        map_y = np.asarray(map_y)
-        return K_new, map_x, map_y
+    def K(self):
+        return np.array([[self.fx, 0, self.cx], [0, self.fy, self.cy], [0, 0, 1]])

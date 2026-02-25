@@ -168,7 +168,7 @@ PYBIND11_MODULE(
         &camcal::make_undistortion_maps_pinhole_splined,
         py::arg("model_config"),
         py::arg("intrinsics"),
-        "Return (map_x, map_y) float32 arrays for cv2.remap that undistort a "
-        "pinhole_splined camera."
+        py::arg("k4"),
+        py::arg("image_size_wh")
     );
 }
