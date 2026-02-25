@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import cv2
-import einops
 import numpy as np
 from jaxtyping import Float
 
@@ -78,11 +77,11 @@ class Pose:
         new_trans = -new_rotmat @ self.translation
         return Pose.from_rotmat_trans(rotmat=new_rotmat, trans=new_trans)
 
-    def apply(self, points: Float[np.ndarray, " N 3"]):
-        points_homo = to_homogeneous(points)
-        transformed_points_homo = einops.einsum(
-            self.matrix, points_homo, "h d, n d -> n h"
-        )
+    def apply(self, points: Float[np.ndarray, "N 3"]):
+        points_homo = to_homogeneous(points)  # (N, 4)
+
+        # (4,4) @ (4,N) -> (4,N) -> transpose -> (N,4)
+        transformed_points_homo = (self.matrix @ points_homo.T).T
 
         return transformed_points_homo[:, :3]
 

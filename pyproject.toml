@@ -13,11 +13,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
-    "einops>=0.8.1",
     "jaxtyping>=0.3.3",
     "numpy>=1.26",
     "opencv-contrib-python>=4.11.0.86",
-    "tqdm>=4.67.1",
 ]
 
 [project.scripts]
@@ -32,6 +30,7 @@ skip = ["*musllinux", "*win"]
 
 [dependency-groups]
 dev = [
+    "tqdm>=4.67.1",
     "fire>=0.7.1",
     "imageio>=2.37.2",
     "ipykernel>=7.0.1",
