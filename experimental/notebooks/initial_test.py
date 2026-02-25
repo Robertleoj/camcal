@@ -62,8 +62,8 @@ camera_model_config = PinholeSplinedConfig(
     image_height=img_height,
     image_width=img_width,
     initial_focal_length=1000,
-    num_knots_x=40,
-    num_knots_y=30,
+    num_knots_x=25,
+    num_knots_y=20,
     fov_deg_x=160.0,
     fov_deg_y=140.0
 )
@@ -109,7 +109,7 @@ for i, pose in enumerate(calibration_result.optimized_cameras_T_target):
     )
 
 # %%
-test_sample_idx = 2
+test_sample_idx = 0
 
 debug_img = cv2.cvtColor(imgs[test_sample_idx].copy(), cv2.COLOR_GRAY2RGB)
 
@@ -119,7 +119,13 @@ mediapy.show_image(debug_img, width=1000)
 intrinsics = calibration_result.optimized_camera_model
 
 # %%
-K, map_x, map_y = intrinsics.get_undistortion_maps()
+print(intrinsics)
+
+# %%
+pinhole_model = intrinsics.get_pinhole_model(new_k4=(800, 800, 1500, 1000), new_image_size_wh=(3000, 2000))
+undistorted = pinhole_model.undistort(debug_img)
+
+mediapy.show_image(undistorted, width=1000)
 
 
 # %%
@@ -143,6 +149,7 @@ intrinsics.dx_grid
 
 # %%
 projected = []
+undistorted_projected = []
 
 for pt_idx in detection.point_ids:
     pt_target = obj_points[pt_idx]
@@ -153,13 +160,19 @@ for pt_idx in detection.point_ids:
         pt_cam[None, :],
     )
 
+    img_pt_undistorted = pinhole_model.project_points_undistorted(pt_cam[None, :])
+
     projected.append(img_pt.squeeze())
+    undistorted_projected.append(img_pt_undistorted.squeeze())
+
+
 
 
 # %%
 debug_img = draw_points(debug_img, np.array(projected), color=(0, 255, 0), r=4)
+debug_img_undistorted = draw_points(undistorted, np.array(undistorted_projected), color=(0, 255, 0), r=4)
 
-mediapy.show_image(debug_img, width=1000)
+mediapy.show_images([debug_img, debug_img_undistorted], columns=1, width=1000)
 
 # %%
 residuals = []
@@ -189,14 +202,6 @@ for i, detection in enumerate(detections):
 
     residuals.extend(x_deltas.tolist())
     residuals.extend(y_deltas.tolist())
-
-    # debug_img = cv2.cvtColor(imgs[i].copy(), cv2.COLOR_GRAY2RGB)
-
-    # debug_img = draw_points(debug_img, measured, color=(255, 0, 0), r=5)
-    # debug_img = draw_points(debug_img, projected, color=(0, 255, 0), r=5)
-
-    # mediapy.show_image(debug_img, width=1000)
-
 
 
 residuals = np.array(residuals)

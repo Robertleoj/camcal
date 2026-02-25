@@ -55,3 +55,19 @@ class PinholeRemapped(CameraModel):
             borderMode=border_mode,
             borderValue=border_value,
         )
+
+    def project_points_undistorted(
+        self, points_in_cam: Float[np.ndarray, "N 3"]
+    ) -> Float[np.ndarray, "N 2"]:
+        points_cam = np.asarray(points_in_cam, dtype=np.float64)
+
+        X = points_cam[:, 0]
+        Y = points_cam[:, 1]
+        Z = points_cam[:, 2]
+
+        x = X / Z
+        y = Y / Z
+
+        u = self.fx * x + self.cx
+        v = self.fy * y + self.cy
+        return np.stack([u, v], axis=1)
