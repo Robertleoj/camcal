@@ -29,7 +29,7 @@ T = TypeVar("T", bound=CameraModel)
 @dataclass
 class CalibrationResult(Generic[T]):
     optimized_camera_model: T
-    optimized_cameras_from_world: list[Pose]
+    optimized_cameras_T_target: list[Pose]
 
 
 def _opencv_calibrate(
@@ -51,27 +51,27 @@ def _opencv_calibrate(
         intrinsics_param_optimize_mask = mask.tolist()
 
     # TODO: get initial poses with PnP
-    cameras_from_world = [
+    cameras_from_target_in = [
         np.array([0, 0, 0, 0, 0, 100], dtype=np.float32) for _ in range(num_cameras)
     ]
 
     result = cb.calibrate_opencv(
         intrinsics_initial_value=initial_params,
         intrinsics_param_optimize_mask=intrinsics_param_optimize_mask,
-        cameras_from_world=cameras_from_world,
+        cameras_from_target=cameras_from_target_in,
         target_points=list(target_points),
         detections=[d.to_cpp() for d in detections],
     )
 
     optimized_intrinsics = initial_intrinsics._with_params(result["intrinsics"])
 
-    cameras_from_world = [
-        Pose.from_cpp(np.array(a)) for a in result["cameras_from_world"]
+    cameras_from_target: list[Pose] = [
+        Pose.from_cpp(np.array(a)) for a in result["cameras_from_target"]
     ]
 
     return CalibrationResult(
         optimized_camera_model=optimized_intrinsics,
-        optimized_cameras_from_world=cameras_from_world,
+        optimized_cameras_T_target=cameras_from_target,
     )
 
 
@@ -118,16 +118,16 @@ def _calibrate_pinhole_splined(
     fine_tune_result = cb.fine_tune_pinhole_splined(
         model_config=prior_model._cpp_config(),
         intrinsics_parameters=prior_model._cpp_params(),
-        cameras_from_world=[
+        cameras_from_target=[
             pose.to_cpp()
-            for pose in opencv_calibration_result.optimized_cameras_from_world
+            for pose in opencv_calibration_result.optimized_cameras_T_target
         ],
         target_points=list(target_points),
         detections=[d.to_cpp() for d in detections],
     )
 
-    cameras_from_world = [
-        Pose.from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_world"]
+    cameras_from_target = [
+        Pose.from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_target"]
     ]
 
     fine_tuned_dx_grid = fine_tune_result["dx_grid"]
@@ -137,7 +137,7 @@ def _calibrate_pinhole_splined(
         prior_model, dx_grid=fine_tuned_dx_grid, dy_grid=fine_tuned_dy_grid
     )
 
-    return CalibrationResult(final_model, cameras_from_world)
+    return CalibrationResult(final_model, cameras_from_target)
 
 
 @overload

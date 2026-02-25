@@ -102,7 +102,7 @@ scene.set_object(
 )
 
 # %%
-for i, pose in enumerate(calibration_result.optimized_cameras_from_world):
+for i, pose in enumerate(calibration_result.optimized_cameras_T_target):
     scene.set_object(
         f"/camera_{i}",
         slamd.geom.Triad(pose=pose.inverse().matrix, scale=20),
@@ -136,7 +136,7 @@ debug_img = draw_points(debug_img, detection.points, color=(255, 0, 0), r=4)
 mediapy.show_image(debug_img, width=1000)
 
 # %%
-camera_pose = calibration_result.optimized_cameras_from_world[test_sample_idx]
+camera_pose = calibration_result.optimized_cameras_T_target[test_sample_idx]
 
 # %%
 intrinsics.dx_grid
@@ -145,8 +145,8 @@ intrinsics.dx_grid
 projected = []
 
 for pt_idx in detection.point_ids:
-    pt_world = obj_points[pt_idx]
-    pt_cam = camera_pose.apply1(pt_world)
+    pt_target = obj_points[pt_idx]
+    pt_cam = camera_pose.apply1(pt_target)
 
 
     img_pt = intrinsics.project_points(
@@ -169,10 +169,10 @@ for i, detection in enumerate(detections):
 
     indices = detection.point_ids
 
-    points_in_world = obj_points[indices]
+    points_in_target = obj_points[indices]
 
-    camera_pose = calibration_result.optimized_cameras_from_world[i]
-    points_in_cam = camera_pose.apply(points_in_world)
+    camera_pose = calibration_result.optimized_cameras_T_target[i]
+    points_in_cam = camera_pose.apply(points_in_target)
 
 
     projected = intrinsics.project_points(

@@ -146,7 +146,7 @@ class ReprojectionErrorAnalyticalScalarKnots final
     ReprojectionErrorAnalyticalScalarKnots(
         const SplineMap& map,
         const double* k4,
-        const Vec3<double>& point_world,
+        const Vec3<double>& point_target,
         int ix0,
         int iy0,
         double obs_x,
@@ -159,7 +159,7 @@ class ReprojectionErrorAnalyticalScalarKnots final
           fy_(k4[1]),
           cx_(k4[2]),
           cy_(k4[3]),
-          pw_(point_world),
+          pw_(point_target),
           ix0_(ix0),
           iy0_(iy0) {
         mutable_parameter_block_sizes()->push_back(6);
@@ -354,7 +354,7 @@ static inline void BuildProblem(
     const double* k4p,
     double* dxp,
     double* dyp,
-    const std::vector<Vec6<double>>& cameras_from_world,
+    const std::vector<Vec6<double>>& cameras_from_target,
     const std::vector<Vec3<double>>& target_points,
     const std::vector<
         std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
@@ -385,7 +385,7 @@ static inline void BuildProblem(
     }
 
     // camera blocks
-    for (auto& cam : cameras_from_world) {
+    for (auto& cam : cameras_from_target) {
         problem.AddParameterBlock(const_cast<double*>(cam.data()), 6);
     }
 
@@ -411,7 +411,7 @@ static inline void BuildProblem(
     for (size_t cam_idx = 0; cam_idx < num_cams; cam_idx++) {
         auto& ids = std::get<0>(detections[cam_idx]);
         auto& obs = std::get<1>(detections[cam_idx]);
-        auto& cam6 = cameras_from_world[cam_idx];
+        auto& cam6 = cameras_from_target[cam_idx];
 
         for (size_t oi = 0; oi < obs.size(); oi++) {
             const int pt_idx = ids[oi];
@@ -494,7 +494,7 @@ static inline void BuildProblem(
 py::dict fine_tune_pinhole_splined(
     camcal::PinholeSplinedConfig& model_config,
     camcal::PinholeSplinedIntrinsicsParameters& intrinsics_parameters,
-    std::vector<Vec6<double>>& cameras_from_world,
+    std::vector<Vec6<double>>& cameras_from_target,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         detections
@@ -558,7 +558,7 @@ py::dict fine_tune_pinhole_splined(
             k4p,
             dxp,
             dyp,
-            cameras_from_world,
+            cameras_from_target,
             target_points,
             detections,
             dx_blocks,
@@ -570,7 +570,7 @@ py::dict fine_tune_pinhole_splined(
         );
 
         CellChangeCallback
-            cb(map, cameras_from_world, target_points, obs_records);
+            cb(map, cameras_from_target, target_points, obs_records);
         options.callbacks.clear();
         options.callbacks.push_back(&cb);
 
@@ -596,13 +596,13 @@ py::dict fine_tune_pinhole_splined(
     out["dy_grid"] = intrinsics_parameters.dy_grid;
 
     std::vector<std::vector<double>> poses_out;
-    poses_out.reserve(cameras_from_world.size());
-    for (auto& cam : cameras_from_world) {
+    poses_out.reserve(cameras_from_target.size());
+    for (auto& cam : cameras_from_target) {
         poses_out.push_back(
             std::vector<double>(cam.data(), cam.data() + cam.size())
         );
     }
-    out["cameras_from_world"] = poses_out;
+    out["cameras_from_target"] = poses_out;
     return out;
 }
 

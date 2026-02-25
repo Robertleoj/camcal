@@ -14,7 +14,7 @@ namespace py = pybind11;
 py::dict calibrate_opencv(
     std::vector<double>& intrinsics_initial_value,
     std::vector<bool>& intrinsics_param_optimize_mask,
-    std::vector<Vec6<double>>& cameras_from_world,
+    std::vector<Vec6<double>>& cameras_from_target,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         detections
@@ -28,7 +28,7 @@ py::dict get_matching_spline_distortion_model(
 py::dict fine_tune_pinhole_splined(
     PinholeSplinedConfig& model_config,
     PinholeSplinedIntrinsicsParameters& intrinsics_parameters,
-    std::vector<Vec6<double>>& cameras_from_world,
+    std::vector<Vec6<double>>& cameras_from_target,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         detections

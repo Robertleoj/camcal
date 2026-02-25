@@ -23,15 +23,15 @@ struct ReprojectionError {
     template <typename T>
     bool operator()(
         const T* const intrinsics,
-        const T* const camera_from_world,
-        const T* const point_in_world,
+        const T* const camera_from_target,
+        const T* const point_in_target,
         T* residuals
     ) const {
-        Vec6<T> eigen_camera_from_world(camera_from_world);
-        Vec3<T> eigen_point_in_world(point_in_world);
+        Vec6<T> eigen_camera_from_target(camera_from_target);
+        Vec3<T> eigen_point_in_target(point_in_target);
 
         Vec3<T> eigen_point_in_cam =
-            transform_point(eigen_camera_from_world, eigen_point_in_world);
+            transform_point(eigen_camera_from_target, eigen_point_in_target);
 
         Vec2<T> image_point;
         project_opencv(intrinsics, eigen_point_in_cam, image_point);
@@ -57,16 +57,16 @@ struct ReprojectionError {
 
 struct OptimizationState {
     std::vector<double> intrinsics;
-    std::vector<std::vector<double>> cameras_from_world;
+    std::vector<std::vector<double>> cameras_from_target;
     std::vector<std::vector<double>> target_points;
 
     static OptimizationState from_calibrate_camera_input(
         std::vector<double>& intrinsics_initial_value,
-        std::vector<Vec6<double>>& cameras_from_world,
+        std::vector<Vec6<double>>& cameras_from_target,
         std::vector<Vec3<double>>& target_points
     ) {
         std::vector<std::vector<double>> camera_poses_out;
-        for (auto& vec : cameras_from_world) {
+        for (auto& vec : cameras_from_target) {
             camera_poses_out.push_back(
                 std::vector<double>(vec.data(), vec.data() + vec.size())
             );
@@ -90,7 +90,7 @@ struct OptimizationState {
         py::dict result;
 
         result["intrinsics"] = this->intrinsics;
-        result["cameras_from_world"] = this->cameras_from_world;
+        result["cameras_from_target"] = this->cameras_from_target;
 
         return result;
     }
@@ -99,7 +99,7 @@ struct OptimizationState {
 py::dict calibrate_opencv(
     std::vector<double>& intrinsics_initial_value,
     std::vector<bool>& intrinsics_param_optimize_mask,
-    std::vector<Vec6<double>>& cameras_from_world,
+    std::vector<Vec6<double>>& cameras_from_target,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         detections
@@ -108,7 +108,7 @@ py::dict calibrate_opencv(
 
     OptimizationState state = OptimizationState::from_calibrate_camera_input(
         intrinsics_initial_value,
-        cameras_from_world,
+        cameras_from_target,
         target_points
     );
 
@@ -128,7 +128,7 @@ py::dict calibrate_opencv(
     );
     problem.SetManifold(state.intrinsics.data(), manifold);
 
-    for (auto& cam : state.cameras_from_world) {
+    for (auto& cam : state.cameras_from_target) {
         problem.AddParameterBlock(cam.data(), cam.size());
     }
 
@@ -147,7 +147,7 @@ py::dict calibrate_opencv(
         auto& target_point_indices = std::get<0>(detections[camera_idx]);
         auto& observations = std::get<1>(detections[camera_idx]);
 
-        auto& camera_pose = state.cameras_from_world[camera_idx];
+        auto& camera_pose = state.cameras_from_target[camera_idx];
 
         size_t num_observations = observations.size();
 

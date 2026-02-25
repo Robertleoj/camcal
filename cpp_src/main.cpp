@@ -33,7 +33,7 @@ PYBIND11_MODULE(
         &camcal::calibrate_opencv,
         py::arg("intrinsics_initial_value"),
         py::arg("intrinsics_param_optimize_mask"),
-        py::arg("cameras_from_world"),
+        py::arg("cameras_from_target"),
         py::arg("target_points"),
         py::arg("detections")
     );
@@ -50,7 +50,7 @@ PYBIND11_MODULE(
         &camcal::fine_tune_pinhole_splined,
         py::arg("model_config"),
         py::arg("intrinsics_parameters"),
-        py::arg("cameras_from_world"),
+        py::arg("cameras_from_target"),
         py::arg("target_points"),
         py::arg("detections")
     );
