@@ -1,4 +1,2 @@
 - Rename to Lens Boy
 - Outlier filtering
-- Make undistortion functions
-- Allow exporting undistortion maps
