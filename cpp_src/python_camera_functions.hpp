@@ -3,7 +3,6 @@
 #include "cameramodels.hpp"
 
 #include <cstdint>
-#include <stdexcept>
 
 namespace camcal {
 
@@ -92,7 +91,6 @@ static py::tuple make_undistortion_maps_pinhole_splined(
     const int Nx = (int)model_config.num_knots_x;
     const int Ny = (int)model_config.num_knots_y;
 
-    // Distorted/input camera k4 (used for mapping into source image)
     auto k4b_in = intrinsics.k4.request();
     require(
         k4b_in.ndim == 1 && k4b_in.shape[0] == 4,

@@ -1,2 +1,5 @@
-- Rename to Lens Boy
+- Rename to lensboy
 - Outlier filtering
+- Better initializing
+- Add target warp functionality
+- Clean up spline stuff in c++ - remove the duplicated logic

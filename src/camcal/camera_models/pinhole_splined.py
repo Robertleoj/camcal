@@ -117,7 +117,7 @@ class PinholeSplined(CameraModel):
             self._cpp_config(),
             self._cpp_params(),
             np.array(k4, dtype=float),
-            new_image_size_wh=image_wh,
+            image_wh,
         )
 
         return PinholeRemapped(

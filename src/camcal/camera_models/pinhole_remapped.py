@@ -40,8 +40,6 @@ class PinholeRemapped(CameraModel):
         map_x = np.asarray(self.map_x, dtype=np.float32, order="C")
         map_y = np.asarray(self.map_y, dtype=np.float32, order="C")
 
-        # Optional: if input image size doesn't match, you can still remap,
-        # but it usually indicates you built maps for a different camera size.
         h, w = image.shape[:2]
         if (h, w) != (self.input_image_height, self.input_image_width):
             raise ValueError(

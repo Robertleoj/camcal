@@ -1,13 +1,3 @@
-// fine_tune_pinhole_splined_scalar_knots.cpp
-//
-// Fully-correct (no “fine-tune assumption”) implementation:
-// - Split knot grids into per-scalar parameter blocks (size-1 each)
-// - Replace giant dense prior with per-knot 2D priors (cheap)
-// - Rebuild the problem whenever any observation changes spline cell (ix,iy)
-//   so parameter-block wiring is ALWAYS correct, even on cell borders.
-//
-// This avoids the O(n^3) DGEMM/DSYRK from the big prior and stays exact.
-
 #include <ceres/ceres.h>
 #include <ceres/jet.h>
 #include <ceres/rotation.h>
@@ -15,7 +5,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -44,7 +33,6 @@ struct SplineMap {
         half_x = std::tan(fov_rad_x / 2.0);
         half_y = std::tan(fov_rad_y / 2.0);
 
-        // x_spline = 1 + (x_n + half_x) / (2*half_x) * (Nx-3)
         x_scale = (Nx - 3) / (2.0 * half_x);
         y_scale = (Ny - 3) / (2.0 * half_y);
     }
@@ -103,8 +91,6 @@ struct SplineMap {
     }
 };
 
-// -------------------- cost: per-knot prior --------------------
-
 class KnotPrior2D final : public ceres::CostFunction {
    public:
     KnotPrior2D(
@@ -115,8 +101,8 @@ class KnotPrior2D final : public ceres::CostFunction {
         : s_(sqrt_lambda),
           x0_(x0),
           y0_(y0) {
-        mutable_parameter_block_sizes()->push_back(1);  // x
-        mutable_parameter_block_sizes()->push_back(1);  // y
+        mutable_parameter_block_sizes()->push_back(1);
+        mutable_parameter_block_sizes()->push_back(1);
         set_num_residuals(2);
     }
 
@@ -152,19 +138,6 @@ class KnotPrior2D final : public ceres::CostFunction {
     double x0_, y0_;
 };
 
-// -------------------- cost: reprojection with scalar knot blocks
-// --------------------
-//
-// Parameter blocks:
-//   [0] camera (6)
-//   [1..16]  dx knots (16 blocks, size 1)
-//   [17..32] dy knots (16 blocks, size 1)
-//
-// Support cell (ix0_,iy0_) is fixed for the lifetime of this residual block.
-// If the projection moves to a different cell, the outer loop rebuilds the
-// entire problem BEFORE the next linearization happens (via callback
-// terminate), so wiring stays correct.
-//
 class ReprojectionErrorAnalyticalScalarKnots final
     : public ceres::CostFunction {
    public:
@@ -172,8 +145,8 @@ class ReprojectionErrorAnalyticalScalarKnots final
 
     ReprojectionErrorAnalyticalScalarKnots(
         const SplineMap& map,
-        const double* k4,                 // constant [fx,fy,cx,cy]
-        const Vec3<double>& point_world,  // constant
+        const double* k4,
+        const Vec3<double>& point_world,
         int ix0,
         int iy0,
         double obs_x,
@@ -206,7 +179,7 @@ class ReprojectionErrorAnalyticalScalarKnots final
     ) const override {
         const double* cam = params[0];
 
-        // --- Transform point (double) ---
+        // Transform point (double)
         double gx, gy, x_n, y_n;
         map_.project_to_spline_coords(cam, pw_, gx, gy, x_n, y_n);
 
@@ -214,12 +187,12 @@ class ReprojectionErrorAnalyticalScalarKnots final
         const double u = gx - (double)ix0_;
         const double v = gy - (double)iy0_;
 
-        // --- Basis weights ---
+        // Basis weights
         double wx[4], wy[4];
         cubic_bspline_basis_uniform(u, wx);
         cubic_bspline_basis_uniform(v, wy);
 
-        // --- Spline eval using scalar blocks ---
+        // Spline eval using scalar blocks
         double dx = 0.0, dy = 0.0;
         int idx = 0;
         for (int b = 0; b < 4; b++) {
@@ -238,7 +211,7 @@ class ReprojectionErrorAnalyticalScalarKnots final
             return true;
         }
 
-        // --- Knot jacobians: each is [2x1] ---
+        // Knot jacobians: each is [2x1]
         for (int i = 0; i < 16; i++) {
             const int b = i / 4;
             const int a = i % 4;
@@ -331,14 +304,12 @@ class ReprojectionErrorAnalyticalScalarKnots final
     int ix0_, iy0_;
 };
 
-// -------------------- observation bookkeeping + callback --------------------
-
 struct ObservationRecord {
     size_t cam_idx;
     int pt_idx;
     double obs_x;
     double obs_y;
-    int ix;  // cell used to build residual
+    int ix;
     int iy;
 };
 
@@ -375,8 +346,6 @@ struct CellChangeCallback final : public ceres::IterationCallback {
     std::vector<ObservationRecord>& obs_;
     bool changed_ = false;
 };
-
-// -------------------- builder --------------------
 
 static inline void BuildProblem(
     ceres::Problem& problem,
@@ -522,8 +491,6 @@ static inline void BuildProblem(
     }
 }
 
-// -------------------- main entry --------------------
-
 py::dict fine_tune_pinhole_splined(
     camcal::PinholeSplinedConfig& model_config,
     camcal::PinholeSplinedIntrinsicsParameters& intrinsics_parameters,
@@ -532,7 +499,6 @@ py::dict fine_tune_pinhole_splined(
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         detections
 ) {
-    // validate grids
     auto dxb = intrinsics_parameters.dx_grid.request();
     auto dyb = intrinsics_parameters.dy_grid.request();
     require(
@@ -568,32 +534,21 @@ py::dict fine_tune_pinhole_splined(
 
     ceres::Solver::Options options;
 
-    // No SuiteSparse needed:
     options.linear_solver_type = ceres::ITERATIVE_SCHUR;
 
-    // Good defaults for big problems:
-    options.preconditioner_type = ceres::SCHUR_JACOBI;  // or CLUSTER_JACOBI
-    options.visibility_clustering_type = ceres::CANONICAL_VIEWS;
+    options.preconditioner_type = ceres::SCHUR_JACOBI;
 
-    // Make CG actually converge:
-    options.max_num_iterations = 50;             // per rebuild pass
-    options.max_linear_solver_iterations = 200;  // bump if needed
-    options.min_linear_solver_iterations = 10;
-
-    options.num_threads =
-        std::min(std::max(1, (int)std::thread::hardware_concurrency()), 16);
     options.minimizer_progress_to_stdout = true;
     options.update_state_every_iteration = true;
 
-    // outer loop rebuilds until no cell changes
-    constexpr int kMaxRebuilds = 25;
+    constexpr int max_rebuilds = 25;
 
     std::vector<double*> dx_blocks, dy_blocks;
     std::vector<ObservationRecord> obs_records;
 
     ceres::Solver::Summary last_summary;
 
-    for (int outer = 0; outer < kMaxRebuilds; outer++) {
+    for (int outer = 0; outer < max_rebuilds; outer++) {
         ceres::Problem problem;
 
         BuildProblem(
@@ -634,7 +589,6 @@ py::dict fine_tune_pinhole_splined(
             break;
         }
         spdlog::info("Cell change detected -> rebuilding problem.");
-        // loop continues: dxp/dyp/cams are already updated in-place
     }
 
     py::dict out;
