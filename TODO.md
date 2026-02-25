@@ -7,3 +7,4 @@
 - Package and publish on pypi
 - remove logging, so the user doesn't get spammed
 - Implement saving and loading the models (json works)
+- Make plug-n-play notebook that the user can use to calibrate using the library
