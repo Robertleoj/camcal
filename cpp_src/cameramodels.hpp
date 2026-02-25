@@ -11,6 +11,8 @@ namespace py = pybind11;
 namespace camcal {
 
 struct PinholeSplinedConfig {
+    uint32_t image_width;
+    uint32_t image_height;
     double fov_deg_x;
     double fov_deg_y;
     uint32_t num_knots_x;

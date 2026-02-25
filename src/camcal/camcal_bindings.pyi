@@ -6,9 +6,9 @@ import collections.abc
 import numpy
 import numpy.typing
 import typing
-__all__: list[str] = ['PinholeSplinedConfig', 'PinholeSplinedIntrinsicsParameters', 'add', 'calibrate_opencv', 'fine_tune_pinhole_splined', 'get_matching_spline_distortion_model', 'project_pinhole_splined_points']
+__all__: list[str] = ['PinholeSplinedConfig', 'PinholeSplinedIntrinsicsParameters', 'add', 'calibrate_opencv', 'fine_tune_pinhole_splined', 'get_matching_spline_distortion_model', 'make_undistortion_maps_pinhole_splined', 'project_pinhole_splined_points']
 class PinholeSplinedConfig:
-    def __init__(self, fov_deg_x: typing.SupportsFloat, fov_deg_y: typing.SupportsFloat, num_knots_x: typing.SupportsInt, num_knots_y: typing.SupportsInt) -> None:
+    def __init__(self, image_width: typing.SupportsInt, image_height: typing.SupportsInt, fov_deg_x: typing.SupportsFloat, fov_deg_y: typing.SupportsFloat, num_knots_x: typing.SupportsInt, num_knots_y: typing.SupportsInt) -> None:
         ...
     def __repr__(self) -> str:
         ...
@@ -23,6 +23,18 @@ class PinholeSplinedConfig:
         ...
     @fov_deg_y.setter
     def fov_deg_y(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def image_height(self) -> int:
+        ...
+    @image_height.setter
+    def image_height(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def image_width(self) -> int:
+        ...
+    @image_width.setter
+    def image_width(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def num_knots_x(self) -> int:
@@ -69,5 +81,9 @@ def fine_tune_pinhole_splined(model_config: ..., intrinsics_parameters: ..., cam
     ...
 def get_matching_spline_distortion_model(opencv_distortion_params: collections.abc.Sequence[typing.SupportsFloat], model_config: ...) -> dict:
     ...
+def make_undistortion_maps_pinhole_splined(model_config: PinholeSplinedConfig, intrinsics: PinholeSplinedIntrinsicsParameters) -> tuple:
+    """
+    Return (map_x, map_y) float32 arrays for cv2.remap that undistort a pinhole_splined camera.
+    """
 def project_pinhole_splined_points(model_config: ..., intrinsics: ..., points_in_camera: typing.Annotated[numpy.typing.ArrayLike, numpy.float64]) -> numpy.typing.NDArray[numpy.float64]:
     ...

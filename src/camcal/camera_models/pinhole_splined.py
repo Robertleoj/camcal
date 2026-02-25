@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 import numpy as np
+from functools import cached_property
 from jaxtyping import Float
 
 from camcal import camcal_bindings as cb
@@ -37,7 +38,12 @@ class PinholeSplinedConfig(CameraModelConfig):
 
     def _cpp_config(self) -> cb.PinholeSplinedConfig:
         return cb.PinholeSplinedConfig(
-            self.fov_deg_x, self.fov_deg_y, self.num_knots_x, self.num_knots_y
+            self.image_width,
+            self.image_height,
+            self.fov_deg_x,
+            self.fov_deg_y,
+            self.num_knots_x,
+            self.num_knots_y,
         )
 
 
@@ -97,7 +103,12 @@ class PinholeSplined(CameraModel):
 
     def _cpp_config(self) -> cb.PinholeSplinedConfig:
         return cb.PinholeSplinedConfig(
-            self.fov_deg_x, self.fov_deg_y, self.num_knots_x, self.num_knots_y
+            self.image_width,
+            self.image_height,
+            self.fov_deg_x,
+            self.fov_deg_y,
+            self.num_knots_x,
+            self.num_knots_y,
         )
 
     def _k4(self) -> Float[np.ndarray, " 4"]:
@@ -117,3 +128,20 @@ class PinholeSplined(CameraModel):
             self._cpp_params(),
             points_in_camera=points_in_cam,
         )
+
+    def _get_K(self) -> Float[np.ndarray, "3 3"]:
+        return np.array(
+            [[self.fx, 0, self.cx], [self.fy, 0, self.cy], [0, 0, 1]], dtype=float
+        )
+
+    def get_undistortion_maps(
+        self, *args, **kwargs
+    ) -> tuple[
+        Float[np.ndarray, "3 3"], Float[np.ndarray, "H w"], Float[np.ndarray, "H w"]
+    ]:
+        K = self._get_K()
+        map_x, map_y = cb.make_undistortion_maps_pinhole_splined(
+            self._cpp_config(), self._cpp_params()
+        )
+
+        return K, map_x, map_y

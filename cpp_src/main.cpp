@@ -1,7 +1,7 @@
 #include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "./python_project.hpp"
+#include "./python_camera_functions.hpp"
 #include "calibrate.hpp"
 #include "cameramodels.hpp"
 
@@ -65,14 +65,25 @@ PYBIND11_MODULE(
 
     py::class_<camcal::PinholeSplinedConfig>(m, "PinholeSplinedConfig")
         .def(
-            py::init<double, double, uint32_t, uint32_t>(),
+            py::init<uint32_t, uint32_t, double, double, uint32_t, uint32_t>(),
+            py::arg("image_width"),
+            py::arg("image_height"),
             py::arg("fov_deg_x"),
             py::arg("fov_deg_y"),
             py::arg("num_knots_x"),
             py::arg("num_knots_y")
         )
+        .def_readwrite(
+            "image_width",
+            &camcal::PinholeSplinedConfig::image_width
+        )
+        .def_readwrite(
+            "image_height",
+            &camcal::PinholeSplinedConfig::image_height
+        )
         .def_readwrite("fov_deg_x", &camcal::PinholeSplinedConfig::fov_deg_x)
         .def_readwrite("fov_deg_y", &camcal::PinholeSplinedConfig::fov_deg_y)
+
         .def_readwrite(
             "num_knots_x",
             &camcal::PinholeSplinedConfig::num_knots_x
@@ -84,7 +95,9 @@ PYBIND11_MODULE(
         .def("__repr__", [](const camcal::PinholeSplinedConfig& self) {
             std::ostringstream oss;
             oss << "PinholeSplinedConfig("
-                << "fov_deg_x=" << self.fov_deg_x
+                << "image_width=" << self.image_width
+                << ", image_height=" << self.image_height
+                << ", fov_deg_x=" << self.fov_deg_x
                 << ", fov_deg_y=" << self.fov_deg_y
                 << ", num_knots_x=" << self.num_knots_x
                 << ", num_knots_y=" << self.num_knots_y << ")";
@@ -149,4 +162,13 @@ PYBIND11_MODULE(
                 return oss.str();
             }
         );
+
+    m.def(
+        "make_undistortion_maps_pinhole_splined",
+        &camcal::make_undistortion_maps_pinhole_splined,
+        py::arg("model_config"),
+        py::arg("intrinsics"),
+        "Return (map_x, map_y) float32 arrays for cv2.remap that undistort a "
+        "pinhole_splined camera."
+    );
 }

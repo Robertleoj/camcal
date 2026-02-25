@@ -39,3 +39,10 @@ class CameraModel(ABC):
         self,
         points_in_cam: Float[np.ndarray, "N 3"],
     ) -> Float[np.ndarray, "N 2"]: ...
+
+    @abstractmethod
+    def get_undistortion_maps(
+        self, *args, **kwargs
+    ) -> tuple[
+        Float[np.ndarray, "3 3"], Float[np.ndarray, "H w"], Float[np.ndarray, "H w"]
+    ]: ...

@@ -62,8 +62,8 @@ camera_model_config = PinholeSplinedConfig(
     image_height=img_height,
     image_width=img_width,
     initial_focal_length=1000,
-    num_knots_x=30,
-    num_knots_y=25,
+    num_knots_x=40,
+    num_knots_y=30,
     fov_deg_x=160.0,
     fov_deg_y=140.0
 )
@@ -115,6 +115,12 @@ debug_img = cv2.cvtColor(imgs[test_sample_idx].copy(), cv2.COLOR_GRAY2RGB)
 
 mediapy.show_image(debug_img, width=1000)
 
+# %%
+intrinsics = calibration_result.optimized_camera_model
+
+# %%
+K, map_x, map_y = intrinsics.get_undistortion_maps()
+
 
 # %%
 def draw_points(img, points, color=(0, 255, 0), r=4, thickness=-1):
@@ -133,9 +139,6 @@ mediapy.show_image(debug_img, width=1000)
 camera_pose = calibration_result.optimized_cameras_from_world[test_sample_idx]
 
 # %%
-intrinsics = calibration_result.optimized_camera_model
-
-# %%
 intrinsics.dx_grid
 
 # %%
@@ -151,8 +154,6 @@ for pt_idx in detection.point_ids:
     )
 
     projected.append(img_pt.squeeze())
-
-
 
 
 # %%
@@ -204,3 +205,7 @@ print(residuals.shape)
 # %%
 no_outliers = residuals[np.abs(residuals) < 1.5]
 plt.hist(no_outliers, bins=100)
+
+# %%
+std = np.std(residuals)
+print(std)
