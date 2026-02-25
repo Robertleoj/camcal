@@ -3,3 +3,5 @@
 - Better initializing
 - Add target warp functionality
 - Clean up spline stuff in c++ - remove the duplicated logic
+- Write good README
+- Package and publish on pypi
