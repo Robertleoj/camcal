@@ -4,14 +4,13 @@ from dataclasses import dataclass, field, replace
 
 import cv2
 import numpy as np
-from jaxtyping import Bool, Float
 
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
 
 K1, K2, P1, P2, K3, K4, K5, K6, S1, S2, S3, S4 = range(12)
 
 
-def _mask(*idx: int) -> Bool[np.ndarray, 12]:
+def _mask(*idx: int) -> np.ndarray:
     m = np.zeros(12, dtype=bool)
     if len(idx) > 0:
         m[list(idx)] = True
@@ -24,7 +23,7 @@ class OpenCVConfig(CameraModelConfig):
     image_width: int
 
     initial_focal_length: float
-    included_distoriton_coefficients: Bool[np.ndarray, " 12"] = field(
+    included_distoriton_coefficients: np.ndarray = field(
         default_factory=lambda: OpenCVConfig.STANDARD
     )
 
@@ -35,7 +34,15 @@ class OpenCVConfig(CameraModelConfig):
     THIN_PRISM = _mask(S1, S2, S3, S4)
     FULL_12 = _mask(*range(12))
 
-    def optimize_mask(self) -> Bool[np.ndarray, " 16"]:
+    def __post_init__(self):
+        assert self.included_distoriton_coefficients.shape == (12,), (
+            f"Expected (12,) mask, got {self.included_distoriton_coefficients.shape}"
+        )
+        assert self.included_distoriton_coefficients.dtype == np.bool_, (
+            f"Expected bool dtype, got {self.included_distoriton_coefficients.dtype}"
+        )
+
+    def optimize_mask(self) -> np.ndarray:
         mask = np.zeros(16, dtype=bool)
 
         mask[:4] = True
@@ -64,7 +71,15 @@ class OpenCV(CameraModel):
     cx: float
     cy: float
 
-    distortion_coeffs: Float[np.ndarray, " 12"]
+    distortion_coeffs: np.ndarray
+
+    def __post_init__(self):
+        assert self.distortion_coeffs.shape == (12,), (
+            f"Expected (12,) distortion_coeffs, got {self.distortion_coeffs.shape}"
+        )
+        assert np.issubdtype(self.distortion_coeffs.dtype, np.floating), (
+            f"Expected floating dtype, got {self.distortion_coeffs.dtype}"
+        )
 
     def _params(self):
         return [self.fx, self.fy, self.cx, self.cy, *self.distortion_coeffs]
@@ -82,8 +97,14 @@ class OpenCV(CameraModel):
 
     def project_points(
         self,
-        points_in_cam: Float[np.ndarray, "N 3"],
-    ) -> Float[np.ndarray, "N 2"]:
+        points_in_cam: np.ndarray,
+    ) -> np.ndarray:
+        assert points_in_cam.ndim == 2 and points_in_cam.shape[1] == 3, (
+            f"Expected (N, 3) array, got {points_in_cam.shape}"
+        )
+        assert np.issubdtype(points_in_cam.dtype, np.floating), (
+            f"Expected floating dtype, got {points_in_cam.dtype}"
+        )
         return cv2.projectPoints(
             points_in_cam,
             rvec=np.zeros(3),

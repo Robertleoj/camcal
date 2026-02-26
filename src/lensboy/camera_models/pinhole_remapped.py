@@ -2,7 +2,6 @@ from dataclasses import dataclass
 
 import cv2
 import numpy as np
-from jaxtyping import Float
 
 from lensboy.camera_models.base_model import CameraModel
 
@@ -17,11 +16,17 @@ class PinholeRemapped(CameraModel):
     cx: float
     cy: float
 
-    map_x: Float[np.ndarray, "H W"]
-    map_y: Float[np.ndarray, "H W"]
+    map_x: np.ndarray
+    map_y: np.ndarray
 
     input_image_width: int
     input_image_height: int
+
+    def __post_init__(self):
+        assert self.map_x.ndim == 2, f"Expected 2D map_x, got {self.map_x.ndim}D"
+        assert np.issubdtype(self.map_x.dtype, np.floating), f"Expected floating dtype for map_x, got {self.map_x.dtype}"
+        assert self.map_y.ndim == 2, f"Expected 2D map_y, got {self.map_y.ndim}D"
+        assert np.issubdtype(self.map_y.dtype, np.floating), f"Expected floating dtype for map_y, got {self.map_y.dtype}"
 
     def undistort(
         self,
@@ -57,8 +62,14 @@ class PinholeRemapped(CameraModel):
         )
 
     def project_points_undistorted(
-        self, points_in_cam: Float[np.ndarray, "N 3"]
-    ) -> Float[np.ndarray, "N 2"]:
+        self, points_in_cam: np.ndarray
+    ) -> np.ndarray:
+        assert points_in_cam.ndim == 2 and points_in_cam.shape[1] == 3, (
+            f"Expected (N, 3) array, got {points_in_cam.shape}"
+        )
+        assert np.issubdtype(points_in_cam.dtype, np.floating), (
+            f"Expected floating dtype, got {points_in_cam.dtype}"
+        )
         points_cam = np.asarray(points_in_cam, dtype=np.float64)
 
         X = points_cam[:, 0]

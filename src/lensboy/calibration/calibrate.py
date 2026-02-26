@@ -3,7 +3,6 @@ from dataclasses import dataclass, replace
 from typing import Generic, TypeVar, cast, overload
 
 import numpy as np
-from jaxtyping import Float, Int
 
 from lensboy import lensboy_bindings as lbb
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
@@ -16,10 +15,16 @@ LOG = logging.getLogger(__name__)
 
 @dataclass
 class Detection:
-    point_ids: Int[np.ndarray, " N"]
-    points: Float[np.ndarray, "N 2"]
+    point_ids: np.ndarray
+    points: np.ndarray
 
-    def to_cpp(self) -> tuple[list[int], list[Float[np.ndarray, "2"]]]:
+    def __post_init__(self):
+        assert self.point_ids.ndim == 1, f"Expected 1D point_ids, got {self.point_ids.ndim}D"
+        assert np.issubdtype(self.point_ids.dtype, np.integer), f"Expected integer dtype for point_ids, got {self.point_ids.dtype}"
+        assert self.points.ndim == 2 and self.points.shape[1] == 2, f"Expected (N, 2) points, got {self.points.shape}"
+        assert np.issubdtype(self.points.dtype, np.floating), f"Expected floating dtype for points, got {self.points.dtype}"
+
+    def to_cpp(self) -> tuple[list[int], list[np.ndarray]]:
         return (self.point_ids.tolist(), list(self.points))
 
 
@@ -33,10 +38,16 @@ class CalibrationResult(Generic[T]):
 
 
 def _opencv_calibrate(
-    target_points: Float[np.ndarray, "N 3"],
+    target_points: np.ndarray,
     detections: list[Detection],
     config: OpenCVConfig,
 ) -> CalibrationResult:
+    assert target_points.ndim == 2 and target_points.shape[1] == 3, (
+        f"Expected (N, 3) target_points, got {target_points.shape}"
+    )
+    assert np.issubdtype(target_points.dtype, np.floating), (
+        f"Expected floating dtype for target_points, got {target_points.dtype}"
+    )
     num_cameras = len(detections)
 
     initial_intrinsics = config.get_initial_value()
@@ -76,10 +87,16 @@ def _opencv_calibrate(
 
 
 def _calibrate_pinhole_splined(
-    target_points: Float[np.ndarray, "N 3"],
+    target_points: np.ndarray,
     detections: list[Detection],
     config: PinholeSplinedConfig,
 ) -> CalibrationResult[PinholeSplined]:
+    assert target_points.ndim == 2 and target_points.shape[1] == 3, (
+        f"Expected (N, 3) target_points, got {target_points.shape}"
+    )
+    assert np.issubdtype(target_points.dtype, np.floating), (
+        f"Expected floating dtype for target_points, got {target_points.dtype}"
+    )
     opencv_config = OpenCVConfig(
         image_height=config.image_height,
         image_width=config.image_width,
@@ -157,10 +174,16 @@ def calibrate_camera(
 
 
 def calibrate_camera(
-    target_points: Float[np.ndarray, "N 3"],
+    target_points: np.ndarray,
     detections: list[Detection],
     camera_model_config: CameraModelConfig,
 ) -> CalibrationResult:
+    assert target_points.ndim == 2 and target_points.shape[1] == 3, (
+        f"Expected (N, 3) target_points, got {target_points.shape}"
+    )
+    assert np.issubdtype(target_points.dtype, np.floating), (
+        f"Expected floating dtype for target_points, got {target_points.dtype}"
+    )
     if isinstance(camera_model_config, PinholeSplinedConfig):
         return _calibrate_pinhole_splined(
             target_points, detections, camera_model_config

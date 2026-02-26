@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from jaxtyping import Float
 
 from lensboy import lensboy_bindings as lbb
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
@@ -60,14 +59,20 @@ class PinholeSplined(CameraModel):
     cx: float
     cy: float
 
-    dx_grid: Float[np.ndarray, "Ky Kx"]
-    dy_grid: Float[np.ndarray, "Ky Kx"]
+    dx_grid: np.ndarray
+    dy_grid: np.ndarray
 
     num_knots_x: int
     num_knots_y: int
 
     fov_deg_x: float
     fov_deg_y: float
+
+    def __post_init__(self):
+        assert self.dx_grid.ndim == 2, f"Expected 2D dx_grid, got {self.dx_grid.ndim}D"
+        assert np.issubdtype(self.dx_grid.dtype, np.floating), f"Expected floating dtype for dx_grid, got {self.dx_grid.dtype}"
+        assert self.dy_grid.ndim == 2, f"Expected 2D dy_grid, got {self.dy_grid.ndim}D"
+        assert np.issubdtype(self.dy_grid.dtype, np.floating), f"Expected floating dtype for dy_grid, got {self.dy_grid.dtype}"
 
     @staticmethod
     def _camera_model_name() -> str:
@@ -90,8 +95,14 @@ class PinholeSplined(CameraModel):
 
     def project_points(
         self,
-        points_in_cam: Float[np.ndarray, "N 3"],
-    ) -> Float[np.ndarray, "N 2"]:
+        points_in_cam: np.ndarray,
+    ) -> np.ndarray:
+        assert points_in_cam.ndim == 2 and points_in_cam.shape[1] == 3, (
+            f"Expected (N, 3) array, got {points_in_cam.shape}"
+        )
+        assert np.issubdtype(points_in_cam.dtype, np.floating), (
+            f"Expected floating dtype, got {points_in_cam.dtype}"
+        )
         return lbb.project_pinhole_splined_points(
             self._cpp_config(),
             self._cpp_params(),
