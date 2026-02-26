@@ -1,9 +1,11 @@
 import logging
 from dataclasses import dataclass, replace
 from typing import Generic, TypeVar, overload
+import math
 
 import numpy as np
 
+from timeit import default_timer
 from lensboy import lensboy_bindings as lbb
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
 from lensboy.camera_models.opencv import OpenCV, OpenCVConfig
@@ -11,6 +13,8 @@ from lensboy.camera_models.pinhole_splined import PinholeSplined, PinholeSplined
 from lensboy.geometry.pose import Pose
 
 LOG = logging.getLogger(__name__)
+
+DEFAULT_OUTLIER_THRESHOLD = 4.0
 
 
 @dataclass
@@ -90,42 +94,55 @@ def _project_and_calculate_residuals(
     return projected_points_in_image, residuals
 
 
-def _mad(arr: np.ndarray):
-    return 1.4826 * np.median(np.abs(arr - np.median(arr)))
+def _mad_sigma_1d(x: np.ndarray) -> float:
+    x = np.asarray(x)
+    med = np.median(x)
+    mad = np.median(np.abs(x - med))
+    # 1.4826 = 1 / Phi^{-1}(0.75)  (MAD->sigma for 1D normal)
+    return 1.4826 * mad
 
 
-def _filter_outliers_single_detection(
-    detection: Detection,
-    residuals: np.ndarray,
-    num_stddevs_outlier_threshold: float,
-) -> Detection:
-    residual_norms = np.linalg.norm(residuals, axis=1)
-    residual_mad = _mad(residual_norms)
+def _robust_sigma_xy(residuals: list[np.ndarray]) -> float:
+    R = np.concatenate(residuals, axis=0)  # (M,2)
+    sx = _mad_sigma_1d(R[:, 0])
+    sy = _mad_sigma_1d(R[:, 1])
+    # combine to one sigma (assume roughly same scale)
+    return float(np.sqrt(0.5 * (sx * sx + sy * sy)))
 
-    outlier_mask = residual_norms > (num_stddevs_outlier_threshold * residual_mad)
-    inlier_mask = ~outlier_mask
 
-    filtered_point_indices = detection.target_point_indices[inlier_mask]
-    filtered_points = detection.detected_points_in_image[inlier_mask]
-
-    return Detection(filtered_point_indices, filtered_points)
+def _radius_threshold_from_k(k: float) -> float:
+    """
+    If x,y ~ N(0, sigma^2), then r^2/sigma^2 ~ chi2(df=2).
+    A 1D ±kσ "inlier probability" is p = 2*Phi(k)-1.
+    For df=2: chi2 CDF is 1-exp(-x/2), so quantile is x = -2 ln(1-p).
+    Threshold radius = sqrt(x) * sigma.
+    """
+    # 1D normal CDF via erf
+    p1 = 0.5 * (1.0 + math.erf(k / math.sqrt(2.0)))
+    p = 2.0 * p1 - 1.0
+    x = -2.0 * np.log(1.0 - p)
+    return float(np.sqrt(x))
 
 
 def _filter_outliers(
-    detections: list[Detection],
+    detections: list,
     residuals: list[np.ndarray],
-    num_stddevs_outlier_threshold: float,
-) -> list[Detection]:
-    filtered_detections = []
+    k: float = 3.5,
+    sigma_floor_px: float = 0.25,  # prevents collapse
+) -> list:
+    sigma = max(_robust_sigma_xy(residuals), sigma_floor_px)
+    gate = _radius_threshold_from_k(k) * sigma  # radius in pixels
 
-    for detection, residuals_detection in zip(detections, residuals):
-        filtered_detection = _filter_outliers_single_detection(
-            detection, residuals_detection, num_stddevs_outlier_threshold
+    filtered = []
+    for det, r in zip(detections, residuals):
+        inlier_mask = np.linalg.norm(r, axis=1) <= gate
+        filtered.append(
+            type(det)(
+                det.target_point_indices[inlier_mask],
+                det.detected_points_in_image[inlier_mask],
+            )
         )
-
-        filtered_detections.append(filtered_detection)
-
-    return filtered_detections
+    return filtered
 
 
 def _opencv_calibrate_inner(
@@ -305,15 +322,23 @@ def _calibrate_pinhole_splined(
         included_distoriton_coefficients=OpenCVConfig.FULL_12,
     )
 
+    LOG.info("Calibrating seed opencv model...")
+    start_time = default_timer()
     opencv_calibration_result = _opencv_calibrate(
         target_points, detections, opencv_config, None
     )
+    end_time = default_timer()
+    LOG.info(f"OpenCV seed model ready in {end_time - start_time:.1f}s")
 
     opencv_model = opencv_calibration_result.optimized_camera_model
 
+    LOG.info("Calculating matching spline model...")
+    start_time = default_timer()
     out_dict = lbb.get_matching_spline_distortion_model(
         opencv_model.distortion_coeffs.tolist(), config._cpp_config()
     )
+    end_time = default_timer()
+    LOG.info(f"Matching spline model ready in {end_time - start_time:.1f}s")
 
     x_knots = out_dict["x_knots"]
     y_knots = out_dict["y_knots"]
@@ -340,13 +365,19 @@ def _calibrate_pinhole_splined(
     curr_intrinsics = prior_model
     curr_cameras_from_target = cameras_from_target
 
+    total_observations = sum(len(det) for det in original_detections)
+
     while True:
+        LOG.info("Running full optimization...")
+        start_time = default_timer()
         curr_intrinsics, curr_cameras_from_target = _pinhole_splined_refine_inner(
             curr_intrinsics,
             curr_cameras_from_target,
             target_points,
             curr_detections,
         )
+        end_time = default_timer()
+        LOG.info(f"Performed full optimization in {end_time - start_time:.2f}s")
 
         if num_stddevs_outlier_threshold is None:
             break
@@ -370,6 +401,13 @@ def _calibrate_pinhole_splined(
 
         curr_detections = new_detections
 
+        total_remaining = sum(len(det) for det in curr_detections)
+        total_outliers = total_observations - total_remaining
+        outlier_ratio = total_outliers / total_observations
+        LOG.info(
+            f"Threw out some outliers - number of outliers = {total_outliers}/{total_observations} ({outlier_ratio * 100:.1f}%)"
+        )
+
     detection_infos = _compute_detection_infos(
         curr_intrinsics,
         curr_cameras_from_target,
@@ -387,17 +425,19 @@ def _calibrate_pinhole_splined(
 
 @overload
 def calibrate_camera(
-    target_points,
-    detections,
+    target_points: np.ndarray,
+    detections: list[Detection],
     camera_model_config: PinholeSplinedConfig,
+    num_stddevs_outlier_threshold: float | None = DEFAULT_OUTLIER_THRESHOLD,
 ) -> CalibrationResult[PinholeSplined]: ...
 
 
 @overload
 def calibrate_camera(
-    target_points,
-    detections,
+    target_points: np.ndarray,
+    detections: list[Detection],
     camera_model_config: OpenCVConfig,
+    num_stddevs_outlier_threshold: float | None = DEFAULT_OUTLIER_THRESHOLD,
 ) -> CalibrationResult[OpenCV]: ...
 
 
@@ -405,7 +445,7 @@ def calibrate_camera(
     target_points: np.ndarray,
     detections: list[Detection],
     camera_model_config: CameraModelConfig,
-    num_stddevs_outlier_threshold: float | None = None,
+    num_stddevs_outlier_threshold: float | None = DEFAULT_OUTLIER_THRESHOLD,
 ) -> CalibrationResult:
     assert target_points.ndim == 2 and target_points.shape[1] == 3, (
         f"Expected (N, 3) target_points, got {target_points.shape}"
