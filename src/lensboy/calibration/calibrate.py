@@ -1,11 +1,11 @@
 import logging
-from dataclasses import dataclass, replace
-from typing import Generic, TypeVar, overload
 import math
+from dataclasses import dataclass, replace
+from timeit import default_timer
+from typing import Generic, TypeVar, overload
 
 import numpy as np
 
-from timeit import default_timer
 from lensboy import lensboy_bindings as lbb
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
 from lensboy.camera_models.opencv import OpenCV, OpenCVConfig
@@ -153,7 +153,6 @@ def _opencv_calibrate_inner(
     target_points: np.ndarray,
     detections: list[Detection],
 ) -> tuple[OpenCV, list[Pose]]:
-
     params = curr_intrinsics._params()
     mask = config.optimize_mask()
     intrinsics_param_optimize_mask = mask.tolist()
@@ -184,7 +183,6 @@ def _compute_detection_infos(
     filtered_detections: list[Detection] | None,
     target_points: np.ndarray,
 ) -> list[DetectionInfo]:
-
     detection_infos: list[DetectionInfo] = []
     for i in range(len(cameras_from_target)):
         projected, residuals = _project_and_calculate_residuals(
