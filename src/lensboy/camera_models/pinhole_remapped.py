@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from jaxtyping import Float
 
-from camcal.camera_models.base_model import CameraModel
+from lensboy.camera_models.base_model import CameraModel
 
 
 @dataclass

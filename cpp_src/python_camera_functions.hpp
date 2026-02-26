@@ -4,11 +4,11 @@
 
 #include <cstdint>
 
-namespace camcal {
+namespace lensboy {
 
 static py::array_t<double> project_pinhole_splined_pywrapper(
-    camcal::PinholeSplinedConfig& model_config,
-    camcal::PinholeSplinedIntrinsicsParameters& intrinsics,
+    lensboy::PinholeSplinedConfig& model_config,
+    lensboy::PinholeSplinedIntrinsicsParameters& intrinsics,
     py::array_t<double, py::array::c_style | py::array::forcecast>
         points_in_camera
 ) {
@@ -69,8 +69,8 @@ static py::array_t<double> project_pinhole_splined_pywrapper(
 }
 
 static py::tuple make_undistortion_maps_pinhole_splined(
-    camcal::PinholeSplinedConfig& model_config,
-    camcal::PinholeSplinedIntrinsicsParameters& intrinsics,
+    lensboy::PinholeSplinedConfig& model_config,
+    lensboy::PinholeSplinedIntrinsicsParameters& intrinsics,
     py::array_t<double, py::array::c_style | py::array::forcecast> k4,
     std::pair<int, int> image_size_wh
 ) {
@@ -189,4 +189,4 @@ static py::tuple make_undistortion_maps_pinhole_splined(
     return py::make_tuple(map_x, map_y);
 }
 
-}  // namespace camcal
+}  // namespace lensboy

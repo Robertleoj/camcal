@@ -1,5 +1,5 @@
 """
-CamCal for camera calibration
+lensboy for camera calibration
 """
 from __future__ import annotations
 import collections.abc

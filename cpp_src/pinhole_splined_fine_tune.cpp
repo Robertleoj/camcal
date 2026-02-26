@@ -12,7 +12,7 @@
 #include "./cameramodels.hpp"
 #include "./pybind_utils.hpp"
 
-namespace camcal {
+namespace lensboy {
 
 struct SplineMap {
     int Nx = 0;
@@ -492,8 +492,8 @@ static inline void BuildProblem(
 }
 
 py::dict fine_tune_pinhole_splined(
-    camcal::PinholeSplinedConfig& model_config,
-    camcal::PinholeSplinedIntrinsicsParameters& intrinsics_parameters,
+    lensboy::PinholeSplinedConfig& model_config,
+    lensboy::PinholeSplinedIntrinsicsParameters& intrinsics_parameters,
     std::vector<Vec6<double>>& cameras_from_target,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
@@ -606,4 +606,4 @@ py::dict fine_tune_pinhole_splined(
     return out;
 }
 
-}  // namespace camcal
+}  // namespace lensboy

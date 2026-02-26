@@ -8,7 +8,7 @@
 #include "./type_defs.hpp"
 
 namespace py = pybind11;
-namespace camcal {
+namespace lensboy {
 
 struct PinholeSplinedConfig {
     uint32_t image_width;
@@ -306,4 +306,4 @@ void project_pinhole_splined(
     result[1] = fy * y_distorted + cy;
 }
 
-}  // namespace camcal
+}  // namespace lensboy

@@ -3,7 +3,7 @@
 
 namespace py = pybind11;
 
-namespace camcal {
+namespace lensboy {
 static void require(
     bool cond,
     const char* msg

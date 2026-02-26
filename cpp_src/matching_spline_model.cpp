@@ -5,7 +5,7 @@
 #include "./utils.hpp"
 #include "cameramodels.hpp"
 
-namespace camcal {
+namespace lensboy {
 
 struct DistortionError {
     DistortionError(
@@ -323,4 +323,4 @@ py::dict get_matching_spline_distortion_model(
     return out;
 }
 
-}  // namespace camcal
+}  // namespace lensboy

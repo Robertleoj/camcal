@@ -3,7 +3,7 @@ set(CMAKE_TOOLCHAIN_FILE
     "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
     CACHE FILEPATH "vcpkg toolchain file")
 
-project(camcal_bindings LANGUAGES CXX)
+project(lensboy_bindings LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -36,7 +36,7 @@ find_package(spdlog CONFIG REQUIRED)
 
 
 pybind11_add_module(
-    camcal_bindings 
+    lensboy_bindings 
     MODULE 
 
     cpp_src/main.cpp
@@ -46,7 +46,7 @@ pybind11_add_module(
 )
 
 target_link_libraries(
-    camcal_bindings
+    lensboy_bindings
     PRIVATE
 
     Ceres::ceres
@@ -55,4 +55,4 @@ target_link_libraries(
     spdlog::spdlog
 )
 
-install(TARGETS camcal_bindings DESTINATION camcal)
+install(TARGETS lensboy_bindings DESTINATION lensboy)

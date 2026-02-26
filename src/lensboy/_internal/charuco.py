@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
 
-from camcal._internal.image import to_gray
-from camcal.calibration.calibrate import Detection
+from lensboy._internal.image import to_gray
+from lensboy.calibration.calibrate import Detection
 
 
 def detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Detection:

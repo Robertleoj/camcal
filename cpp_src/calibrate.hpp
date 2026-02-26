@@ -7,7 +7,7 @@
 #include "./cameramodels.hpp"
 #include "./type_defs.hpp"
 
-namespace camcal {
+namespace lensboy {
 
 namespace py = pybind11;
 
@@ -34,4 +34,4 @@ py::dict fine_tune_pinhole_splined(
         detections
 );
 
-}  // namespace camcal
+}  // namespace lensboy

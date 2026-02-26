@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 
 [project]
-name = "camcal"
+name = "lensboy"
 version = "0.0.0"
 description = "DrCal for camera calibrations"
 authors = [{ name = "Robert Leo", email = "robert.leo.jonsson@gmail.com" }]
@@ -61,5 +61,5 @@ fixable = ["ALL"]
 
 [tool.pyright]
 useLibraryCodeForTypes = true
-include = ["src/camcal/**"]
+include = ["src/lensboy/**"]
 exclude = ["**/build", "**/dist", "**/.venv", "**/__pycache__", "**/*.ipynb"]

@@ -9,18 +9,18 @@ except:
     pass
 
 # %%
-from camcal.calibration.calibrate import calibrate_camera
-from camcal.camera_models import OpenCVConfig, PinholeSplinedConfig, PinholeSplined
+from lensboy.calibration.calibrate import calibrate_camera
+from lensboy.camera_models import OpenCVConfig, PinholeSplinedConfig, PinholeSplined
 import cv2
 import numpy as np
 import imageio.v3 as iio
 import mediapy
-from camcal.calibration.calibrate import Detection
+from lensboy.calibration.calibrate import Detection
 from tqdm import tqdm
 import slamd
 import matplotlib.pyplot as plt
-from camcal._internal.charuco import detect_charuco
-from camcal._internal.paths import repo_root
+from lensboy._internal.charuco import detect_charuco
+from lensboy._internal.paths import repo_root
 
 
 # %%

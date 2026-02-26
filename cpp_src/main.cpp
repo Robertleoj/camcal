@@ -16,10 +16,10 @@ int add(
 
 // Define the Python module
 PYBIND11_MODULE(
-    camcal_bindings,
+    lensboy_bindings,
     m
 ) {
-    m.doc() = "CamCal for camera calibration";
+    m.doc() = "lensboy for camera calibration";
     m.def(
         "add",
         &add,
@@ -30,7 +30,7 @@ PYBIND11_MODULE(
 
     m.def(
         "calibrate_opencv",
-        &camcal::calibrate_opencv,
+        &lensboy::calibrate_opencv,
         py::arg("intrinsics_initial_value"),
         py::arg("intrinsics_param_optimize_mask"),
         py::arg("cameras_from_target"),
@@ -40,14 +40,14 @@ PYBIND11_MODULE(
 
     m.def(
         "get_matching_spline_distortion_model",
-        &camcal::get_matching_spline_distortion_model,
+        &lensboy::get_matching_spline_distortion_model,
         py::arg("opencv_distortion_params"),
         py::arg("model_config")
     );
 
     m.def(
         "fine_tune_pinhole_splined",
-        &camcal::fine_tune_pinhole_splined,
+        &lensboy::fine_tune_pinhole_splined,
         py::arg("model_config"),
         py::arg("intrinsics_parameters"),
         py::arg("cameras_from_target"),
@@ -57,13 +57,13 @@ PYBIND11_MODULE(
 
     m.def(
         "project_pinhole_splined_points",
-        &camcal::project_pinhole_splined_pywrapper,
+        &lensboy::project_pinhole_splined_pywrapper,
         py::arg("model_config"),
         py::arg("intrinsics"),
         py::arg("points_in_camera")
     );
 
-    py::class_<camcal::PinholeSplinedConfig>(m, "PinholeSplinedConfig")
+    py::class_<lensboy::PinholeSplinedConfig>(m, "PinholeSplinedConfig")
         .def(
             py::init<uint32_t, uint32_t, double, double, uint32_t, uint32_t>(),
             py::arg("image_width"),
@@ -75,24 +75,24 @@ PYBIND11_MODULE(
         )
         .def_readwrite(
             "image_width",
-            &camcal::PinholeSplinedConfig::image_width
+            &lensboy::PinholeSplinedConfig::image_width
         )
         .def_readwrite(
             "image_height",
-            &camcal::PinholeSplinedConfig::image_height
+            &lensboy::PinholeSplinedConfig::image_height
         )
-        .def_readwrite("fov_deg_x", &camcal::PinholeSplinedConfig::fov_deg_x)
-        .def_readwrite("fov_deg_y", &camcal::PinholeSplinedConfig::fov_deg_y)
+        .def_readwrite("fov_deg_x", &lensboy::PinholeSplinedConfig::fov_deg_x)
+        .def_readwrite("fov_deg_y", &lensboy::PinholeSplinedConfig::fov_deg_y)
 
         .def_readwrite(
             "num_knots_x",
-            &camcal::PinholeSplinedConfig::num_knots_x
+            &lensboy::PinholeSplinedConfig::num_knots_x
         )
         .def_readwrite(
             "num_knots_y",
-            &camcal::PinholeSplinedConfig::num_knots_y
+            &lensboy::PinholeSplinedConfig::num_knots_y
         )
-        .def("__repr__", [](const camcal::PinholeSplinedConfig& self) {
+        .def("__repr__", [](const lensboy::PinholeSplinedConfig& self) {
             std::ostringstream oss;
             oss << "PinholeSplinedConfig("
                 << "image_width=" << self.image_width
@@ -104,7 +104,7 @@ PYBIND11_MODULE(
             return oss.str();
         });
 
-    py::class_<camcal::PinholeSplinedIntrinsicsParameters>(
+    py::class_<lensboy::PinholeSplinedIntrinsicsParameters>(
         m,
         "PinholeSplinedIntrinsicsParameters"
     )
@@ -132,7 +132,7 @@ PYBIND11_MODULE(
                     throw py::value_error("dy_grid must be a 2D array");
                 }
 
-                return camcal::PinholeSplinedIntrinsicsParameters{
+                return lensboy::PinholeSplinedIntrinsicsParameters{
                     k4_,
                     dx_,
                     dy_
@@ -142,18 +142,18 @@ PYBIND11_MODULE(
             py::arg("dx_grid"),
             py::arg("dy_grid")
         )
-        .def_readwrite("k4", &camcal::PinholeSplinedIntrinsicsParameters::k4)
+        .def_readwrite("k4", &lensboy::PinholeSplinedIntrinsicsParameters::k4)
         .def_readwrite(
             "dx_grid",
-            &camcal::PinholeSplinedIntrinsicsParameters::dx_grid
+            &lensboy::PinholeSplinedIntrinsicsParameters::dx_grid
         )
         .def_readwrite(
             "dy_grid",
-            &camcal::PinholeSplinedIntrinsicsParameters::dy_grid
+            &lensboy::PinholeSplinedIntrinsicsParameters::dy_grid
         )
         .def(
             "__repr__",
-            [](const camcal::PinholeSplinedIntrinsicsParameters& self) {
+            [](const lensboy::PinholeSplinedIntrinsicsParameters& self) {
                 auto dxb = self.dx_grid.request();
                 std::ostringstream oss;
                 oss << "PinholeSplinedIntrinsicsParameters("
@@ -165,7 +165,7 @@ PYBIND11_MODULE(
 
     m.def(
         "make_undistortion_maps_pinhole_splined",
-        &camcal::make_undistortion_maps_pinhole_splined,
+        &lensboy::make_undistortion_maps_pinhole_splined,
         py::arg("model_config"),
         py::arg("intrinsics"),
         py::arg("k4"),

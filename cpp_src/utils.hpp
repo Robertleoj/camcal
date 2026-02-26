@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <vector>
 
-namespace camcal {
+namespace lensboy {
 template <typename T>
 inline std::vector<std::vector<T>> vector_mat(
     uint32_t n,
@@ -12,4 +12,4 @@ inline std::vector<std::vector<T>> vector_mat(
     std::vector<std::vector<T>> mat(n, std::vector<T>(m, initial_value));
     return mat;
 }
-}  // namespace camcal
+}  // namespace lensboy

@@ -5,7 +5,7 @@
 #include <Eigen/Dense>
 #include "./type_defs.hpp"
 
-namespace camcal {
+namespace lensboy {
 
 template <typename T>
 Eigen::Matrix<T, 3, 1> transform_point(
@@ -27,4 +27,4 @@ Eigen::Matrix<T, 3, 1> transform_point(
     return rotated;
 }
 
-}  // namespace camcal
+}  // namespace lensboy

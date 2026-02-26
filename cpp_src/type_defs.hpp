@@ -3,7 +3,7 @@
 #include <Eigen/Dense>
 #include <cmath>
 
-namespace camcal {
+namespace lensboy {
 
 template <typename T>
 using Vec2 = Eigen::Matrix<T, 2, 1>;

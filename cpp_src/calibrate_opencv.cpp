@@ -8,7 +8,7 @@
 #include "./cameramodels.hpp"
 #include "./ceres_geometry.hpp"
 
-namespace camcal {
+namespace lensboy {
 
 constexpr size_t opencv_num_params = 4 + 12;
 
@@ -184,4 +184,4 @@ py::dict calibrate_opencv(
     return state.make_dict();
 }
 
-}  // namespace camcal
+}  // namespace lensboy

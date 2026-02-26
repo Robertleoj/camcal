@@ -1,1 +1,1 @@
-pybind11-stubgen camcal.camcal_bindings -o src
+pybind11-stubgen lensboy.lensboy_bindings -o src
