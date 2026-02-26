@@ -45,6 +45,11 @@ pybind11_add_module(
     cpp_src/pinhole_splined_fine_tune.cpp
 )
 
+target_compile_definitions(lensboy_bindings
+    # PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
+    PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_OFF
+)
+
 target_link_libraries(
     lensboy_bindings
     PRIVATE

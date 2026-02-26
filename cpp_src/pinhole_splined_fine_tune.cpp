@@ -527,7 +527,7 @@ py::dict fine_tune_pinhole_splined(
         dy0[i] = dyp[i];
     }
 
-    const double lambda = 1e-5;
+    const double lambda = 1e-7;
     const double sqrt_lambda = std::sqrt(lambda);
 
     SplineMap map(model_config);
@@ -538,7 +538,7 @@ py::dict fine_tune_pinhole_splined(
 
     options.preconditioner_type = ceres::SCHUR_JACOBI;
 
-    options.minimizer_progress_to_stdout = true;
+    options.minimizer_progress_to_stdout = false;
     options.update_state_every_iteration = true;
 
     constexpr int max_rebuilds = 25;
@@ -574,7 +574,7 @@ py::dict fine_tune_pinhole_splined(
         options.callbacks.clear();
         options.callbacks.push_back(&cb);
 
-        spdlog::info(
+        SPDLOG_DEBUG(
             "Solve pass {} (residuals wired for current cells)...",
             outer
         );
@@ -582,13 +582,13 @@ py::dict fine_tune_pinhole_splined(
         ceres::Solve(options, &problem, &last_summary);
 
         if (!cb.changed()) {
-            spdlog::info(
+            SPDLOG_DEBUG(
                 "No cell changes detected. Done after {} rebuild(s).",
                 outer
             );
             break;
         }
-        spdlog::info("Cell change detected -> rebuilding problem.");
+        SPDLOG_DEBUG("Cell change detected -> rebuilding problem.");
     }
 
     py::dict out;

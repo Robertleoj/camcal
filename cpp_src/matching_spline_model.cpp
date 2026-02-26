@@ -279,19 +279,19 @@ py::dict get_matching_spline_distortion_model(
         }
     }
 
-    spdlog::info("Created problem");
+    SPDLOG_DEBUG("Created problem");
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::ITERATIVE_SCHUR;
     options.preconditioner_type = ceres::SCHUR_JACOBI;
     options.use_nonmonotonic_steps = true;
     options.max_num_iterations = 10'000;
-    options.minimizer_progress_to_stdout = true;
+    options.minimizer_progress_to_stdout = false;
 
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 
-    spdlog::info("Solve done");
-    spdlog::info(summary.BriefReport());
+    SPDLOG_DEBUG("Solve done");
+    SPDLOG_DEBUG(summary.BriefReport());
 
     // Return NumPy arrays in y-major shape (Y, X)
     py::array_t<double> x_array(

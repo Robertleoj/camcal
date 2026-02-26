@@ -139,7 +139,7 @@ py::dict calibrate_opencv(
         problem.SetParameterBlockConstant(pt.data());
     }
 
-    spdlog::info("Added parameter blocks");
+    SPDLOG_DEBUG("Added parameter blocks");
 
     size_t num_cameras = detections.size();
 
@@ -167,16 +167,16 @@ py::dict calibrate_opencv(
         }
     }
 
-    spdlog::info("Added residual blocks");
+    SPDLOG_DEBUG("Added residual blocks");
 
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::ITERATIVE_SCHUR;
     options.preconditioner_type = ceres::SCHUR_JACOBI;
 
     options.use_nonmonotonic_steps = true;
-    options.max_num_iterations = 10'000;
+    options.max_num_iterations = 200;
 
-    options.minimizer_progress_to_stdout = true;
+    options.minimizer_progress_to_stdout = false;
 
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
