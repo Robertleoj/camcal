@@ -15,7 +15,7 @@ from lensboy.geometry.pose import Pose
 
 LOG = logging.getLogger(__name__)
 
-DEFAULT_OUTLIER_THRESHOLD = 4.0
+DEFAULT_OUTLIER_THRESHOLD = 3.0
 MAX_OUTLIER_FILTER_PASSES = 2
 
 
@@ -160,6 +160,8 @@ def _opencv_calibrate_inner(
 
     cameras_from_target_in = [p.to_cpp() for p in curr_cameras_from_target]
 
+    LOG.info("Running full optimization...")
+    start_time = default_timer()
     result = lbb.calibrate_opencv(
         intrinsics_initial_value=params,
         intrinsics_param_optimize_mask=intrinsics_param_optimize_mask,
@@ -167,6 +169,8 @@ def _opencv_calibrate_inner(
         target_points=list(target_points),
         detections=[d.to_cpp() for d in detections],
     )
+    end_time = default_timer()
+    LOG.info(f"Ran optimizer in {end_time - start_time:.2f}s")
 
     optimized_intrinsics = curr_intrinsics._with_params(result["intrinsics"])
 
@@ -247,8 +251,8 @@ def _run_with_outlier_filtering(
         total_remaining = sum(len(d) for d in curr_detections)
         total_outliers = total_observations - total_remaining
         LOG.info(
-            f"Threw out some outliers - {total_outliers}/{total_observations}"
-            f" ({total_outliers / total_observations * 100:.1f}%)"
+            f"Threw out some outliers, now have {total_outliers}/{total_observations}"
+            f" ({total_outliers / total_observations * 100:.1f}%) - going again..."
         )
 
     return curr_intrinsics, curr_cameras_from_target, curr_detections
@@ -268,6 +272,7 @@ def _opencv_calibrate(
     )
     initial_intrinsics = config.get_initial_value()
     # TODO: get initial poses with PnP
+    LOG.info("Computing initial poses...")
     initial_cameras_from_target = [Pose.from_tz(100) for _ in range(len(detections))]
 
     def optimize_fn(intrinsics, cameras, tp, dets):

@@ -116,31 +116,51 @@ class PinholeSplined(CameraModel):
     def _k4(self):
         return (self.fx, self.fy, self.cx, self.cy)
 
+    def get_pinhole_model_with_fov(
+        self,
+        target_fov_deg_x: float | None = None,
+        target_fov_deg_y: float | None = None,
+        image_size_wh: tuple[int, int] | None = None,
+    ) -> PinholeRemapped:
+        fov_x = target_fov_deg_x if target_fov_deg_x is not None else self.fov_deg_x
+        fov_y = target_fov_deg_y if target_fov_deg_y is not None else self.fov_deg_y
+
+        if image_size_wh is None:
+            image_size_wh = (self.image_width, self.image_height)
+
+        image_w, image_h = image_size_wh
+
+        fx = image_w / (2 * np.tan(np.deg2rad(fov_x) / 2))
+        fy = image_h / (2 * np.tan(np.deg2rad(fov_y) / 2))
+        cx = image_w / 2.0
+        cy = image_h / 2.0
+
+        return self.get_pinhole_model(
+            k4=(fx, fy, cx, cy),
+            image_size_wh=image_size_wh,
+        )
+
     def get_pinhole_model(
         self,
-        new_k4: tuple[float, float, float, float] | None = None,
-        new_image_size_wh: tuple[int, int] | None = None,
+        k4: tuple[float, float, float, float] | None = None,
+        image_size_wh: tuple[int, int] | None = None,
     ) -> PinholeRemapped:
-        if new_k4 is not None:
-            k4 = new_k4
-        else:
+        if k4 is None:
             k4 = self._k4()
 
-        if new_image_size_wh is not None:
-            image_wh = new_image_size_wh
-        else:
-            image_wh = (self.image_width, self.image_height)
+        if image_size_wh is None:
+            image_size_wh = (self.image_width, self.image_height)
 
         map_x, map_y = lbb.make_undistortion_maps_pinhole_splined(
             self._cpp_config(),
             self._cpp_params(),
             np.array(k4, dtype=float),
-            image_wh,
+            image_size_wh,
         )
 
         return PinholeRemapped(
-            image_width=image_wh[0],
-            image_height=image_wh[1],
+            image_width=image_size_wh[0],
+            image_height=image_size_wh[1],
             input_image_width=self.image_width,
             input_image_height=self.image_height,
             fx=k4[0],
