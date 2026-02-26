@@ -22,14 +22,16 @@ class Detection:
         assert (
             self.target_point_indices.shape[0] == self.detected_points_in_image.shape[0]
         ), (
-            "Expected target_point_indices to have the length shape as detected_points_in_image"
+            "Expected target_point_indices to have the "
+            "length shape as detected_points_in_image"
         )
 
         assert self.target_point_indices.ndim == 1, (
             f"Expected 1D target_point_indices, got {self.target_point_indices.ndim}D"
         )
         assert np.issubdtype(self.target_point_indices.dtype, np.integer), (
-            f"Expected integer dtype for target_point_indices, got {self.target_point_indices.dtype}"
+            "Expected integer dtype for target_point_indices, ",
+            f"got {self.target_point_indices.dtype}",
         )
 
         assert (
@@ -37,7 +39,8 @@ class Detection:
             and self.detected_points_in_image.shape[1] == 2
         ), f"Expected (N, 2) points in image, got {self.detected_points_in_image.shape}"
         assert np.issubdtype(self.detected_points_in_image.dtype, np.floating), (
-            f"Expected floating dtype for points, got {self.detected_points_in_image.dtype}"
+            "Expected floating dtype for points, "
+            f"got {self.detected_points_in_image.dtype}"
         )
 
     def to_cpp(self) -> tuple[list[int], list[np.ndarray]]:
@@ -51,13 +54,6 @@ T = TypeVar("T", bound=CameraModel)
 
 
 @dataclass
-class CalibrationResult(Generic[T]):
-    optimized_camera_model: T
-    optimized_cameras_T_target: list[Pose]
-    detection_infos: list[DetectionInfo]
-
-
-@dataclass
 class DetectionInfo:
     # N x 2
     projected_points: np.ndarray
@@ -65,13 +61,23 @@ class DetectionInfo:
     # N x 2
     residuals: np.ndarray
 
+    # N
+    inlier_mask: np.ndarray
 
-def _compute_detection_info(
+
+@dataclass
+class CalibrationResult(Generic[T]):
+    optimized_camera_model: T
+    optimized_cameras_T_target: list[Pose]
+    detection_infos: list[DetectionInfo]
+
+
+def _project_and_calculate_residuals(
     target_points: np.ndarray,
     camera_from_target: Pose,
     detection: Detection,
     model: OpenCV | PinholeSplined,
-):
+) -> tuple[np.ndarray, np.ndarray]:
     point_indices = detection.target_point_indices
 
     points_in_target = target_points[point_indices]
@@ -81,7 +87,7 @@ def _compute_detection_info(
 
     residuals = detection.detected_points_in_image - projected_points_in_image
 
-    return DetectionInfo(projected_points_in_image, residuals)
+    return projected_points_in_image, residuals
 
 
 def _mad(arr: np.ndarray):
@@ -90,10 +96,10 @@ def _mad(arr: np.ndarray):
 
 def _filter_outliers_single_detection(
     detection: Detection,
-    detection_info: DetectionInfo,
+    residuals: np.ndarray,
     num_stddevs_outlier_threshold: float,
 ) -> Detection:
-    residual_norms = np.linalg.norm(detection_info.residuals, axis=1)
+    residual_norms = np.linalg.norm(residuals, axis=1)
     residual_mad = _mad(residual_norms)
 
     outlier_mask = residual_norms > (num_stddevs_outlier_threshold * residual_mad)
@@ -107,14 +113,14 @@ def _filter_outliers_single_detection(
 
 def _filter_outliers(
     detections: list[Detection],
-    detection_infos: list[DetectionInfo],
+    residuals: np.ndarray,
     num_stddevs_outlier_threshold: float,
 ) -> list[Detection]:
     filtered_detections = []
 
-    for detection, detection_info in zip(detections, detection_infos):
+    for detection, residuals_detection in zip(detections, residuals):
         filtered_detection = _filter_outliers_single_detection(
-            detection, detection_info, num_stddevs_outlier_threshold
+            detection, residuals_detection, num_stddevs_outlier_threshold
         )
 
         filtered_detections.append(filtered_detection)
@@ -128,7 +134,8 @@ def _opencv_calibrate_inner(
     curr_cameras_from_target: list[Pose],
     target_points: np.ndarray,
     detections: list[Detection],
-) -> CalibrationResult[OpenCV]:
+) -> tuple[OpenCV, list[Pose]]:
+
     params = curr_intrinsics._params()
     mask = config.optimize_mask()
     intrinsics_param_optimize_mask = mask.tolist()
@@ -148,18 +155,38 @@ def _opencv_calibrate_inner(
     optimized_cameras_from_target: list[Pose] = [
         Pose.from_cpp(np.array(a)) for a in result["cameras_from_target"]
     ]
-    detection_infos = [
-        _compute_detection_info(
-            target_points, cam_from_target, detection, optimized_intrinsics
-        )
-        for cam_from_target, detection in zip(optimized_cameras_from_target, detections)
-    ]
 
-    return CalibrationResult(
-        optimized_camera_model=optimized_intrinsics,
-        optimized_cameras_T_target=optimized_cameras_from_target,
-        detection_infos=detection_infos,
-    )
+    return optimized_intrinsics, optimized_cameras_from_target
+
+
+def _compute_detection_infos(
+    intrinsics: OpenCV | PinholeSplined,
+    cameras_from_target: list[Pose],
+    original_detections: list[Detection],
+    filtered_detections: list[Detection] | None,
+    target_points: np.ndarray,
+) -> list[DetectionInfo]:
+
+    detection_infos: list[DetectionInfo] = []
+    for i in range(len(cameras_from_target)):
+        projected, residuals = _project_and_calculate_residuals(
+            target_points,
+            cameras_from_target[i],
+            original_detections[i],
+            intrinsics,
+        )
+
+        if filtered_detections is not None:
+            inlier_mask = np.isin(
+                original_detections[i].target_point_indices,
+                filtered_detections[i].target_point_indices,
+            )
+        else:
+            inlier_mask = np.ones(len(original_detections[i]), dtype=bool)
+
+        detection_infos.append(DetectionInfo(projected, residuals, inlier_mask))
+
+    return detection_infos
 
 
 def _opencv_calibrate(
@@ -182,7 +209,7 @@ def _opencv_calibrate(
     initial_cameras_from_target = [Pose.from_tz(100) for _ in range(num_cameras)]
 
     if num_stddevs_outlier_threshold is None:
-        return _opencv_calibrate_inner(
+        optimized_intrinsics, optimized_cameras_from_target = _opencv_calibrate_inner(
             initial_intrinsics,
             config,
             initial_cameras_from_target,
@@ -190,13 +217,15 @@ def _opencv_calibrate(
             detections,
         )
 
+        return CalibrationResult()
+
     original_detections = detections
     curr_detections = detections
     curr_intrinsics = initial_intrinsics
     curr_cameras_from_target = initial_cameras_from_target
 
     while True:
-        calibration_result = _opencv_calibrate_inner(
+        curr_intrinsics, curr_cameras_from_target = _opencv_calibrate_inner(
             curr_intrinsics,
             config,
             curr_cameras_from_target,
@@ -204,8 +233,12 @@ def _opencv_calibrate(
             curr_detections,
         )
 
-        curr_intrinsics = calibration_result.optimized_camera_model
-        curr_cameras_from_target = calibration_result.optimized_cameras_T_target
+        projection_results = [
+            _project_and_calculate_residuals(
+                target_points, cam_from_target, detection, curr_intrinsics
+            )
+            for cam_from_target, detection in zip(curr_cameras_from_target, detections)
+        ]
 
         new_detections = _filter_outliers(
             curr_detections,
