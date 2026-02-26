@@ -12,10 +12,7 @@ authors = [{ name = "Robert Leo", email = "robert.leo.jonsson@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.11"
 
-dependencies = [
-    "numpy>=1.26",
-    "opencv-contrib-python>=4.11.0.86",
-]
+dependencies = ["numpy>=1.26", "opencv-contrib-python>=4.11.0.86"]
 
 [project.scripts]
 
@@ -46,7 +43,7 @@ dev = [
 
 [tool.ruff]
 exclude = ["**/*.pyi", "experimental/**"]
-line-length = 120
+line-length = 90
 
 [tool.ruff.lint]
 # Allow unused variables when underscore-prefixed.

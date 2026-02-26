@@ -15,21 +15,36 @@ LOG = logging.getLogger(__name__)
 
 @dataclass
 class Detection:
-    point_ids: np.ndarray
-    points: np.ndarray
+    target_point_indices: np.ndarray
+    detected_points_in_image: np.ndarray
 
     def __post_init__(self):
-        assert self.point_ids.ndim == 1, f"Expected 1D point_ids, got {self.point_ids.ndim}D"
-        assert np.issubdtype(self.point_ids.dtype, np.integer), (
-            f"Expected integer dtype for point_ids, got {self.point_ids.dtype}"
+        assert (
+            self.target_point_indices.shape[0] == self.detected_points_in_image.shape[0]
+        ), (
+            "Expected target_point_indices to have the length shape as detected_points_in_image"
         )
-        assert self.points.ndim == 2 and self.points.shape[1] == 2, f"Expected (N, 2) points, got {self.points.shape}"
-        assert np.issubdtype(self.points.dtype, np.floating), (
-            f"Expected floating dtype for points, got {self.points.dtype}"
+
+        assert self.target_point_indices.ndim == 1, (
+            f"Expected 1D target_point_indices, got {self.target_point_indices.ndim}D"
+        )
+        assert np.issubdtype(self.target_point_indices.dtype, np.integer), (
+            f"Expected integer dtype for target_point_indices, got {self.target_point_indices.dtype}"
+        )
+
+        assert (
+            self.detected_points_in_image.ndim == 2
+            and self.detected_points_in_image.shape[1] == 2
+        ), f"Expected (N, 2) points in image, got {self.detected_points_in_image.shape}"
+        assert np.issubdtype(self.detected_points_in_image.dtype, np.floating), (
+            f"Expected floating dtype for points, got {self.detected_points_in_image.dtype}"
         )
 
     def to_cpp(self) -> tuple[list[int], list[np.ndarray]]:
-        return (self.point_ids.tolist(), list(self.points))
+        return (self.target_point_indices.tolist(), list(self.detected_points_in_image))
+
+    def __len__(self):
+        return self.target_point_indices.shape[0]
 
 
 T = TypeVar("T", bound=CameraModel)
@@ -39,6 +54,72 @@ T = TypeVar("T", bound=CameraModel)
 class CalibrationResult(Generic[T]):
     optimized_camera_model: T
     optimized_cameras_T_target: list[Pose]
+    detection_infos: list[DetectionInfo]
+
+
+@dataclass
+class DetectionInfo:
+    # N x 2
+    projected_points: np.ndarray
+
+    # N x 2
+    residuals: np.ndarray
+
+
+def _compute_detection_info(
+    target_points: np.ndarray,
+    camera_from_target: Pose,
+    detection: Detection,
+    model: OpenCV | PinholeSplined,
+):
+    point_indices = detection.target_point_indices
+
+    points_in_target = target_points[point_indices]
+    points_in_camera = camera_from_target.apply(points_in_target)
+
+    projected_points_in_image = model.project_points(points_in_camera)
+
+    residuals = detection.detected_points_in_image - projected_points_in_image
+
+    return DetectionInfo(projected_points_in_image, residuals)
+
+
+def _mad(arr: np.ndarray):
+    return 1.4826 * np.median(np.abs(arr - np.median(arr)))
+
+
+def _filter_outliers_single_detection(
+    detection: Detection,
+    detection_info: DetectionInfo,
+    num_stddevs_outlier_threshold: float,
+) -> Detection:
+    residual_norms = np.linalg.norm(detection_info.residuals, axis=1)
+    residual_mad = _mad(residual_norms)
+
+    outlier_mask = residual_mad > (num_stddevs_outlier_threshold * residual_mad)
+    inlier_mask = ~outlier_mask
+
+    filtered_point_indices = detection.target_point_indices[inlier_mask]
+    filtered_points = detection.detected_points_in_image[inlier_mask]
+
+    return Detection(filtered_point_indices, filtered_points)
+
+
+def _filter_outliers(
+    detections: list[Detection],
+    detection_infos: list[DetectionInfo],
+    num_stddevs_outlier_threshold: float,
+) -> list[Detection]:
+    filtered_detections = []
+
+    for detection, detection_info in zip(detections, detection_infos):
+        filtered_detection = _filter_outliers_single_detection(
+            detection, detection_info, num_stddevs_outlier_threshold
+        )
+
+        filtered_detections.append(filtered_detection)
+
+    return filtered_detections
 
 
 def _opencv_calibrate_inner(
@@ -64,11 +145,20 @@ def _opencv_calibrate_inner(
 
     optimized_intrinsics = curr_intrinsics._with_params(result["intrinsics"])
 
-    optimized_cameras_from_target: list[Pose] = [Pose.from_cpp(np.array(a)) for a in result["cameras_from_target"]]
+    optimized_cameras_from_target: list[Pose] = [
+        Pose.from_cpp(np.array(a)) for a in result["cameras_from_target"]
+    ]
+    detection_infos = [
+        _compute_detection_info(
+            target_points, cam_from_target, detection, optimized_intrinsics
+        )
+        for cam_from_target, detection in zip(optimized_cameras_from_target, detections)
+    ]
 
     return CalibrationResult(
         optimized_camera_model=optimized_intrinsics,
         optimized_cameras_T_target=optimized_cameras_from_target,
+        detection_infos=detection_infos,
     )
 
 
@@ -91,9 +181,58 @@ def _opencv_calibrate(
     # TODO: get initial poses with PnP
     initial_cameras_from_target = [Pose.from_tz(100) for _ in range(num_cameras)]
 
-    result = _opencv_calibrate_inner(initial_intrinsics, config, initial_cameras_from_target, target_points, detections)
+    if num_stddevs_outlier_threshold is None:
+        return _opencv_calibrate_inner(
+            initial_intrinsics,
+            config,
+            initial_cameras_from_target,
+            target_points,
+            detections,
+        )
 
-    return result
+    original_detections = detections
+    curr_detections = detections
+    curr_intrinsics = initial_intrinsics
+    curr_cameras_from_target = initial_cameras_from_target
+
+    while True:
+        calibration_result = _opencv_calibrate_inner(
+            curr_intrinsics,
+            config,
+            curr_cameras_from_target,
+            target_points,
+            curr_detections,
+        )
+
+        curr_intrinsics = calibration_result.optimized_camera_model
+        curr_cameras_from_target = calibration_result.optimized_cameras_T_target
+
+        new_detections = _filter_outliers(
+            curr_detections,
+            calibration_result.detection_infos,
+            num_stddevs_outlier_threshold,
+        )
+
+        if all(
+            len(new_det) == len(old_det)
+            for new_det, old_det in zip(new_detections, curr_detections)
+        ):
+            break
+
+    original_detections_detection_infos = [
+        _compute_detection_info(
+            target_points, cam_from_target, detection, curr_intrinsics
+        )
+        for cam_from_target, detection in zip(
+            curr_cameras_from_target, original_detections
+        )
+    ]
+
+    return CalibrationResult(
+        optimized_camera_model=curr_intrinsics,
+        optimized_cameras_T_target=curr_cameras_from_target,
+        detection_infos=original_detections_detection_infos,
+    )
 
 
 def _pinhole_splined_refine_inner(
@@ -110,15 +249,28 @@ def _pinhole_splined_refine_inner(
         detections=[d.to_cpp() for d in detections],
     )
 
-    optimized_cameras_from_target = [Pose.from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_target"]]
+    optimized_cameras_from_target = [
+        Pose.from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_target"]
+    ]
 
     fine_tuned_dx_grid = fine_tune_result["dx_grid"]
     fine_tuned_dy_grid = fine_tune_result["dy_grid"]
 
-    optimized_model = replace(curr_intrinsics, dx_grid=fine_tuned_dx_grid, dy_grid=fine_tuned_dy_grid)
+    optimized_intrinsics = replace(
+        curr_intrinsics, dx_grid=fine_tuned_dx_grid, dy_grid=fine_tuned_dy_grid
+    )
+
+    detection_infos = [
+        _compute_detection_info(
+            target_points, cam_from_target, detection, optimized_intrinsics
+        )
+        for cam_from_target, detection in zip(optimized_cameras_from_target, detections)
+    ]
 
     return CalibrationResult(
-        optimized_camera_model=optimized_model, optimized_cameras_T_target=optimized_cameras_from_target
+        optimized_camera_model=optimized_intrinsics,
+        optimized_cameras_T_target=optimized_cameras_from_target,
+        detection_infos=detection_infos,
     )
 
 
@@ -141,11 +293,15 @@ def _calibrate_pinhole_splined(
         included_distoriton_coefficients=OpenCVConfig.FULL_12,
     )
 
-    opencv_calibration_result = _opencv_calibrate(target_points, detections, opencv_config, None)
+    opencv_calibration_result = _opencv_calibrate(
+        target_points, detections, opencv_config, None
+    )
 
     opencv_model = opencv_calibration_result.optimized_camera_model
 
-    out_dict = lbb.get_matching_spline_distortion_model(opencv_model.distortion_coeffs.tolist(), config._cpp_config())
+    out_dict = lbb.get_matching_spline_distortion_model(
+        opencv_model.distortion_coeffs.tolist(), config._cpp_config()
+    )
 
     x_knots = out_dict["x_knots"]
     y_knots = out_dict["y_knots"]
@@ -167,7 +323,9 @@ def _calibrate_pinhole_splined(
 
     cameras_from_target = opencv_calibration_result.optimized_cameras_T_target
 
-    result = _pinhole_splined_refine_inner(prior_model, cameras_from_target, target_points, detections)
+    result = _pinhole_splined_refine_inner(
+        prior_model, cameras_from_target, target_points, detections
+    )
 
     return result
 
@@ -201,9 +359,13 @@ def calibrate_camera(
         f"Expected floating dtype for target_points, got {target_points.dtype}"
     )
     if isinstance(camera_model_config, PinholeSplinedConfig):
-        return _calibrate_pinhole_splined(target_points, detections, camera_model_config, num_stddevs_outlier_threshold)
+        return _calibrate_pinhole_splined(
+            target_points, detections, camera_model_config, num_stddevs_outlier_threshold
+        )
 
     if isinstance(camera_model_config, OpenCVConfig):
-        return _opencv_calibrate(target_points, detections, camera_model_config, num_stddevs_outlier_threshold)
+        return _opencv_calibrate(
+            target_points, detections, camera_model_config, num_stddevs_outlier_threshold
+        )
 
     raise RuntimeError("Invalid config")

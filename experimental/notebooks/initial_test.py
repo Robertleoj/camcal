@@ -151,7 +151,7 @@ intrinsics.dx_grid
 projected = []
 undistorted_projected = []
 
-for pt_idx in detection.point_ids:
+for pt_idx in detection.target_point_indices:
     pt_target = obj_points[pt_idx]
     pt_cam = camera_pose.apply1(pt_target)
 
@@ -180,7 +180,7 @@ residuals = []
 for i, detection in enumerate(detections):
     detection: Detection
 
-    indices = detection.point_ids
+    indices = detection.target_point_indices
 
     points_in_target = obj_points[indices]
 

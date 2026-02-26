@@ -65,7 +65,9 @@ class PinholeRemapped(CameraModel):
         assert points_in_cam.ndim == 2 and points_in_cam.shape[1] == 3, (
             f"Expected (N, 3) array, got {points_in_cam.shape}"
         )
-        assert np.issubdtype(points_in_cam.dtype, np.floating), f"Expected floating dtype, got {points_in_cam.dtype}"
+        assert np.issubdtype(points_in_cam.dtype, np.floating), (
+            f"Expected floating dtype, got {points_in_cam.dtype}"
+        )
         points_cam = np.asarray(points_in_cam, dtype=np.float64)
 
         X = points_cam[:, 0]

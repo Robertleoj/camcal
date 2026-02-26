@@ -93,7 +93,9 @@ class PinholeSplined(CameraModel):
         )
 
     def _cpp_params(self) -> lbb.PinholeSplinedIntrinsicsParameters:
-        return lbb.PinholeSplinedIntrinsicsParameters(self._k4(), self.dx_grid, self.dy_grid)
+        return lbb.PinholeSplinedIntrinsicsParameters(
+            self._k4(), self.dx_grid, self.dy_grid
+        )
 
     def project_points(
         self,
@@ -102,7 +104,9 @@ class PinholeSplined(CameraModel):
         assert points_in_cam.ndim == 2 and points_in_cam.shape[1] == 3, (
             f"Expected (N, 3) array, got {points_in_cam.shape}"
         )
-        assert np.issubdtype(points_in_cam.dtype, np.floating), f"Expected floating dtype, got {points_in_cam.dtype}"
+        assert np.issubdtype(points_in_cam.dtype, np.floating), (
+            f"Expected floating dtype, got {points_in_cam.dtype}"
+        )
         return lbb.project_pinhole_splined_points(
             self._cpp_config(),
             self._cpp_params(),

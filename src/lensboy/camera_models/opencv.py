@@ -23,7 +23,9 @@ class OpenCVConfig(CameraModelConfig):
     image_width: int
 
     initial_focal_length: float
-    included_distoriton_coefficients: np.ndarray = field(default_factory=lambda: OpenCVConfig.STANDARD)
+    included_distoriton_coefficients: np.ndarray = field(
+        default_factory=lambda: OpenCVConfig.STANDARD
+    )
 
     NONE = _mask()
     STANDARD = _mask(K1, K2, P1, P2, K3)
@@ -89,7 +91,9 @@ class OpenCV(CameraModel):
 
         distortion_coeffs = np.array(params[4:])
 
-        return replace(self, fx=fx, fy=fy, cx=cx, cy=cy, distortion_coeffs=distortion_coeffs)
+        return replace(
+            self, fx=fx, fy=fy, cx=cx, cy=cy, distortion_coeffs=distortion_coeffs
+        )
 
     def project_points(
         self,
@@ -98,7 +102,9 @@ class OpenCV(CameraModel):
         assert points_in_cam.ndim == 2 and points_in_cam.shape[1] == 3, (
             f"Expected (N, 3) array, got {points_in_cam.shape}"
         )
-        assert np.issubdtype(points_in_cam.dtype, np.floating), f"Expected floating dtype, got {points_in_cam.dtype}"
+        assert np.issubdtype(points_in_cam.dtype, np.floating), (
+            f"Expected floating dtype, got {points_in_cam.dtype}"
+        )
         return cv2.projectPoints(
             points_in_cam,
             rvec=np.zeros(3),
