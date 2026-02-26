@@ -113,7 +113,7 @@ def _filter_outliers_single_detection(
 
 def _filter_outliers(
     detections: list[Detection],
-    residuals: np.ndarray,
+    residuals: list[np.ndarray],
     num_stddevs_outlier_threshold: float,
 ) -> list[Detection]:
     filtered_detections = []
@@ -208,17 +208,6 @@ def _opencv_calibrate(
     # TODO: get initial poses with PnP
     initial_cameras_from_target = [Pose.from_tz(100) for _ in range(num_cameras)]
 
-    if num_stddevs_outlier_threshold is None:
-        optimized_intrinsics, optimized_cameras_from_target = _opencv_calibrate_inner(
-            initial_intrinsics,
-            config,
-            initial_cameras_from_target,
-            target_points,
-            detections,
-        )
-
-        return CalibrationResult()
-
     original_detections = detections
     curr_detections = detections
     curr_intrinsics = initial_intrinsics
@@ -233,16 +222,17 @@ def _opencv_calibrate(
             curr_detections,
         )
 
-        projection_results = [
-            _project_and_calculate_residuals(
-                target_points, cam_from_target, detection, curr_intrinsics
-            )
-            for cam_from_target, detection in zip(curr_cameras_from_target, detections)
+        if num_stddevs_outlier_threshold is None:
+            break
+
+        curr_residuals = [
+            _project_and_calculate_residuals(target_points, cam, det, curr_intrinsics)[1]
+            for cam, det in zip(curr_cameras_from_target, curr_detections)
         ]
 
         new_detections = _filter_outliers(
             curr_detections,
-            calibration_result.detection_infos,
+            curr_residuals,
             num_stddevs_outlier_threshold,
         )
 
@@ -254,19 +244,18 @@ def _opencv_calibrate(
 
         curr_detections = new_detections
 
-    original_detections_detection_infos = [
-        _compute_detection_info(
-            target_points, cam_from_target, detection, curr_intrinsics
-        )
-        for cam_from_target, detection in zip(
-            curr_cameras_from_target, original_detections
-        )
-    ]
+    detection_infos = _compute_detection_infos(
+        curr_intrinsics,
+        curr_cameras_from_target,
+        original_detections,
+        curr_detections if curr_detections is not original_detections else None,
+        target_points,
+    )
 
     return CalibrationResult(
         optimized_camera_model=curr_intrinsics,
         optimized_cameras_T_target=curr_cameras_from_target,
-        detection_infos=original_detections_detection_infos,
+        detection_infos=detection_infos,
     )
 
 
@@ -275,7 +264,7 @@ def _pinhole_splined_refine_inner(
     curr_cameras_from_target: list[Pose],
     target_points: np.ndarray,
     detections: list[Detection],
-) -> CalibrationResult[PinholeSplined]:
+) -> tuple[PinholeSplined, list[Pose]]:
     fine_tune_result = lbb.fine_tune_pinhole_splined(
         model_config=curr_intrinsics._cpp_config(),
         intrinsics_parameters=curr_intrinsics._cpp_params(),
@@ -288,25 +277,13 @@ def _pinhole_splined_refine_inner(
         Pose.from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_target"]
     ]
 
-    fine_tuned_dx_grid = fine_tune_result["dx_grid"]
-    fine_tuned_dy_grid = fine_tune_result["dy_grid"]
-
     optimized_intrinsics = replace(
-        curr_intrinsics, dx_grid=fine_tuned_dx_grid, dy_grid=fine_tuned_dy_grid
+        curr_intrinsics,
+        dx_grid=fine_tune_result["dx_grid"],
+        dy_grid=fine_tune_result["dy_grid"],
     )
 
-    detection_infos = [
-        _compute_detection_info(
-            target_points, cam_from_target, detection, optimized_intrinsics
-        )
-        for cam_from_target, detection in zip(optimized_cameras_from_target, detections)
-    ]
-
-    return CalibrationResult(
-        optimized_camera_model=optimized_intrinsics,
-        optimized_cameras_T_target=optimized_cameras_from_target,
-        detection_infos=detection_infos,
-    )
+    return optimized_intrinsics, optimized_cameras_from_target
 
 
 def _calibrate_pinhole_splined(
@@ -358,30 +335,30 @@ def _calibrate_pinhole_splined(
 
     cameras_from_target = opencv_calibration_result.optimized_cameras_T_target
 
-    if num_stddevs_outlier_threshold is None:
-        return _pinhole_splined_refine_inner(
-            prior_model, cameras_from_target, target_points, detections
-        )
-
     original_detections = detections
     curr_detections = detections
     curr_intrinsics = prior_model
     curr_cameras_from_target = cameras_from_target
 
     while True:
-        calibration_result = _pinhole_splined_refine_inner(
+        curr_intrinsics, curr_cameras_from_target = _pinhole_splined_refine_inner(
             curr_intrinsics,
             curr_cameras_from_target,
             target_points,
             curr_detections,
         )
 
-        curr_intrinsics = calibration_result.optimized_camera_model
-        curr_cameras_from_target = calibration_result.optimized_cameras_T_target
+        if num_stddevs_outlier_threshold is None:
+            break
+
+        curr_residuals = [
+            _project_and_calculate_residuals(target_points, cam, det, curr_intrinsics)[1]
+            for cam, det in zip(curr_cameras_from_target, curr_detections)
+        ]
 
         new_detections = _filter_outliers(
             curr_detections,
-            calibration_result.detection_infos,
+            curr_residuals,
             num_stddevs_outlier_threshold,
         )
 
@@ -393,19 +370,18 @@ def _calibrate_pinhole_splined(
 
         curr_detections = new_detections
 
-    original_detections_detection_infos = [
-        _compute_detection_info(
-            target_points, cam_from_target, detection, curr_intrinsics
-        )
-        for cam_from_target, detection in zip(
-            curr_cameras_from_target, original_detections
-        )
-    ]
+    detection_infos = _compute_detection_infos(
+        curr_intrinsics,
+        curr_cameras_from_target,
+        original_detections,
+        curr_detections if curr_detections is not original_detections else None,
+        target_points,
+    )
 
     return CalibrationResult(
         optimized_camera_model=curr_intrinsics,
         optimized_cameras_T_target=curr_cameras_from_target,
-        detection_infos=original_detections_detection_infos,
+        detection_infos=detection_infos,
     )
 
 
