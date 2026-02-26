@@ -1,5 +1,6 @@
 import logging
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from timeit import default_timer
 from typing import Generic, TypeVar, overload
@@ -205,6 +206,54 @@ def _compute_detection_infos(
     return detection_infos
 
 
+def _run_with_outlier_filtering(
+    optimize_fn: Callable,
+    initial_intrinsics,
+    initial_cameras_from_target: list[Pose],
+    target_points: np.ndarray,
+    original_detections: list[Detection],
+    num_stddevs_outlier_threshold: float | None,
+):
+    curr_intrinsics = initial_intrinsics
+    curr_cameras_from_target = initial_cameras_from_target
+    curr_detections = original_detections
+    total_observations = sum(len(d) for d in original_detections)
+
+    for i in range(MAX_OUTLIER_FILTER_PASSES + 1):
+        curr_intrinsics, curr_cameras_from_target = optimize_fn(
+            curr_intrinsics, curr_cameras_from_target, target_points, curr_detections
+        )
+
+        if num_stddevs_outlier_threshold is None or i == MAX_OUTLIER_FILTER_PASSES:
+            break
+
+        curr_residuals = [
+            _project_and_calculate_residuals(target_points, cam, det, curr_intrinsics)[1]
+            for cam, det in zip(curr_cameras_from_target, curr_detections)
+        ]
+
+        new_detections = _filter_outliers(
+            curr_detections, curr_residuals, num_stddevs_outlier_threshold
+        )
+
+        if all(
+            len(new_det) == len(old_det)
+            for new_det, old_det in zip(new_detections, curr_detections)
+        ):
+            break
+
+        curr_detections = new_detections
+
+        total_remaining = sum(len(d) for d in curr_detections)
+        total_outliers = total_observations - total_remaining
+        LOG.info(
+            f"Threw out some outliers - {total_outliers}/{total_observations}"
+            f" ({total_outliers / total_observations * 100:.1f}%)"
+        )
+
+    return curr_intrinsics, curr_cameras_from_target, curr_detections
+
+
 def _opencv_calibrate(
     target_points: np.ndarray,
     detections: list[Detection],
@@ -217,54 +266,29 @@ def _opencv_calibrate(
     assert np.issubdtype(target_points.dtype, np.floating), (
         f"Expected floating dtype for target_points, got {target_points.dtype}"
     )
-    num_cameras = len(detections)
-
     initial_intrinsics = config.get_initial_value()
-
     # TODO: get initial poses with PnP
-    initial_cameras_from_target = [Pose.from_tz(100) for _ in range(num_cameras)]
+    initial_cameras_from_target = [Pose.from_tz(100) for _ in range(len(detections))]
 
-    original_detections = detections
-    curr_detections = detections
-    curr_intrinsics = initial_intrinsics
-    curr_cameras_from_target = initial_cameras_from_target
+    def optimize_fn(intrinsics, cameras, tp, dets):
+        return _opencv_calibrate_inner(intrinsics, config, cameras, tp, dets)
 
-    for i in range(MAX_OUTLIER_FILTER_PASSES + 1):
-        curr_intrinsics, curr_cameras_from_target = _opencv_calibrate_inner(
-            curr_intrinsics,
-            config,
-            curr_cameras_from_target,
+    curr_intrinsics, curr_cameras_from_target, curr_detections = (
+        _run_with_outlier_filtering(
+            optimize_fn,
+            initial_intrinsics,
+            initial_cameras_from_target,
             target_points,
-            curr_detections,
-        )
-
-        if num_stddevs_outlier_threshold is None or i == MAX_OUTLIER_FILTER_PASSES:
-            break
-
-        curr_residuals = [
-            _project_and_calculate_residuals(target_points, cam, det, curr_intrinsics)[1]
-            for cam, det in zip(curr_cameras_from_target, curr_detections)
-        ]
-
-        new_detections = _filter_outliers(
-            curr_detections,
-            curr_residuals,
+            detections,
             num_stddevs_outlier_threshold,
         )
-
-        if all(
-            len(new_det) == len(old_det)
-            for new_det, old_det in zip(new_detections, curr_detections)
-        ):
-            break
-
-        curr_detections = new_detections
+    )
 
     detection_infos = _compute_detection_infos(
         curr_intrinsics,
         curr_cameras_from_target,
-        original_detections,
-        curr_detections if curr_detections is not original_detections else None,
+        detections,
+        curr_detections if curr_detections is not detections else None,
         target_points,
     )
 
@@ -359,66 +383,33 @@ def _calibrate_pinhole_splined(
 
     cameras_from_target = opencv_calibration_result.optimized_cameras_T_target
 
-    original_detections = detections
-    curr_detections = detections
-    curr_intrinsics = prior_model
-    curr_cameras_from_target = cameras_from_target
-
-    total_observations = sum(len(det) for det in original_detections)
-
-    for i in range(MAX_OUTLIER_FILTER_PASSES + 1):
+    def optimize_fn(intrinsics, cameras, tp, dets):
         LOG.info("Running full optimization...")
-        start_time = default_timer()
-        curr_intrinsics, curr_cameras_from_target = _pinhole_splined_refine_inner(
-            curr_intrinsics,
-            curr_cameras_from_target,
-            target_points,
-            curr_detections,
-        )
-        end_time = default_timer()
-        LOG.info(f"Performed full optimization in {end_time - start_time:.2f}s")
+        start = default_timer()
+        result = _pinhole_splined_refine_inner(intrinsics, cameras, tp, dets)
+        LOG.info(f"Performed full optimization in {default_timer() - start:.2f}s")
+        return result
 
-        if num_stddevs_outlier_threshold is None or i == MAX_OUTLIER_FILTER_PASSES:
-            break
-
-        curr_residuals = [
-            _project_and_calculate_residuals(target_points, cam, det, curr_intrinsics)[1]
-            for cam, det in zip(curr_cameras_from_target, curr_detections)
-        ]
-
-        new_detections = _filter_outliers(
-            curr_detections,
-            curr_residuals,
-            num_stddevs_outlier_threshold,
-        )
-
-        if all(
-            len(new_det) == len(old_det)
-            for new_det, old_det in zip(new_detections, curr_detections)
-        ):
-            break
-
-        curr_detections = new_detections
-
-        total_remaining = sum(len(det) for det in curr_detections)
-        total_outliers = total_observations - total_remaining
-        outlier_ratio = total_outliers / total_observations
-        LOG.info(
-            f"Threw out some outliers - {total_outliers}/{total_observations}"
-            f" ({outlier_ratio * 100:.1f}%)"
-        )
+    curr_intrinsics, curr_cameras, curr_detections = _run_with_outlier_filtering(
+        optimize_fn,
+        prior_model,
+        cameras_from_target,
+        target_points,
+        detections,
+        num_stddevs_outlier_threshold,
+    )
 
     detection_infos = _compute_detection_infos(
         curr_intrinsics,
-        curr_cameras_from_target,
-        original_detections,
-        curr_detections if curr_detections is not original_detections else None,
+        curr_cameras,
+        detections,
+        curr_detections if curr_detections is not detections else None,
         target_points,
     )
 
     return CalibrationResult(
         optimized_camera_model=curr_intrinsics,
-        optimized_cameras_T_target=curr_cameras_from_target,
+        optimized_cameras_T_target=curr_cameras,
         detection_infos=detection_infos,
     )
 
