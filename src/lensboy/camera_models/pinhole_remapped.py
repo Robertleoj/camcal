@@ -49,7 +49,8 @@ class PinholeRemapped(CameraModel):
         h, w = image.shape[:2]
         if (h, w) != (self.input_image_height, self.input_image_width):
             raise ValueError(
-                f"image shape {(h, w)} != model image size {(self.input_image_height, self.input_image_width)}"
+                f"image shape {(h, w)} != model image size "
+                f"{(self.input_image_height, self.input_image_width)}"
             )
 
         return cv2.remap(
