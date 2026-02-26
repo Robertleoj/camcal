@@ -15,6 +15,7 @@ from lensboy.geometry.pose import Pose
 LOG = logging.getLogger(__name__)
 
 DEFAULT_OUTLIER_THRESHOLD = 4.0
+MAX_OUTLIER_FILTER_PASSES = 2
 
 
 @dataclass
@@ -230,7 +231,7 @@ def _opencv_calibrate(
     curr_intrinsics = initial_intrinsics
     curr_cameras_from_target = initial_cameras_from_target
 
-    while True:
+    for i in range(MAX_OUTLIER_FILTER_PASSES + 1):
         curr_intrinsics, curr_cameras_from_target = _opencv_calibrate_inner(
             curr_intrinsics,
             config,
@@ -239,7 +240,7 @@ def _opencv_calibrate(
             curr_detections,
         )
 
-        if num_stddevs_outlier_threshold is None:
+        if num_stddevs_outlier_threshold is None or i == MAX_OUTLIER_FILTER_PASSES:
             break
 
         curr_residuals = [
@@ -367,7 +368,7 @@ def _calibrate_pinhole_splined(
 
     total_observations = sum(len(det) for det in original_detections)
 
-    while True:
+    for i in range(MAX_OUTLIER_FILTER_PASSES + 1):
         LOG.info("Running full optimization...")
         start_time = default_timer()
         curr_intrinsics, curr_cameras_from_target = _pinhole_splined_refine_inner(
@@ -379,7 +380,7 @@ def _calibrate_pinhole_splined(
         end_time = default_timer()
         LOG.info(f"Performed full optimization in {end_time - start_time:.2f}s")
 
-        if num_stddevs_outlier_threshold is None:
+        if num_stddevs_outlier_threshold is None or i == MAX_OUTLIER_FILTER_PASSES:
             break
 
         curr_residuals = [
@@ -405,7 +406,8 @@ def _calibrate_pinhole_splined(
         total_outliers = total_observations - total_remaining
         outlier_ratio = total_outliers / total_observations
         LOG.info(
-            f"Threw out some outliers - number of outliers = {total_outliers}/{total_observations} ({outlier_ratio * 100:.1f}%)"
+            f"Threw out some outliers - {total_outliers}/{total_observations}"
+            f" ({outlier_ratio * 100:.1f}%)"
         )
 
     detection_infos = _compute_detection_infos(
