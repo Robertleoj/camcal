@@ -24,9 +24,13 @@ class PinholeRemapped(CameraModel):
 
     def __post_init__(self):
         assert self.map_x.ndim == 2, f"Expected 2D map_x, got {self.map_x.ndim}D"
-        assert np.issubdtype(self.map_x.dtype, np.floating), f"Expected floating dtype for map_x, got {self.map_x.dtype}"
+        assert np.issubdtype(self.map_x.dtype, np.floating), (
+            f"Expected floating dtype for map_x, got {self.map_x.dtype}"
+        )
         assert self.map_y.ndim == 2, f"Expected 2D map_y, got {self.map_y.ndim}D"
-        assert np.issubdtype(self.map_y.dtype, np.floating), f"Expected floating dtype for map_y, got {self.map_y.dtype}"
+        assert np.issubdtype(self.map_y.dtype, np.floating), (
+            f"Expected floating dtype for map_y, got {self.map_y.dtype}"
+        )
 
     def undistort(
         self,
@@ -34,10 +38,7 @@ class PinholeRemapped(CameraModel):
         *,
         interpolation: int = cv2.INTER_LINEAR,
         border_mode: int = cv2.BORDER_CONSTANT,
-        border_value: int
-        | float
-        | tuple[int, int, int]
-        | tuple[int, int, int, int] = 0,
+        border_value: int | float | tuple[int, int, int] | tuple[int, int, int, int] = 0,
     ) -> np.ndarray:
         if image.ndim not in (2, 3):
             raise ValueError(f"image must be HxW or HxWxC, got {image.shape}")
@@ -48,8 +49,7 @@ class PinholeRemapped(CameraModel):
         h, w = image.shape[:2]
         if (h, w) != (self.input_image_height, self.input_image_width):
             raise ValueError(
-                f"image shape {(h, w)} != model image size "
-                f"{(self.input_image_height, self.input_image_width)}"
+                f"image shape {(h, w)} != model image size {(self.input_image_height, self.input_image_width)}"
             )
 
         return cv2.remap(
@@ -61,15 +61,11 @@ class PinholeRemapped(CameraModel):
             borderValue=border_value,
         )
 
-    def project_points_undistorted(
-        self, points_in_cam: np.ndarray
-    ) -> np.ndarray:
+    def project_points_undistorted(self, points_in_cam: np.ndarray) -> np.ndarray:
         assert points_in_cam.ndim == 2 and points_in_cam.shape[1] == 3, (
             f"Expected (N, 3) array, got {points_in_cam.shape}"
         )
-        assert np.issubdtype(points_in_cam.dtype, np.floating), (
-            f"Expected floating dtype, got {points_in_cam.dtype}"
-        )
+        assert np.issubdtype(points_in_cam.dtype, np.floating), f"Expected floating dtype, got {points_in_cam.dtype}"
         points_cam = np.asarray(points_in_cam, dtype=np.float64)
 
         X = points_cam[:, 0]

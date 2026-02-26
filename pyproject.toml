@@ -46,6 +46,7 @@ dev = [
 
 [tool.ruff]
 exclude = ["**/*.pyi", "experimental/**"]
+line-length = 120
 
 [tool.ruff.lint]
 # Allow unused variables when underscore-prefixed.

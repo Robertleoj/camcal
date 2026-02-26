@@ -20,9 +20,13 @@ class Detection:
 
     def __post_init__(self):
         assert self.point_ids.ndim == 1, f"Expected 1D point_ids, got {self.point_ids.ndim}D"
-        assert np.issubdtype(self.point_ids.dtype, np.integer), f"Expected integer dtype for point_ids, got {self.point_ids.dtype}"
+        assert np.issubdtype(self.point_ids.dtype, np.integer), (
+            f"Expected integer dtype for point_ids, got {self.point_ids.dtype}"
+        )
         assert self.points.ndim == 2 and self.points.shape[1] == 2, f"Expected (N, 2) points, got {self.points.shape}"
-        assert np.issubdtype(self.points.dtype, np.floating), f"Expected floating dtype for points, got {self.points.dtype}"
+        assert np.issubdtype(self.points.dtype, np.floating), (
+            f"Expected floating dtype for points, got {self.points.dtype}"
+        )
 
     def to_cpp(self) -> tuple[list[int], list[np.ndarray]]:
         return (self.point_ids.tolist(), list(self.points))
@@ -55,16 +59,12 @@ def _opencv_calibrate(
 
     mask = config.optimize_mask()
     if mask is None:
-        intrinsics_param_optimize_mask = np.ones(
-            len(initial_params), dtype=bool
-        ).tolist()
+        intrinsics_param_optimize_mask = np.ones(len(initial_params), dtype=bool).tolist()
     else:
         intrinsics_param_optimize_mask = mask.tolist()
 
     # TODO: get initial poses with PnP
-    cameras_from_target_in = [
-        np.array([0, 0, 0, 0, 0, 100], dtype=np.float32) for _ in range(num_cameras)
-    ]
+    cameras_from_target_in = [np.array([0, 0, 0, 0, 0, 100], dtype=np.float32) for _ in range(num_cameras)]
 
     result = lbb.calibrate_opencv(
         intrinsics_initial_value=initial_params,
@@ -76,9 +76,7 @@ def _opencv_calibrate(
 
     optimized_intrinsics = initial_intrinsics._with_params(result["intrinsics"])
 
-    cameras_from_target: list[Pose] = [
-        Pose.from_cpp(np.array(a)) for a in result["cameras_from_target"]
-    ]
+    cameras_from_target: list[Pose] = [Pose.from_cpp(np.array(a)) for a in result["cameras_from_target"]]
 
     return CalibrationResult(
         optimized_camera_model=optimized_intrinsics,
@@ -104,15 +102,11 @@ def _calibrate_pinhole_splined(
         included_distoriton_coefficients=OpenCVConfig.FULL_12,
     )
 
-    opencv_calibration_result = _opencv_calibrate(
-        target_points, detections, opencv_config
-    )
+    opencv_calibration_result = _opencv_calibrate(target_points, detections, opencv_config)
 
     opencv_model = cast(OpenCV, opencv_calibration_result.optimized_camera_model)
 
-    out_dict = lbb.get_matching_spline_distortion_model(
-        opencv_model.distortion_coeffs.tolist(), config._cpp_config()
-    )
+    out_dict = lbb.get_matching_spline_distortion_model(opencv_model.distortion_coeffs.tolist(), config._cpp_config())
 
     x_knots = out_dict["x_knots"]
     y_knots = out_dict["y_knots"]
@@ -135,24 +129,17 @@ def _calibrate_pinhole_splined(
     fine_tune_result = lbb.fine_tune_pinhole_splined(
         model_config=prior_model._cpp_config(),
         intrinsics_parameters=prior_model._cpp_params(),
-        cameras_from_target=[
-            pose.to_cpp()
-            for pose in opencv_calibration_result.optimized_cameras_T_target
-        ],
+        cameras_from_target=[pose.to_cpp() for pose in opencv_calibration_result.optimized_cameras_T_target],
         target_points=list(target_points),
         detections=[d.to_cpp() for d in detections],
     )
 
-    cameras_from_target = [
-        Pose.from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_target"]
-    ]
+    cameras_from_target = [Pose.from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_target"]]
 
     fine_tuned_dx_grid = fine_tune_result["dx_grid"]
     fine_tuned_dy_grid = fine_tune_result["dy_grid"]
 
-    final_model = replace(
-        prior_model, dx_grid=fine_tuned_dx_grid, dy_grid=fine_tuned_dy_grid
-    )
+    final_model = replace(prior_model, dx_grid=fine_tuned_dx_grid, dy_grid=fine_tuned_dy_grid)
 
     return CalibrationResult(final_model, cameras_from_target)
 
@@ -185,9 +172,7 @@ def calibrate_camera(
         f"Expected floating dtype for target_points, got {target_points.dtype}"
     )
     if isinstance(camera_model_config, PinholeSplinedConfig):
-        return _calibrate_pinhole_splined(
-            target_points, detections, camera_model_config
-        )
+        return _calibrate_pinhole_splined(target_points, detections, camera_model_config)
 
     if isinstance(camera_model_config, OpenCVConfig):
         return _opencv_calibrate(target_points, detections, camera_model_config)
