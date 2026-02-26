@@ -82,7 +82,7 @@ class OpenCV(CameraModel):
     def _params(self):
         return [self.fx, self.fy, self.cx, self.cy, *self.distortion_coeffs]
 
-    def _with_params(self, params: list[float]) -> CameraModel:
+    def _with_params(self, params: list[float]) -> OpenCV:
         assert len(params) == 4 + 12
 
         fx, fy, cx, cy = params[:4]

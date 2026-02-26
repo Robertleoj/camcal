@@ -31,11 +31,13 @@ class Pose:
         trans: np.ndarray | None = None,
     ) -> Pose:
         if rotvec is not None:
+            rotvec = rotvec.flatten().astype(float)
             assert rotvec.shape == (3,), f"Expected (3,) rotvec, got {rotvec.shape}"
-            assert np.issubdtype(rotvec.dtype, np.floating), f"Expected floating dtype, got {rotvec.dtype}"
+
         if trans is not None:
+            trans = trans.flatten().astype(float)
             assert trans.shape == (3,), f"Expected (3,) trans, got {trans.shape}"
-            assert np.issubdtype(trans.dtype, np.floating), f"Expected floating dtype, got {trans.dtype}"
+
         rotmat = None
         if rotvec is not None:
             rotmat = cv2.Rodrigues(rotvec)[0]
@@ -62,6 +64,18 @@ class Pose:
             mat[:3, 3] = trans
 
         return Pose(mat)
+
+    @staticmethod
+    def from_tx(x: float):
+        return Pose.from_rotvec_trans(trans=np.array([x, 0, 0]))
+
+    @staticmethod
+    def from_ty(y: float):
+        return Pose.from_rotvec_trans(trans=np.array([0, y, 0]))
+
+    @staticmethod
+    def from_tz(z: float):
+        return Pose.from_rotvec_trans(trans=np.array([0, 0, z]))
 
     @property
     def rotvec(self) -> np.ndarray:
