@@ -2,7 +2,6 @@ import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from random import seed
 from timeit import default_timer
 from typing import Generic, TypeVar, overload
 
@@ -295,9 +294,7 @@ def _initialize_poses_with_pnp(
             success, rvec, tvec = cv2.solvePnP(obj_pts, img_pts, K, dist_coeffs)
             if success:
                 poses.append(
-                    Pose.from_rotvec_trans(
-                        rotvec=rvec.flatten(), trans=tvec.flatten()
-                    )
+                    Pose.from_rotvec_trans(rotvec=rvec.flatten(), trans=tvec.flatten())
                 )
                 continue
 

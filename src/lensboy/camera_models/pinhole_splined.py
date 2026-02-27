@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
 import cv2
+import numpy as np
 
 from lensboy import lensboy_bindings as lbb
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
