@@ -278,6 +278,35 @@ def _run_with_outlier_filtering(
     return curr_intrinsics, curr_cameras_from_target, curr_detections
 
 
+def _initialize_poses_with_pnp(
+    initial_intrinsics: OpenCV,
+    target_points: np.ndarray,
+    detections: list[Detection],
+) -> list[Pose]:
+    K = initial_intrinsics.K()
+    dist_coeffs = np.zeros(5, dtype=np.float64)
+
+    poses = []
+    for det in detections:
+        obj_pts = target_points[det.target_point_indices].astype(np.float64)
+        img_pts = det.detected_points_in_image.astype(np.float64)
+
+        if len(obj_pts) >= 4:
+            success, rvec, tvec = cv2.solvePnP(obj_pts, img_pts, K, dist_coeffs)
+            if success:
+                poses.append(
+                    Pose.from_rotvec_trans(
+                        rotvec=rvec.flatten(), trans=tvec.flatten()
+                    )
+                )
+                continue
+
+        LOG.warning("PnP init failed for detection, using fallback pose")
+        poses.append(Pose.from_tz(100))
+
+    return poses
+
+
 def _opencv_calibrate(
     target_points: np.ndarray,
     detections: list[Detection],
@@ -291,9 +320,10 @@ def _opencv_calibrate(
         f"Expected floating dtype for target_points, got {target_points.dtype}"
     )
     initial_intrinsics = config.get_initial_value()
-    # TODO: get initial poses with PnP
-    LOG.info("Computing initial poses...")
-    initial_cameras_from_target = [Pose.from_tz(100) for _ in range(len(detections))]
+    LOG.info("Computing initial poses with PnP...")
+    initial_cameras_from_target = _initialize_poses_with_pnp(
+        initial_intrinsics, target_points, detections
+    )
 
     def optimize_fn(intrinsics, cameras, tp, dets):
         return _opencv_calibrate_inner(intrinsics, config, cameras, tp, dets)
@@ -355,33 +385,10 @@ def _pinhole_splined_refine_inner(
 def _compute_fov_from_opencv(
     opencv_model: OpenCV, buffer_deg: float = 2.0
 ) -> tuple[float, float]:
-    h = opencv_model.image_height
-    w = opencv_model.image_width
-    n = 200
-
-    xs = np.linspace(0, w, n)
-    ys = np.linspace(0, h, n)
-    border = np.vstack(
-        [
-            np.column_stack([xs, np.zeros(n)]),  # top
-            np.column_stack([xs, np.full(n, h)]),  # bottom
-            np.column_stack([np.zeros(n), ys]),  # left
-            np.column_stack([np.full(n, w), ys]),  # right
-        ]
-    ).astype(np.float64)
-
-    undistorted = cv2.undistortPoints(
-        border.reshape(-1, 1, 2),
-        opencv_model.K(),
-        opencv_model.distortion_coeffs,
-    ).reshape(-1, 2)
-
-    nx, ny = undistorted[:, 0], undistorted[:, 1]
-
-    fov_x_deg = np.degrees(np.arctan(np.max(nx)) + np.arctan(-np.min(nx))) + buffer_deg
-    fov_y_deg = np.degrees(np.arctan(np.max(ny)) + np.arctan(-np.min(ny))) + buffer_deg
-
-    return float(fov_x_deg), float(fov_y_deg)
+    return (
+        opencv_model.fov_deg_x + buffer_deg,
+        opencv_model.fov_deg_y + buffer_deg,
+    )
 
 
 def _calibrate_pinhole_splined(

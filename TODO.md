@@ -1,8 +1,6 @@
-- Better initializing
 - Add target warp functionality
 - Clean up spline stuff in c++ - remove the duplicated logic
 - Write good README
-- Package and publish on pypi
 - Implement saving and loading the models (json works)
 - Make plug-n-play notebook that the user can use to calibrate using the library
 - make `analysis` extra, which includes vis libs and `lensboy.analysis`

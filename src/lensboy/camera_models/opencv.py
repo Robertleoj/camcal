@@ -115,3 +115,35 @@ class OpenCV(CameraModel):
 
     def K(self):
         return np.array([[self.fx, 0, self.cx], [0, self.fy, self.cy], [0, 0, 1]])
+
+    @property
+    def fov_deg_x(self) -> float:
+        return self._compute_fov()[0]
+
+    @property
+    def fov_deg_y(self) -> float:
+        return self._compute_fov()[1]
+
+    def _compute_fov(self) -> tuple[float, float]:
+        n = 200
+        xs = np.linspace(0, self.image_width, n)
+        ys = np.linspace(0, self.image_height, n)
+        border = np.vstack(
+            [
+                np.column_stack([xs, np.zeros(n)]),
+                np.column_stack([xs, np.full(n, self.image_height)]),
+                np.column_stack([np.zeros(n), ys]),
+                np.column_stack([np.full(n, self.image_width), ys]),
+            ]
+        ).astype(np.float64)
+
+        undistorted = cv2.undistortPoints(
+            border.reshape(-1, 1, 2),
+            self.K(),
+            self.distortion_coeffs,
+        ).reshape(-1, 2)
+
+        nx, ny = undistorted[:, 0], undistorted[:, 1]
+        fov_x = float(np.degrees(np.arctan(np.max(nx)) + np.arctan(-np.min(nx))))
+        fov_y = float(np.degrees(np.arctan(np.max(ny)) + np.arctan(-np.min(ny))))
+        return fov_x, fov_y

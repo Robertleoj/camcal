@@ -1,0 +1,3 @@
+- Don't go too deep without exposing and sanity checking your approach with the user.
+- Try to avoid thinking deeply unless explicity instructed to do so.
+- Don't worry about formatting errors, they will be taken care of by the autoformatter.
