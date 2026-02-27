@@ -384,12 +384,10 @@ static inline void BuildProblem(
         problem.AddParameterBlock(dy_blocks[i], 1);
     }
 
-    // camera blocks
     for (auto& cam : cameras_from_target) {
         problem.AddParameterBlock(const_cast<double*>(cam.data()), 6);
     }
 
-    // points constant
     for (auto& pt : target_points) {
         problem.AddParameterBlock(const_cast<double*>(pt.data()), 3);
         problem.SetParameterBlockConstant(const_cast<double*>(pt.data()));

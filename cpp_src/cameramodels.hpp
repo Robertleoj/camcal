@@ -65,7 +65,6 @@ void distort_opencv(
     const T x = normalized_point[0];
     const T y = normalized_point[1];
 
-    // r^2 etc.
     const T r2 = x * x + y * y;
     const T r4 = r2 * r2;
     const T r6 = r4 * r2;
@@ -84,8 +83,6 @@ void distort_opencv(
     const T y_tan = p1 * (r2 + T(2) * y * y) + T(2) * p2 * x * y;
 
     // Thin prism distortion (OpenCV s1..s4)
-    // x_prism = s1 * r^2 + s2 * r^4
-    // y_prism = s3 * r^2 + s4 * r^4
     const T x_prism = s1 * r2 + s2 * r4;
     const T y_prism = s3 * r2 + s4 * r4;
 
@@ -109,13 +106,11 @@ void project_opencv(
 
     distort_opencv(intrinsics + 4, normalized, distorted_normalized);
 
-    // Intrinsics
     const T fx = intrinsics[0];
     const T fy = intrinsics[1];
     const T cx = intrinsics[2];
     const T cy = intrinsics[3];
 
-    // Back to pixels
     result << fx * distorted_normalized[0] + cx,
         fy * distorted_normalized[1] + cy;
 }

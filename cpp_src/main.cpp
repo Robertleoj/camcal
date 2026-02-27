@@ -14,7 +14,6 @@ int add(
     return a + b;
 }
 
-// Define the Python module
 PYBIND11_MODULE(
     lensboy_bindings,
     m

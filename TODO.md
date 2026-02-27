@@ -1,5 +1,4 @@
 - Add target warp functionality
-- Clean up spline stuff in c++ - remove the duplicated logic
 - Write good README
 - document public functions with docstrings
 - Implement saving and loading the models (json works)

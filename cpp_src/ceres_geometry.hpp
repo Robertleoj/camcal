@@ -19,7 +19,6 @@ Eigen::Matrix<T, 3, 1> transform_point(
         rotated.data()
     );
 
-    // Add translation
     rotated[0] += pose[3];
     rotated[1] += pose[4];
     rotated[2] += pose[5];

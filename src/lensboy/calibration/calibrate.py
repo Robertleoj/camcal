@@ -124,7 +124,6 @@ def _radius_threshold_from_k(k: float) -> float:
     For df=2: chi2 CDF is 1-exp(-x/2), so quantile is x = -2 ln(1-p).
     Threshold radius = sqrt(x) * sigma.
     """
-    # 1D normal CDF via erf
     p1 = 0.5 * (1.0 + math.erf(k / math.sqrt(2.0)))
     p = 2.0 * p1 - 1.0
     x = -2.0 * np.log(1.0 - p)
