@@ -395,14 +395,38 @@ static inline void BuildProblem(
         problem.SetParameterBlockConstant(const_cast<double*>(pt.data()));
     }
 
-    // priors: cheap + exact
+    // Determine which knots have an observation in an immediately adjacent cell
+    // (i.e. the observation's cell shares this knot as a corner).
+    // For cell (ix, iy) that means the 2x2 corner knots: (ix,iy), (ix+1,iy),
+    // (ix,iy+1), (ix+1,iy+1).
+    std::vector<bool> knot_has_obs(n_knots, false);
+    for (size_t cam_idx = 0; cam_idx < detections.size(); cam_idx++) {
+        auto& ids = std::get<0>(detections[cam_idx]);
+        auto& cam6 = cameras_from_target[cam_idx];
+        for (size_t oi = 0; oi < ids.size(); oi++) {
+            const auto& pw = target_points[ids[oi]];
+            int ix, iy;
+            map.cell_index(cam6.data(), pw, ix, iy);
+            for (int dy = 0; dy <= 1; dy++) {
+                for (int dx = 0; dx <= 1; dx++) {
+                    const int kx = clamp_int(ix + dx, 0, nx - 1);
+                    const int ky = clamp_int(iy + dy, 0, ny - 1);
+                    knot_has_obs[ky * nx + kx] = true;
+                }
+            }
+        }
+    }
+
+    // priors: only for knots with no observation influence
     for (int i = 0; i < n_knots; i++) {
-        problem.AddResidualBlock(
-            new KnotPrior2D(sqrt_lambda, dx0[i], dy0[i]),
-            nullptr,
-            dx_blocks[i],
-            dy_blocks[i]
-        );
+        if (!knot_has_obs[i]) {
+            problem.AddResidualBlock(
+                new KnotPrior2D(sqrt_lambda, dx0[i], dy0[i]),
+                nullptr,
+                dx_blocks[i],
+                dy_blocks[i]
+            );
+        }
     }
 
     // reprojection residuals (wired to correct 16 knots for each observation)
