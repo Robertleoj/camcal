@@ -22,7 +22,7 @@ minimum-version = "build-system.requires"
 build-dir = "build"
 
 [tool.cibuildwheel]
-skip = ["*musllinux", "*win"]
+skip = ["*musllinux", "*win", "*i686"]
 
 [tool.cibuildwheel.linux]
 manylinux-x86_64-image = "manylinux_2_28"
