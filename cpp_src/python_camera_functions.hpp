@@ -88,9 +88,6 @@ static py::tuple make_undistortion_maps_pinhole_splined(
         "dy_grid must have shape (num_knots_y, num_knots_x)"
     );
 
-    const int Nx = (int)model_config.num_knots_x;
-    const int Ny = (int)model_config.num_knots_y;
-
     auto k4b_in = intrinsics.k4.request();
     require(
         k4b_in.ndim == 1 && k4b_in.shape[0] == 4,
@@ -98,12 +95,8 @@ static py::tuple make_undistortion_maps_pinhole_splined(
     );
     const double* k4_in = static_cast<const double*>(k4b_in.ptr);
 
-    const double fx_in = k4_in[0];
-    const double fy_in = k4_in[1];
-    const double cx_in = k4_in[2];
-    const double cy_in = k4_in[3];
     require(
-        fx_in != 0.0 && fy_in != 0.0,
+        k4_in[0] != 0.0 && k4_in[1] != 0.0,
         "intrinsics.k4 fx/fy must be non-zero"
     );
 
@@ -138,51 +131,18 @@ static py::tuple make_undistortion_maps_pinhole_splined(
     float* MX = static_cast<float*>(mx.ptr);
     float* MY = static_cast<float*>(my.ptr);
 
-    // Precompute spline domain mapping terms
-    const double fov_rad_x = model_config.fov_deg_x * M_PI / 180.0;
-    const double fov_rad_y = model_config.fov_deg_y * M_PI / 180.0;
-    const double half_x_range = std::tan(fov_rad_x / 2.0);
-    const double half_y_range = std::tan(fov_rad_y / 2.0);
-
-    const double x_range_start = -half_x_range;
-    const double x_range_end = +half_x_range;
-    const double y_range_start = -half_y_range;
-    const double y_range_end = +half_y_range;
-
-    const double inv_x_span = 1.0 / (x_range_end - x_range_start);
-    const double inv_y_span = 1.0 / (y_range_end - y_range_start);
-
     for (int y = 0; y < H; ++y) {
         const double y_norm = (double(y) - cy_out) / fy_out;
         for (int x = 0; x < W; ++x) {
             const double x_norm = (double(x) - cx_out) / fx_out;
 
-            const double x_spline =
-                1.0 + (x_norm - x_range_start) * double(Nx - 3) * inv_x_span;
-            const double y_spline =
-                1.0 + (y_norm - y_range_start) * double(Ny - 3) * inv_y_span;
-
-            const double dx = eval_bspline2d_uniform_cubic_clamped(
-                dxp,
-                Nx,
-                Ny,
-                x_spline,
-                y_spline
-            );
-            const double dy = eval_bspline2d_uniform_cubic_clamped(
-                dyp,
-                Nx,
-                Ny,
-                x_spline,
-                y_spline
-            );
-
-            const double x_dist = x_norm + dx;
-            const double y_dist = y_norm + dy;
+            Vec3<double> p(x_norm, y_norm, 1.0);
+            Vec2<double> r;
+            project_pinhole_splined(&model_config, k4_in, dxp, dyp, p, r);
 
             const int idx = y * W + x;
-            MX[idx] = (float)(fx_in * x_dist + cx_in);
-            MY[idx] = (float)(fy_in * y_dist + cy_in);
+            MX[idx] = (float)r[0];
+            MY[idx] = (float)r[1];
         }
     }
 
