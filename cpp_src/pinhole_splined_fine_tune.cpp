@@ -101,16 +101,47 @@ struct KnotPrior2D {
     }
 };
 
+template <typename T>
+Vec3<T> apply_warp_to_target_point(
+    const Vec3<T>& p_target,
+    const WarpCoordinates& warp,
+    const T* const kxy
+) {
+    const double sx = warp.x_axis.norm();
+    const double sy = warp.y_axis.norm();
+    const Vec3<double> x_hat = warp.x_axis / sx;
+    const Vec3<double> y_hat = warp.y_axis / sy;
+    const Vec3<double> z_hat = x_hat.cross(y_hat);
+
+    const Vec3<T> d = p_target - warp.center_in_target.cast<T>();
+
+    const T wx = T(x_hat[0]) * d[0] + T(x_hat[1]) * d[1] + T(x_hat[2]) * d[2];
+    const T wy = T(y_hat[0]) * d[0] + T(y_hat[1]) * d[1] + T(y_hat[2]) * d[2];
+
+    const T xs = wx / T(sx);
+    const T ys = wy / T(sy);
+    const T z_warp = kxy[0] * (T(1.0) - xs * xs) + kxy[1] * (T(1.0) - ys * ys);
+
+    Vec3<T> result = warp.center_in_target.cast<T>();
+    result[0] += T(x_hat[0]) * wx + T(y_hat[0]) * wy + T(z_hat[0]) * z_warp;
+    result[1] += T(x_hat[1]) * wx + T(y_hat[1]) * wy + T(z_hat[1]) * z_warp;
+    result[2] += T(x_hat[2]) * wx + T(y_hat[2]) * wy + T(z_hat[2]) * z_warp;
+    return result;
+}
+
 struct ReprojectionErrorSplined {
     const SplineMap& map;
     double fx, fy, cx, cy;
     Vec3<double> pw;
     int ix0, iy0;
     double obs_x, obs_y;
+    bool has_warp;
+    WarpCoordinates warp_coords;
 
     template <typename T>
     bool operator()(
         const T* const cam,
+        const T* const kxy,
         const T* const dx00, const T* const dx01, const T* const dx02,
         const T* const dx03, const T* const dx04, const T* const dx05,
         const T* const dx06, const T* const dx07, const T* const dx08,
@@ -134,7 +165,14 @@ struct ReprojectionErrorSplined {
             dy08, dy09, dy10, dy11, dy12, dy13, dy14, dy15
         };
 
-        T pw_t[3] = {T(pw[0]), T(pw[1]), T(pw[2])};
+        Vec3<T> pw_warped;
+        if (has_warp) {
+            pw_warped = apply_warp_to_target_point(Vec3<T>(pw.cast<T>()), warp_coords, kxy);
+        } else {
+            pw_warped = pw.cast<T>();
+        }
+
+        T pw_t[3] = {pw_warped[0], pw_warped[1], pw_warped[2]};
         T pc[3];
         ceres::AngleAxisRotatePoint(cam, pw_t, pc);
         pc[0] += cam[3];
@@ -225,6 +263,8 @@ static inline void BuildProblem(
     const double* k4p,
     double* dxp,
     double* dyp,
+    double* warp_kxy,
+    const std::optional<WarpCoordinates>& warp_coordinates,
     const std::vector<Vec6<double>>& cameras_from_target,
     const std::vector<Vec3<double>>& target_points,
     const std::vector<
@@ -244,6 +284,12 @@ static inline void BuildProblem(
     // k4 constant
     problem.AddParameterBlock(const_cast<double*>(k4p), 4);
     problem.SetParameterBlockConstant(const_cast<double*>(k4p));
+
+    // warp kxy block (always present; constant when no warp)
+    problem.AddParameterBlock(warp_kxy, 2);
+    if (!warp_coordinates.has_value()) {
+        problem.SetParameterBlockConstant(warp_kxy);
+    }
 
     // per-knot blocks (size 1)
     dx_blocks.resize(n_knots);
@@ -321,22 +367,25 @@ static inline void BuildProblem(
             map.support_indices_4x4(ix, iy, flat);
 
             // Create cost with fixed cell (ix,iy)
+            const bool hw = warp_coordinates.has_value();
+            const WarpCoordinates wc = hw ? *warp_coordinates : WarpCoordinates{};
             auto* cost = new ceres::AutoDiffCostFunction<
                 ReprojectionErrorSplined,
-                2, 6,
+                2, 6, 2,
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(
-                new ReprojectionErrorSplined{map, k4p[0], k4p[1], k4p[2], k4p[3], pw, ix, iy, ox, oy}
+                new ReprojectionErrorSplined{map, k4p[0], k4p[1], k4p[2], k4p[3], pw, ix, iy, ox, oy, hw, wc}
             );
 
-            // Build parameter list: cam + 16 dx + 16 dy
-            std::array<double*, 33> blocks{};
+            // Build parameter list: cam + kxy + 16 dx + 16 dy
+            std::array<double*, 34> blocks{};
             blocks[0] = const_cast<double*>(cam6.data());
+            blocks[1] = warp_kxy;
             for (int i = 0; i < 16; i++) {
-                blocks[1 + i] = dx_blocks[flat[i]];
+                blocks[2 + i] = dx_blocks[flat[i]];
             }
             for (int i = 0; i < 16; i++) {
-                blocks[17 + i] = dy_blocks[flat[i]];
+                blocks[18 + i] = dy_blocks[flat[i]];
             }
 
             problem.AddResidualBlock(
@@ -374,7 +423,8 @@ static inline void BuildProblem(
                 blocks[29],
                 blocks[30],
                 blocks[31],
-                blocks[32]
+                blocks[32],
+                blocks[33]
             );
 
             obs_records.push_back(
@@ -424,6 +474,8 @@ py::dict fine_tune_pinhole_splined(
     const double lambda = 1e-1;
     const double sqrt_lambda = std::sqrt(lambda);
 
+    double warp_kxy[2] = {0.0, 0.0};
+
     SplineMap map(model_config);
 
     ceres::Solver::Options options;
@@ -452,6 +504,8 @@ py::dict fine_tune_pinhole_splined(
             k4p,
             dxp,
             dyp,
+            warp_kxy,
+            warp_coordinates,
             cameras_from_target,
             target_points,
             detections,
@@ -488,6 +542,7 @@ py::dict fine_tune_pinhole_splined(
     py::dict out;
     out["dx_grid"] = intrinsics_parameters.dx_grid;
     out["dy_grid"] = intrinsics_parameters.dy_grid;
+    out["warp_kxy"] = py::array_t<double>(2, warp_kxy);
 
     std::vector<std::vector<double>> poses_out;
     poses_out.reserve(cameras_from_target.size());

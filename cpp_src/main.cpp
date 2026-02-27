@@ -175,7 +175,7 @@ PYBIND11_MODULE(
 
     py::class_<lensboy::WarpCoordinates>(m, "WarpCoordinates")
         .def(
-            py::init<lensboy::Vec2<double>, lensboy::Vec2<double>, lensboy::Vec2<double>>(),
+            py::init<lensboy::Vec3<double>, lensboy::Vec3<double>, lensboy::Vec3<double>>(),
             py::arg("center_in_target"),
             py::arg("x_axis"),
             py::arg("y_axis")

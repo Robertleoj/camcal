@@ -72,27 +72,27 @@ class PinholeSplinedIntrinsicsParameters:
     def k4(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64]) -> None:
         ...
 class WarpCoordinates:
-    def __init__(self, center_in_target: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"], x_axis: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"], y_axis: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]) -> None:
+    def __init__(self, center_in_target: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"], x_axis: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"], y_axis: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]) -> None:
         ...
     def __repr__(self) -> str:
         ...
     @property
-    def center_in_target(self) -> typing.Annotated[numpy.typing.NDArray[numpy.float64], "[2, 1]"]:
+    def center_in_target(self) -> typing.Annotated[numpy.typing.NDArray[numpy.float64], "[3, 1]"]:
         ...
     @center_in_target.setter
-    def center_in_target(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]) -> None:
+    def center_in_target(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]) -> None:
         ...
     @property
-    def x_axis(self) -> typing.Annotated[numpy.typing.NDArray[numpy.float64], "[2, 1]"]:
+    def x_axis(self) -> typing.Annotated[numpy.typing.NDArray[numpy.float64], "[3, 1]"]:
         ...
     @x_axis.setter
-    def x_axis(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]) -> None:
+    def x_axis(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]) -> None:
         ...
     @property
-    def y_axis(self) -> typing.Annotated[numpy.typing.NDArray[numpy.float64], "[2, 1]"]:
+    def y_axis(self) -> typing.Annotated[numpy.typing.NDArray[numpy.float64], "[3, 1]"]:
         ...
     @y_axis.setter
-    def y_axis(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]) -> None:
+    def y_axis(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]) -> None:
         ...
 def add(a: typing.SupportsInt, b: typing.SupportsInt) -> int:
     """

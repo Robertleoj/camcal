@@ -15,9 +15,9 @@ template <typename T>
 using Vec6 = Eigen::Matrix<T, 6, 1>;
 
 struct WarpCoordinates {
-    Vec2<double> center_in_target;
-    Vec2<double> x_axis;
-    Vec2<double> y_axis;
+    Vec3<double> center_in_target;
+    Vec3<double> x_axis;
+    Vec3<double> y_axis;
 };
 
 }  // namespace lensboy

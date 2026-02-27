@@ -234,7 +234,7 @@ def _run_with_outlier_filtering(
     initial_cameras_from_target: list[Pose],
     target_points: np.ndarray,
     original_detections: list[Detection],
-    num_stddevs_outlier_threshold: float | None,
+    outlier_threshold_stddevs: float | None,
 ):
     curr_intrinsics = initial_intrinsics
     curr_cameras_from_target = initial_cameras_from_target
@@ -246,7 +246,7 @@ def _run_with_outlier_filtering(
             curr_intrinsics, curr_cameras_from_target, target_points, curr_detections
         )
 
-        if num_stddevs_outlier_threshold is None or i == MAX_OUTLIER_FILTER_PASSES:
+        if outlier_threshold_stddevs is None or i == MAX_OUTLIER_FILTER_PASSES:
             break
 
         curr_residuals = [
@@ -255,7 +255,7 @@ def _run_with_outlier_filtering(
         ]
 
         new_detections = _filter_outliers(
-            curr_detections, curr_residuals, num_stddevs_outlier_threshold
+            curr_detections, curr_residuals, outlier_threshold_stddevs
         )
 
         if all(
@@ -307,7 +307,7 @@ def _opencv_calibrate(
     target_points: np.ndarray,
     detections: list[Detection],
     config: OpenCVConfig,
-    num_stddevs_outlier_threshold: float | None,
+    outlier_threshold_stddevs: float | None,
 ) -> CalibrationResult[OpenCV]:
     assert target_points.ndim == 2 and target_points.shape[1] == 3, (
         f"Expected (N, 3) target_points, got {target_points.shape}"
@@ -331,7 +331,7 @@ def _opencv_calibrate(
             initial_cameras_from_target,
             target_points,
             detections,
-            num_stddevs_outlier_threshold,
+            outlier_threshold_stddevs,
         )
     )
 
@@ -391,7 +391,7 @@ def _calibrate_pinhole_splined(
     target_points: np.ndarray,
     detections: list[Detection],
     config: PinholeSplinedConfig,
-    num_stddevs_outlier_threshold: float | None,
+    outlier_threshold_stddevs: float | None,
 ) -> CalibrationResult[PinholeSplined]:
     assert target_points.ndim == 2 and target_points.shape[1] == 3, (
         f"Expected (N, 3) target_points, got {target_points.shape}"
@@ -469,7 +469,7 @@ def _calibrate_pinhole_splined(
         cameras_from_target,
         target_points,
         detections,
-        num_stddevs_outlier_threshold,
+        outlier_threshold_stddevs,
     )
 
     detection_infos = _compute_detection_infos(
@@ -499,7 +499,7 @@ def calibrate_camera(
     target_points: np.ndarray,
     detections: list[Detection],
     camera_model_config: PinholeSplinedConfig,
-    num_stddevs_outlier_threshold: float | None = DEFAULT_OUTLIER_THRESHOLD,
+    outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
 ) -> CalibrationResult[PinholeSplined]: ...
 
 
@@ -508,7 +508,7 @@ def calibrate_camera(
     target_points: np.ndarray,
     detections: list[Detection],
     camera_model_config: OpenCVConfig,
-    num_stddevs_outlier_threshold: float | None = DEFAULT_OUTLIER_THRESHOLD,
+    outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
 ) -> CalibrationResult[OpenCV]: ...
 
 
@@ -516,7 +516,7 @@ def calibrate_camera(
     target_points: np.ndarray,
     detections: list[Detection],
     camera_model_config: CameraModelConfig,
-    num_stddevs_outlier_threshold: float | None = DEFAULT_OUTLIER_THRESHOLD,
+    outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
 ) -> CalibrationResult:
     assert target_points.ndim == 2 and target_points.shape[1] == 3, (
         f"Expected (N, 3) target_points, got {target_points.shape}"
@@ -526,12 +526,12 @@ def calibrate_camera(
     )
     if isinstance(camera_model_config, PinholeSplinedConfig):
         return _calibrate_pinhole_splined(
-            target_points, detections, camera_model_config, num_stddevs_outlier_threshold
+            target_points, detections, camera_model_config, outlier_threshold_stddevs
         )
 
     if isinstance(camera_model_config, OpenCVConfig):
         return _opencv_calibrate(
-            target_points, detections, camera_model_config, num_stddevs_outlier_threshold
+            target_points, detections, camera_model_config, outlier_threshold_stddevs
         )
 
     raise RuntimeError("Invalid config")
