@@ -527,7 +527,7 @@ py::dict fine_tune_pinhole_splined(
         dy0[i] = dyp[i];
     }
 
-    const double lambda = 1e-7;
+    const double lambda = 1e-1;
     const double sqrt_lambda = std::sqrt(lambda);
 
     SplineMap map(model_config);
