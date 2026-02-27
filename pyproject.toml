@@ -24,6 +24,27 @@ build-dir = "build"
 [tool.cibuildwheel]
 skip = ["*musllinux", "*win"]
 
+[tool.cibuildwheel.linux]
+before-all = """
+yum install -y lapack-devel blas-devel && \
+git clone https://github.com/microsoft/vcpkg.git $HOME/vcpkg && \
+$HOME/vcpkg/bootstrap-vcpkg.sh -disableMetrics && \
+VCPKG_ROOT=$HOME/vcpkg $HOME/vcpkg/vcpkg install --no-print-usage
+"""
+
+[tool.cibuildwheel.linux.environment]
+VCPKG_ROOT = "$HOME/vcpkg"
+
+[tool.cibuildwheel.macos]
+before-all = """
+git clone https://github.com/microsoft/vcpkg.git $HOME/vcpkg && \
+$HOME/vcpkg/bootstrap-vcpkg.sh -disableMetrics && \
+VCPKG_ROOT=$HOME/vcpkg $HOME/vcpkg/vcpkg install --no-print-usage
+"""
+
+[tool.cibuildwheel.macos.environment]
+VCPKG_ROOT = "$HOME/vcpkg"
+
 [dependency-groups]
 dev = [
     "tqdm>=4.67.1",
