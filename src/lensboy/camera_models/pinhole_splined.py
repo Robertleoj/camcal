@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import cv2
 
 from lensboy import lensboy_bindings as lbb
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
@@ -16,37 +17,13 @@ class PinholeSplinedConfig(CameraModelConfig):
 
     initial_focal_length: float
 
-    fov_deg_x: float
-    fov_deg_y: float
-
     num_knots_x: int
     num_knots_y: int
 
-    def get_initial_value(self) -> PinholeSplined:
-        return PinholeSplined(
-            image_height=self.image_height,
-            image_width=self.image_width,
-            fx=self.initial_focal_length,
-            fy=self.initial_focal_length,
-            cx=self.image_width / 2,
-            cy=self.image_height / 2,
-            fov_deg_x=self.fov_deg_x,
-            fov_deg_y=self.fov_deg_y,
-            num_knots_x=self.num_knots_x,
-            num_knots_y=self.num_knots_y,
-            dx_grid=np.zeros((self.num_knots_x, self.num_knots_y), dtype=float),
-            dy_grid=np.zeros((self.num_knots_x, self.num_knots_y), dtype=float),
-        )
 
-    def _cpp_config(self) -> lbb.PinholeSplinedConfig:
-        return lbb.PinholeSplinedConfig(
-            self.image_width,
-            self.image_height,
-            self.fov_deg_x,
-            self.fov_deg_y,
-            self.num_knots_x,
-            self.num_knots_y,
-        )
+@dataclass
+class PinholeSplinedCalibrationMetadata:
+    seed_opencv_distortion_params: np.ndarray
 
 
 @dataclass
@@ -67,6 +44,8 @@ class PinholeSplined(CameraModel):
 
     fov_deg_x: float
     fov_deg_y: float
+
+    calibration_metadata: PinholeSplinedCalibrationMetadata | None = None
 
     def __post_init__(self):
         assert self.dx_grid.ndim == 2, f"Expected 2D dx_grid, got {self.dx_grid.ndim}D"
@@ -115,6 +94,11 @@ class PinholeSplined(CameraModel):
 
     def _k4(self):
         return (self.fx, self.fy, self.cx, self.cy)
+
+    def _K(self):
+        return np.array(
+            [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]]
+        )
 
     def get_pinhole_model_with_fov(
         self,
@@ -170,3 +154,28 @@ class PinholeSplined(CameraModel):
             map_x=map_x,
             map_y=map_y,
         )
+
+    def get_pinhole_model_alpha(
+        self,
+        alpha: float,
+        image_size_wh: tuple[int, int] | None = None,
+    ):
+        if self.calibration_metadata is None:
+            raise ValueError("Require reference opencv distortion coefficients for this")
+
+        dist = self.calibration_metadata.seed_opencv_distortion_params
+        K = self._K()
+
+        if image_size_wh is None:
+            image_size_wh = (self.image_width, self.image_height)
+
+        new_K, _roi = cv2.getOptimalNewCameraMatrix(
+            K, dist, (self.image_width, self.image_height), alpha, image_size_wh
+        )
+
+        fx = new_K[0, 0]
+        fy = new_K[1, 1]
+        cx = new_K[0, 2]
+        cy = new_K[1, 2]
+
+        return self.get_pinhole_model((fx, fy, cx, cy), image_size_wh)

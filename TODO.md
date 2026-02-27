@@ -5,3 +5,5 @@
 - Package and publish on pypi
 - Implement saving and loading the models (json works)
 - Make plug-n-play notebook that the user can use to calibrate using the library
+- make visualization tools
+  - Show how a straight grid is distorted by the model is pretty cool

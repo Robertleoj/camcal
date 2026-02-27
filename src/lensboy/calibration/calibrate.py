@@ -2,15 +2,21 @@ import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from random import seed
 from timeit import default_timer
 from typing import Generic, TypeVar, overload
 
+import cv2
 import numpy as np
 
 from lensboy import lensboy_bindings as lbb
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
 from lensboy.camera_models.opencv import OpenCV, OpenCVConfig
-from lensboy.camera_models.pinhole_splined import PinholeSplined, PinholeSplinedConfig
+from lensboy.camera_models.pinhole_splined import (
+    PinholeSplined,
+    PinholeSplinedCalibrationMetadata,
+    PinholeSplinedConfig,
+)
 from lensboy.geometry.pose import Pose
 
 LOG = logging.getLogger(__name__)
@@ -210,6 +216,20 @@ def _compute_detection_infos(
     return detection_infos
 
 
+def _log_residual_stats(detection_infos: list[DetectionInfo]) -> None:
+    inlier_norms = np.concatenate(
+        [
+            np.linalg.norm(di.residuals[di.inlier_mask], axis=1)
+            for di in detection_infos
+            if di.inlier_mask.any()
+        ]
+    )
+    LOG.info(
+        f"Residuals (inliers): mean={np.mean(inlier_norms):.3f}px, "
+        f"worst={np.max(inlier_norms):.3f}px"
+    )
+
+
 def _run_with_outlier_filtering(
     optimize_fn: Callable,
     initial_intrinsics,
@@ -297,6 +317,7 @@ def _opencv_calibrate(
         target_points,
     )
 
+    _log_residual_stats(detection_infos)
     return CalibrationResult(
         optimized_camera_model=curr_intrinsics,
         optimized_cameras_T_target=curr_cameras_from_target,
@@ -331,6 +352,38 @@ def _pinhole_splined_refine_inner(
     return optimized_intrinsics, optimized_cameras_from_target
 
 
+def _compute_fov_from_opencv(
+    opencv_model: OpenCV, buffer_deg: float = 2.0
+) -> tuple[float, float]:
+    h = opencv_model.image_height
+    w = opencv_model.image_width
+    n = 200
+
+    xs = np.linspace(0, w, n)
+    ys = np.linspace(0, h, n)
+    border = np.vstack(
+        [
+            np.column_stack([xs, np.zeros(n)]),  # top
+            np.column_stack([xs, np.full(n, h)]),  # bottom
+            np.column_stack([np.zeros(n), ys]),  # left
+            np.column_stack([np.full(n, w), ys]),  # right
+        ]
+    ).astype(np.float64)
+
+    undistorted = cv2.undistortPoints(
+        border.reshape(-1, 1, 2),
+        opencv_model.K(),
+        opencv_model.distortion_coeffs,
+    ).reshape(-1, 2)
+
+    nx, ny = undistorted[:, 0], undistorted[:, 1]
+
+    fov_x_deg = np.degrees(np.arctan(np.max(nx)) + np.arctan(-np.min(nx))) + buffer_deg
+    fov_y_deg = np.degrees(np.arctan(np.max(ny)) + np.arctan(-np.min(ny))) + buffer_deg
+
+    return float(fov_x_deg), float(fov_y_deg)
+
+
 def _calibrate_pinhole_splined(
     target_points: np.ndarray,
     detections: list[Detection],
@@ -360,10 +413,22 @@ def _calibrate_pinhole_splined(
 
     opencv_model = opencv_calibration_result.optimized_camera_model
 
+    fov_deg_x, fov_deg_y = _compute_fov_from_opencv(opencv_model)
+    LOG.info(f"Computed FOV from OpenCV model: {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
+
+    cpp_config = lbb.PinholeSplinedConfig(
+        config.image_width,
+        config.image_height,
+        fov_deg_x,
+        fov_deg_y,
+        config.num_knots_x,
+        config.num_knots_y,
+    )
+
     LOG.info("Calculating matching spline model...")
     start_time = default_timer()
     out_dict = lbb.get_matching_spline_distortion_model(
-        opencv_model.distortion_coeffs.tolist(), config._cpp_config()
+        opencv_model.distortion_coeffs.tolist(), cpp_config
     )
     end_time = default_timer()
     LOG.info(f"Matching spline model ready in {end_time - start_time:.1f}s")
@@ -382,8 +447,8 @@ def _calibrate_pinhole_splined(
         dy_grid=y_knots,
         num_knots_x=config.num_knots_x,
         num_knots_y=config.num_knots_y,
-        fov_deg_x=config.fov_deg_x,
-        fov_deg_y=config.fov_deg_y,
+        fov_deg_x=fov_deg_x,
+        fov_deg_y=fov_deg_y,
     )
 
     cameras_from_target = opencv_calibration_result.optimized_cameras_T_target
@@ -412,6 +477,13 @@ def _calibrate_pinhole_splined(
         target_points,
     )
 
+    metadata = PinholeSplinedCalibrationMetadata(
+        seed_opencv_distortion_params=opencv_model.distortion_coeffs
+    )
+
+    curr_intrinsics = replace(curr_intrinsics, calibration_metadata=metadata)
+
+    _log_residual_stats(detection_infos)
     return CalibrationResult(
         optimized_camera_model=curr_intrinsics,
         optimized_cameras_T_target=curr_cameras,

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
 
 
 @dataclass
 class CameraModelConfig(ABC):
-    @abstractmethod
-    def get_initial_value(self) -> CameraModel: ...
+    pass
 
 
 @dataclass
