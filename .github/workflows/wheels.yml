@@ -2,7 +2,6 @@ name: Build wheels
 
 on:
   push:
-    tags: ['v*']
   workflow_dispatch:
 
 jobs:

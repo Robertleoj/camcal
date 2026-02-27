@@ -26,7 +26,7 @@ skip = ["*musllinux", "*win"]
 
 [tool.cibuildwheel.linux]
 before-all = """
-yum install -y lapack-devel blas-devel && \
+yum install -y lapack-devel blas-devel curl zip unzip tar && \
 git clone https://github.com/microsoft/vcpkg.git $HOME/vcpkg && \
 $HOME/vcpkg/bootstrap-vcpkg.sh -disableMetrics && \
 VCPKG_ROOT=$HOME/vcpkg $HOME/vcpkg/vcpkg install --no-print-usage
