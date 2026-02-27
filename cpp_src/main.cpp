@@ -34,7 +34,8 @@ PYBIND11_MODULE(
         py::arg("intrinsics_param_optimize_mask"),
         py::arg("cameras_from_target"),
         py::arg("target_points"),
-        py::arg("detections")
+        py::arg("detections"),
+        py::arg("warp_coordinates") = py::none()
     );
 
     m.def(
@@ -51,7 +52,8 @@ PYBIND11_MODULE(
         py::arg("intrinsics_parameters"),
         py::arg("cameras_from_target"),
         py::arg("target_points"),
-        py::arg("detections")
+        py::arg("detections"),
+        py::arg("warp_coordinates") = py::none()
     );
 
     m.def(
@@ -170,4 +172,23 @@ PYBIND11_MODULE(
         py::arg("k4"),
         py::arg("image_size_wh")
     );
+
+    py::class_<lensboy::WarpCoordinates>(m, "WarpCoordinates")
+        .def(
+            py::init<lensboy::Vec2<double>, lensboy::Vec2<double>, lensboy::Vec2<double>>(),
+            py::arg("center_in_target"),
+            py::arg("x_axis"),
+            py::arg("y_axis")
+        )
+        .def_readwrite("center_in_target", &lensboy::WarpCoordinates::center_in_target)
+        .def_readwrite("x_axis", &lensboy::WarpCoordinates::x_axis)
+        .def_readwrite("y_axis", &lensboy::WarpCoordinates::y_axis)
+        .def("__repr__", [](const lensboy::WarpCoordinates& self) {
+            std::ostringstream oss;
+            oss << "WarpCoordinates("
+                << "center_in_target=[" << self.center_in_target.transpose() << "]"
+                << ", x_axis=[" << self.x_axis.transpose() << "]"
+                << ", y_axis=[" << self.y_axis.transpose() << "])";
+            return oss.str();
+        });
 }

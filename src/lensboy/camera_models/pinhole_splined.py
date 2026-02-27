@@ -100,7 +100,7 @@ class PinholeSplined(CameraModel):
             [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]]
         )
 
-    def get_pinhole_model_with_fov(
+    def get_pinhole_model_fov(
         self,
         target_fov_deg_x: float | None = None,
         target_fov_deg_y: float | None = None,

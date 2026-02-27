@@ -91,217 +91,88 @@ struct SplineMap {
     }
 };
 
-class KnotPrior2D final : public ceres::CostFunction {
-   public:
-    KnotPrior2D(
-        double sqrt_lambda,
-        double x0,
-        double y0
-    )
-        : s_(sqrt_lambda),
-          x0_(x0),
-          y0_(y0) {
-        mutable_parameter_block_sizes()->push_back(1);
-        mutable_parameter_block_sizes()->push_back(1);
-        set_num_residuals(2);
-    }
-
-    bool Evaluate(
-        double const* const* params,
-        double* residuals,
-        double** jacobians
-    ) const override {
-        const double x = params[0][0];
-        const double y = params[1][0];
-
-        residuals[0] = s_ * (x - x0_);
-        residuals[1] = s_ * (y - y0_);
-
-        if (!jacobians) {
-            return true;
-        }
-
-        // Each jacobian is a dense [2 x 1] block (Ceres expects row-major)
-        if (jacobians[0]) {
-            jacobians[0][0] = s_;   // d r0 / dx
-            jacobians[0][1] = 0.0;  // d r1 / dx
-        }
-        if (jacobians[1]) {
-            jacobians[1][0] = 0.0;  // d r0 / dy
-            jacobians[1][1] = s_;   // d r1 / dy
-        }
+struct KnotPrior2D {
+    double s, x0, y0;
+    template <typename T>
+    bool operator()(const T* const dx, const T* const dy, T* residuals) const {
+        residuals[0] = T(s) * (dx[0] - T(x0));
+        residuals[1] = T(s) * (dy[0] - T(y0));
         return true;
     }
-
-   private:
-    double s_;
-    double x0_, y0_;
 };
 
-class ReprojectionErrorAnalyticalScalarKnots final
-    : public ceres::CostFunction {
-   public:
-    using Jet6 = ceres::Jet<double, 6>;
+struct ReprojectionErrorSplined {
+    const SplineMap& map;
+    double fx, fy, cx, cy;
+    Vec3<double> pw;
+    int ix0, iy0;
+    double obs_x, obs_y;
 
-    ReprojectionErrorAnalyticalScalarKnots(
-        const SplineMap& map,
-        const double* k4,
-        const Vec3<double>& point_target,
-        int ix0,
-        int iy0,
-        double obs_x,
-        double obs_y
-    )
-        : map_(map),
-          obs_x_(obs_x),
-          obs_y_(obs_y),
-          fx_(k4[0]),
-          fy_(k4[1]),
-          cx_(k4[2]),
-          cy_(k4[3]),
-          pw_(point_target),
-          ix0_(ix0),
-          iy0_(iy0) {
-        mutable_parameter_block_sizes()->push_back(6);
-        for (int i = 0; i < 16; i++) {
-            mutable_parameter_block_sizes()->push_back(1);  // dx
-        }
-        for (int i = 0; i < 16; i++) {
-            mutable_parameter_block_sizes()->push_back(1);  // dy
-        }
-        set_num_residuals(2);
-    }
+    template <typename T>
+    bool operator()(
+        const T* const cam,
+        const T* const dx00, const T* const dx01, const T* const dx02,
+        const T* const dx03, const T* const dx04, const T* const dx05,
+        const T* const dx06, const T* const dx07, const T* const dx08,
+        const T* const dx09, const T* const dx10, const T* const dx11,
+        const T* const dx12, const T* const dx13, const T* const dx14,
+        const T* const dx15,
+        const T* const dy00, const T* const dy01, const T* const dy02,
+        const T* const dy03, const T* const dy04, const T* const dy05,
+        const T* const dy06, const T* const dy07, const T* const dy08,
+        const T* const dy09, const T* const dy10, const T* const dy11,
+        const T* const dy12, const T* const dy13, const T* const dy14,
+        const T* const dy15,
+        T* residuals
+    ) const {
+        const T* dx[16] = {
+            dx00, dx01, dx02, dx03, dx04, dx05, dx06, dx07,
+            dx08, dx09, dx10, dx11, dx12, dx13, dx14, dx15
+        };
+        const T* dy[16] = {
+            dy00, dy01, dy02, dy03, dy04, dy05, dy06, dy07,
+            dy08, dy09, dy10, dy11, dy12, dy13, dy14, dy15
+        };
 
-    bool Evaluate(
-        double const* const* params,
-        double* residuals,
-        double** jacobians
-    ) const override {
-        const double* cam = params[0];
+        T pw_t[3] = {T(pw[0]), T(pw[1]), T(pw[2])};
+        T pc[3];
+        ceres::AngleAxisRotatePoint(cam, pw_t, pc);
+        pc[0] += cam[3];
+        pc[1] += cam[4];
+        pc[2] += cam[5];
 
-        // Transform point (double)
-        double gx, gy, x_n, y_n;
-        map_.project_to_spline_coords(cam, pw_, gx, gy, x_n, y_n);
+        const T inv_z = T(1.0) / pc[2];
+        const T x_n = pc[0] * inv_z;
+        const T y_n = pc[1] * inv_z;
 
-        // Use the FIXED cell origin (ix0_,iy0_)
-        const double u = gx - (double)ix0_;
-        const double v = gy - (double)iy0_;
+        const T x_s = T(1.0) + (x_n + T(map.half_x)) * T(map.x_scale);
+        const T y_s = T(1.0) + (y_n + T(map.half_y)) * T(map.y_scale);
+        constexpr double eps = 1e-12;
+        const T gx = clamp_T(x_s, T(0.0), T(map.Nx - 1.0 - eps));
+        const T gy = clamp_T(y_s, T(0.0), T(map.Ny - 1.0 - eps));
 
-        // Basis weights
-        double wx[4], wy[4];
+        const T u = gx - T((double)ix0);
+        const T v = gy - T((double)iy0);
+
+        T wx[4], wy[4];
         cubic_bspline_basis_uniform(u, wx);
         cubic_bspline_basis_uniform(v, wy);
 
-        // Spline eval using scalar blocks
-        double dx = 0.0, dy = 0.0;
+        T dx_val(0.0), dy_val(0.0);
         int idx = 0;
         for (int b = 0; b < 4; b++) {
             for (int a = 0; a < 4; a++) {
-                const double w = wy[b] * wx[a];
-                dx += params[1 + idx][0] * w;
-                dy += params[17 + idx][0] * w;
+                const T w = wy[b] * wx[a];
+                dx_val += dx[idx][0] * w;
+                dy_val += dy[idx][0] * w;
                 idx++;
             }
         }
 
-        residuals[0] = fx_ * (x_n + dx) + cx_ - obs_x_;
-        residuals[1] = fy_ * (y_n + dy) + cy_ - obs_y_;
-
-        if (!jacobians) {
-            return true;
-        }
-
-        // Knot jacobians: each is [2x1]
-        for (int i = 0; i < 16; i++) {
-            const int b = i / 4;
-            const int a = i % 4;
-            const double w = wy[b] * wx[a];
-
-            if (jacobians[1 + i]) {
-                jacobians[1 + i][0] = fx_ * w;  // dr0/ddx
-                jacobians[1 + i][1] = 0.0;      // dr1/ddx
-            }
-            if (jacobians[17 + i]) {
-                jacobians[17 + i][0] = 0.0;      // dr0/ddy
-                jacobians[17 + i][1] = fy_ * w;  // dr1/ddy
-            }
-        }
-
-        // --- Camera jacobian [2x6] via Jet6 ---
-        if (jacobians[0]) {
-            Jet6 cam_j[6];
-            for (int i = 0; i < 6; i++) {
-                cam_j[i].a = cam[i];
-                cam_j[i].v.setZero();
-                cam_j[i].v[i] = 1.0;
-            }
-
-            Jet6 pw_j[3];
-            for (int i = 0; i < 3; i++) {
-                pw_j[i].a = pw_[i];
-                pw_j[i].v.setZero();
-            }
-
-            Jet6 pc_j[3];
-            ceres::AngleAxisRotatePoint(cam_j, pw_j, pc_j);
-            pc_j[0] += cam_j[3];
-            pc_j[1] += cam_j[4];
-            pc_j[2] += cam_j[5];
-
-            const Jet6 inv_z_j = Jet6(1.0) / pc_j[2];
-            const Jet6 xn_j = pc_j[0] * inv_z_j;
-            const Jet6 yn_j = pc_j[1] * inv_z_j;
-
-            const Jet6 xs_j =
-                Jet6(1.0) + (xn_j + Jet6(map_.half_x)) * Jet6(map_.x_scale);
-            const Jet6 ys_j =
-                Jet6(1.0) + (yn_j + Jet6(map_.half_y)) * Jet6(map_.y_scale);
-
-            constexpr double eps = 1e-12;
-            const Jet6 gx_j =
-                clamp_T(xs_j, Jet6(0.0), Jet6(map_.Nx - 1.0 - eps));
-            const Jet6 gy_j =
-                clamp_T(ys_j, Jet6(0.0), Jet6(map_.Ny - 1.0 - eps));
-
-            const Jet6 u_j = gx_j - Jet6((double)ix0_);
-            const Jet6 v_j = gy_j - Jet6((double)iy0_);
-
-            Jet6 wx_j[4], wy_j[4];
-            cubic_bspline_basis_uniform(u_j, wx_j);
-            cubic_bspline_basis_uniform(v_j, wy_j);
-
-            Jet6 dx_j(0.0), dy_j(0.0);
-            int idx2 = 0;
-            for (int b = 0; b < 4; b++) {
-                for (int a = 0; a < 4; a++) {
-                    const Jet6 w = wy_j[b] * wx_j[a];
-                    dx_j += Jet6(params[1 + idx2][0]) * w;
-                    dy_j += Jet6(params[17 + idx2][0]) * w;
-                    idx2++;
-                }
-            }
-
-            const Jet6 r0_j =
-                Jet6(fx_) * (xn_j + dx_j) + Jet6(cx_) - Jet6(obs_x_);
-            const Jet6 r1_j =
-                Jet6(fy_) * (yn_j + dy_j) + Jet6(cy_) - Jet6(obs_y_);
-
-            double* J = jacobians[0];
-            for (int j = 0; j < 6; j++) {
-                J[j] = r0_j.v[j];
-                J[6 + j] = r1_j.v[j];
-            }
-        }
-
+        residuals[0] = T(fx) * (x_n + dx_val) + T(cx) - T(obs_x);
+        residuals[1] = T(fy) * (y_n + dy_val) + T(cy) - T(obs_y);
         return true;
     }
-
-   private:
-    const SplineMap& map_;
-    double obs_x_, obs_y_;
-    double fx_, fy_, cx_, cy_;
-    Vec3<double> pw_;
-    int ix0_, iy0_;
 };
 
 struct ObservationRecord {
@@ -419,7 +290,9 @@ static inline void BuildProblem(
     for (int i = 0; i < n_knots; i++) {
         if (!knot_has_obs[i]) {
             problem.AddResidualBlock(
-                new KnotPrior2D(sqrt_lambda, dx0[i], dy0[i]),
+                new ceres::AutoDiffCostFunction<KnotPrior2D, 2, 1, 1>(
+                    new KnotPrior2D{sqrt_lambda, dx0[i], dy0[i]}
+                ),
                 nullptr,
                 dx_blocks[i],
                 dy_blocks[i]
@@ -448,14 +321,12 @@ static inline void BuildProblem(
             map.support_indices_4x4(ix, iy, flat);
 
             // Create cost with fixed cell (ix,iy)
-            auto* cost = new ReprojectionErrorAnalyticalScalarKnots(
-                map,
-                k4p,
-                pw,
-                ix,
-                iy,
-                ox,
-                oy
+            auto* cost = new ceres::AutoDiffCostFunction<
+                ReprojectionErrorSplined,
+                2, 6,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(
+                new ReprojectionErrorSplined{map, k4p[0], k4p[1], k4p[2], k4p[3], pw, ix, iy, ox, oy}
             );
 
             // Build parameter list: cam + 16 dx + 16 dy
@@ -519,7 +390,8 @@ py::dict fine_tune_pinhole_splined(
     std::vector<Vec6<double>>& cameras_from_target,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
-        detections
+        detections,
+    std::optional<WarpCoordinates> warp_coordinates
 ) {
     auto dxb = intrinsics_parameters.dx_grid.request();
     auto dyb = intrinsics_parameters.dy_grid.request();

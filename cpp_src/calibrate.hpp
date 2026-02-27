@@ -3,6 +3,7 @@
 #include <pybind11/pybind11.h>
 #include <Eigen/Dense>
 #include <cmath>
+#include <optional>
 #include <vector>
 #include "./cameramodels.hpp"
 #include "./type_defs.hpp"
@@ -17,7 +18,8 @@ py::dict calibrate_opencv(
     std::vector<Vec6<double>>& cameras_from_target,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
-        detections
+        detections,
+    std::optional<WarpCoordinates> warp_coordinates = std::nullopt
 );
 
 py::dict get_matching_spline_distortion_model(
@@ -31,7 +33,8 @@ py::dict fine_tune_pinhole_splined(
     std::vector<Vec6<double>>& cameras_from_target,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
-        detections
+        detections,
+    std::optional<WarpCoordinates> warp_coordinates = std::nullopt
 );
 
 }  // namespace lensboy
