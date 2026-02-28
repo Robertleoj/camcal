@@ -3,10 +3,10 @@ import numpy as np
 
 from lensboy._internal.image import to_gray
 from lensboy._internal.progress import progress
-from lensboy.calibration.calibrate import Detection
+from lensboy.calibration.calibrate import Frame
 
 
-def _detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Detection:
+def _detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Frame:
     charuco_params = cv2.aruco.CharucoParameters()
     charuco_params.minMarkers = 1
 
@@ -22,12 +22,12 @@ def _detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Detection
         charuco_detector.detectBoard(gray)
     )
 
-    return Detection(charuco_ids.squeeze(), charuco_corners.squeeze(1))
+    return Frame(charuco_ids.squeeze(), charuco_corners.squeeze(1))
 
 
-def extract_detections_from_charuco(
+def extract_frames_from_charuco(
     board: cv2.aruco.CharucoBoard, images: list[np.ndarray]
-) -> tuple[np.ndarray, list[Detection]]:
+) -> tuple[np.ndarray, list[Frame]]:
     """Detect ChArUco corners in a batch of images.
 
     Args:
@@ -36,14 +36,14 @@ def extract_detections_from_charuco(
 
     Returns:
         target_points: 3D corner coordinates from the board definition, shape (N, 3).
-        detections: Per-image detections, one per input image.
+        frames: Per-image frames, one per input image.
     """
-    detections: list[Detection] = []
+    frames: list[Frame] = []
 
     for img in progress(images, desc="Detecting charuco"):
-        detection = _detect_charuco(img, board)
-        detections.append(detection)
+        frame = _detect_charuco(img, board)
+        frames.append(frame)
 
     target_points = np.array(board.getChessboardCorners())
 
-    return target_points, detections
+    return target_points, frames

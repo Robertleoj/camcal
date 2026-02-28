@@ -119,7 +119,7 @@ py::dict calibrate_opencv(
     std::vector<Vec6<double>>& cameras_from_target,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
-        detections,
+        frames,
     std::optional<WarpCoordinates> warp_coordinates,
     std::array<double, 2> warp_kxy_initial
 ) {
@@ -169,11 +169,11 @@ py::dict calibrate_opencv(
 
     SPDLOG_DEBUG("Added parameter blocks");
 
-    size_t num_cameras = detections.size();
+    size_t num_cameras = frames.size();
 
     for (size_t camera_idx = 0; camera_idx < num_cameras; camera_idx++) {
-        auto& target_point_indices = std::get<0>(detections[camera_idx]);
-        auto& observations = std::get<1>(detections[camera_idx]);
+        auto& target_point_indices = std::get<0>(frames[camera_idx]);
+        auto& observations = std::get<1>(frames[camera_idx]);
 
         auto& camera_pose = state.cameras_from_target[camera_idx];
 

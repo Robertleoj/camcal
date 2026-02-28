@@ -34,7 +34,7 @@ PYBIND11_MODULE(
         py::arg("intrinsics_param_optimize_mask"),
         py::arg("cameras_from_target"),
         py::arg("target_points"),
-        py::arg("detections"),
+        py::arg("frames"),
         py::arg("warp_coordinates") = py::none(),
         py::arg("warp_kxy_initial") = std::array<double, 2>{0.0, 0.0}
     );
@@ -53,7 +53,7 @@ PYBIND11_MODULE(
         py::arg("intrinsics_parameters"),
         py::arg("cameras_from_target"),
         py::arg("target_points"),
-        py::arg("detections"),
+        py::arg("frames"),
         py::arg("warp_coordinates") = py::none(),
         py::arg("warp_kxy_initial") = std::array<double, 2>{0.0, 0.0}
     );

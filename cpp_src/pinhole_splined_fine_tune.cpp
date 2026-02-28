@@ -243,7 +243,7 @@ static inline void BuildProblem(
     const std::vector<Vec3<double>>& target_points,
     const std::vector<
         std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
-        detections,
+        frames,
     std::vector<double*>& dx_blocks,
     std::vector<double*>& dy_blocks,
     std::vector<ObservationRecord>& obs_records,
@@ -289,8 +289,8 @@ static inline void BuildProblem(
     // For cell (ix, iy) that means the 2x2 corner knots: (ix,iy), (ix+1,iy),
     // (ix,iy+1), (ix+1,iy+1).
     std::vector<bool> knot_has_obs(n_knots, false);
-    for (size_t cam_idx = 0; cam_idx < detections.size(); cam_idx++) {
-        auto& ids = std::get<0>(detections[cam_idx]);
+    for (size_t cam_idx = 0; cam_idx < frames.size(); cam_idx++) {
+        auto& ids = std::get<0>(frames[cam_idx]);
         auto& cam6 = cameras_from_target[cam_idx];
         for (size_t oi = 0; oi < ids.size(); oi++) {
             const auto& pw = target_points[ids[oi]];
@@ -322,10 +322,10 @@ static inline void BuildProblem(
 
     // reprojection residuals (wired to correct 16 knots for each observation)
     obs_records.clear();
-    const size_t num_cams = detections.size();
+    const size_t num_cams = frames.size();
     for (size_t cam_idx = 0; cam_idx < num_cams; cam_idx++) {
-        auto& ids = std::get<0>(detections[cam_idx]);
-        auto& obs = std::get<1>(detections[cam_idx]);
+        auto& ids = std::get<0>(frames[cam_idx]);
+        auto& obs = std::get<1>(frames[cam_idx]);
         auto& cam6 = cameras_from_target[cam_idx];
 
         for (size_t oi = 0; oi < obs.size(); oi++) {
@@ -414,7 +414,7 @@ py::dict fine_tune_pinhole_splined(
     std::vector<Vec6<double>>& cameras_from_target,
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
-        detections,
+        frames,
     std::optional<WarpCoordinates> warp_coordinates,
     std::array<double, 2> warp_kxy_initial
 ) {
@@ -483,7 +483,7 @@ py::dict fine_tune_pinhole_splined(
             warp_coordinates,
             cameras_from_target,
             target_points,
-            detections,
+            frames,
             dx_blocks,
             dy_blocks,
             obs_records,

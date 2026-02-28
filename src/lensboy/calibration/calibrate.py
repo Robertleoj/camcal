@@ -24,7 +24,7 @@ MAX_OUTLIER_FILTER_PASSES = 2
 
 
 @dataclass
-class Detection:
+class Frame:
     """Detected calibration target points in a single image.
 
     Attributes:
@@ -73,7 +73,7 @@ _IntrinsicsT = TypeVar("_IntrinsicsT", OpenCV, PinholeSplined)
 
 
 @dataclass
-class DetectionInfo:
+class FrameInfo:
     """Per-image reprojection diagnostics computed after calibration.
 
     Attributes:
@@ -96,7 +96,7 @@ class DetectionInfo:
 class _OptimizationState(Generic[_IntrinsicsT]):
     intrinsics: _IntrinsicsT
     cameras_from_target: list[Pose]
-    detections: list[Detection]
+    frames: list[Frame]
     warp_kxy: tuple[float, float] | None
 
 
@@ -187,24 +187,24 @@ class CalibrationResult(Generic[T]):
     Attributes:
         optimized_camera_model: The calibrated camera model.
         optimized_cameras_T_target: One pose per image (camera-from-target).
-        detection_infos: Per-image reprojection diagnostics, one per input image.
+        frame_infos: Per-image reprojection diagnostics, one per input image.
         warp_info: Estimated target warp, or None if not estimated.
     """
 
     optimized_camera_model: T
     optimized_cameras_T_target: list[Pose]
-    detection_infos: list[DetectionInfo]
+    frame_infos: list[FrameInfo]
     warp_info: TargetWarp | None = None
 
 
 def _project_and_calculate_residuals(
     target_points: np.ndarray,
     camera_from_target: Pose,
-    detection: Detection,
+    frame: Frame,
     model: OpenCV | PinholeSplined,
     target_warp: TargetWarp | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    point_indices = detection.target_point_indices
+    point_indices = frame.target_point_indices
 
     points_in_target = target_points[point_indices]
     if target_warp is not None:
@@ -213,7 +213,7 @@ def _project_and_calculate_residuals(
 
     projected_points_in_image = model.project_points(points_in_camera)
 
-    residuals = detection.detected_points_in_image - projected_points_in_image
+    residuals = frame.detected_points_in_image - projected_points_in_image
 
     return projected_points_in_image, residuals
 
@@ -246,7 +246,7 @@ def _radius_threshold_from_k(k: float) -> float:
 
 
 def _filter_outliers(
-    detections: list,
+    frames: list,
     residuals: list[np.ndarray],
     k: float = 3.5,
     sigma_floor_px: float = 0.25,  # prevents collapse
@@ -255,12 +255,12 @@ def _filter_outliers(
     gate = _radius_threshold_from_k(k) * sigma  # radius in pixels
 
     filtered = []
-    for det, r in zip(detections, residuals):
+    for frame, r in zip(frames, residuals):
         inlier_mask = np.linalg.norm(r, axis=1) <= gate
         filtered.append(
-            type(det)(
-                det.target_point_indices[inlier_mask],
-                det.detected_points_in_image[inlier_mask],
+            type(frame)(
+                frame.target_point_indices[inlier_mask],
+                frame.detected_points_in_image[inlier_mask],
             )
         )
     return filtered
@@ -271,7 +271,7 @@ def _opencv_calibrate_inner(
     config: OpenCVConfig,
     curr_cameras_from_target: list[Pose],
     target_points: np.ndarray,
-    detections: list[Detection],
+    frames: list[Frame],
     warp_coordinates: WarpCoordinates | None = None,
     warp_kxy: tuple[float, float] | None = None,
 ) -> tuple[OpenCV, list[Pose], tuple[float, float] | None]:
@@ -288,7 +288,7 @@ def _opencv_calibrate_inner(
         intrinsics_param_optimize_mask=intrinsics_param_optimize_mask,
         cameras_from_target=cameras_from_target_in,
         target_points=list(target_points),
-        detections=[d._to_cpp() for d in detections],
+        frames=[f._to_cpp() for f in frames],
         warp_coordinates=(
             warp_coordinates._to_cpp() if warp_coordinates is not None else None
         ),
@@ -311,43 +311,43 @@ def _opencv_calibrate_inner(
     return optimized_intrinsics, optimized_cameras_from_target, out_kxy
 
 
-def _compute_detection_infos(
+def _compute_frame_infos(
     intrinsics: OpenCV | PinholeSplined,
     cameras_from_target: list[Pose],
-    original_detections: list[Detection],
-    filtered_detections: list[Detection] | None,
+    original_frames: list[Frame],
+    filtered_frames: list[Frame] | None,
     target_points: np.ndarray,
     target_warp: TargetWarp | None = None,
-) -> list[DetectionInfo]:
-    detection_infos: list[DetectionInfo] = []
+) -> list[FrameInfo]:
+    frame_infos: list[FrameInfo] = []
     for i in range(len(cameras_from_target)):
         projected, residuals = _project_and_calculate_residuals(
             target_points,
             cameras_from_target[i],
-            original_detections[i],
+            original_frames[i],
             intrinsics,
             target_warp,
         )
 
-        if filtered_detections is not None:
+        if filtered_frames is not None:
             inlier_mask = np.isin(
-                original_detections[i].target_point_indices,
-                filtered_detections[i].target_point_indices,
+                original_frames[i].target_point_indices,
+                filtered_frames[i].target_point_indices,
             )
         else:
-            inlier_mask = np.ones(len(original_detections[i]), dtype=bool)
+            inlier_mask = np.ones(len(original_frames[i]), dtype=bool)
 
-        detection_infos.append(DetectionInfo(projected, residuals, inlier_mask))
+        frame_infos.append(FrameInfo(projected, residuals, inlier_mask))
 
-    return detection_infos
+    return frame_infos
 
 
-def _log_residual_stats(detection_infos: list[DetectionInfo]) -> None:
+def _log_residual_stats(frame_infos: list[FrameInfo]) -> None:
     inlier_norms = np.concatenate(
         [
-            np.linalg.norm(di.residuals[di.inlier_mask], axis=1)
-            for di in detection_infos
-            if di.inlier_mask.any()
+            np.linalg.norm(fi.residuals[fi.inlier_mask], axis=1)
+            for fi in frame_infos
+            if fi.inlier_mask.any()
         ]
     )
     LOG.info(
@@ -365,7 +365,7 @@ def _run_with_outlier_filtering(
     outlier_threshold_stddevs: float | None,
     warp_coordinates: WarpCoordinates | None = None,
 ) -> _OptimizationState[_IntrinsicsT]:
-    total_observations = sum(len(d) for d in initial_state.detections)
+    total_observations = sum(len(f) for f in initial_state.frames)
     state = initial_state
 
     for i in range(MAX_OUTLIER_FILTER_PASSES + 1):
@@ -381,29 +381,29 @@ def _run_with_outlier_filtering(
         )
         curr_residuals = [
             _project_and_calculate_residuals(
-                target_points, cam, det, state.intrinsics, curr_target_warp
+                target_points, cam, frame, state.intrinsics, curr_target_warp
             )[1]
-            for cam, det in zip(state.cameras_from_target, state.detections)
+            for cam, frame in zip(state.cameras_from_target, state.frames)
         ]
 
-        new_detections = _filter_outliers(
-            state.detections, curr_residuals, outlier_threshold_stddevs
+        new_frames = _filter_outliers(
+            state.frames, curr_residuals, outlier_threshold_stddevs
         )
 
         if all(
-            len(new_det) == len(old_det)
-            for new_det, old_det in zip(new_detections, state.detections)
+            len(new_frame) == len(old_frame)
+            for new_frame, old_frame in zip(new_frames, state.frames)
         ):
             break
 
-        total_remaining = sum(len(d) for d in new_detections)
+        total_remaining = sum(len(f) for f in new_frames)
         total_outliers = total_observations - total_remaining
         LOG.info(
             f"Threw out some outliers, now have {total_outliers}/{total_observations}"
             f" ({total_outliers / total_observations * 100:.1f}%) - going again..."
         )
 
-        state = replace(state, detections=new_detections)
+        state = replace(state, frames=new_frames)
 
     return state
 
@@ -411,15 +411,15 @@ def _run_with_outlier_filtering(
 def _initialize_poses_with_pnp(
     initial_intrinsics: OpenCV,
     target_points: np.ndarray,
-    detections: list[Detection],
+    frames: list[Frame],
 ) -> list[Pose]:
     K = initial_intrinsics.K()
     dist_coeffs = np.zeros(5, dtype=np.float64)
 
     poses = []
-    for det in detections:
-        obj_pts = target_points[det.target_point_indices].astype(np.float64)
-        img_pts = det.detected_points_in_image.astype(np.float64)
+    for frame in frames:
+        obj_pts = target_points[frame.target_point_indices].astype(np.float64)
+        img_pts = frame.detected_points_in_image.astype(np.float64)
 
         if len(obj_pts) >= 4:
             success, rvec, tvec = cv2.solvePnP(obj_pts, img_pts, K, dist_coeffs)
@@ -429,7 +429,7 @@ def _initialize_poses_with_pnp(
                 )
                 continue
 
-        LOG.warning("PnP init failed for detection, using fallback pose")
+        LOG.warning("PnP init failed for frame, using fallback pose")
         poses.append(Pose.from_tz(100))
 
     return poses
@@ -505,7 +505,7 @@ def _make_warp_coordinates(target_points: np.ndarray) -> WarpCoordinates | None:
 
 def _opencv_calibrate(
     target_points: np.ndarray,
-    detections: list[Detection],
+    frames: list[Frame],
     config: OpenCVConfig,
     outlier_threshold_stddevs: float | None,
     estimate_target_warp: bool,
@@ -519,7 +519,7 @@ def _opencv_calibrate(
     initial_intrinsics = config.get_initial_value()
     LOG.info("Computing initial poses with PnP...")
     initial_cameras_from_target = _initialize_poses_with_pnp(
-        initial_intrinsics, target_points, detections
+        initial_intrinsics, target_points, frames
     )
 
     warp_coordinates = None
@@ -532,7 +532,7 @@ def _opencv_calibrate(
             config,
             state.cameras_from_target,
             target_points,
-            state.detections,
+            state.frames,
             warp_coordinates,
             state.warp_kxy,
         )
@@ -542,9 +542,7 @@ def _opencv_calibrate(
 
     state = _run_with_outlier_filtering(
         optimize_fn,
-        _OptimizationState(
-            initial_intrinsics, initial_cameras_from_target, detections, None
-        ),
+        _OptimizationState(initial_intrinsics, initial_cameras_from_target, frames, None),
         target_points,
         outlier_threshold_stddevs,
         warp_coordinates=warp_coordinates,
@@ -558,20 +556,20 @@ def _opencv_calibrate(
         kx, ky = state.warp_kxy
         LOG.info(f"Target warp optimized at kx={kx:.2f}, ky={ky:.2f}")
 
-    detection_infos = _compute_detection_infos(
+    frame_infos = _compute_frame_infos(
         state.intrinsics,
         state.cameras_from_target,
-        detections,
-        state.detections if state.detections is not detections else None,
+        frames,
+        state.frames if state.frames is not frames else None,
         target_points,
         warp_info,
     )
 
-    _log_residual_stats(detection_infos)
+    _log_residual_stats(frame_infos)
     return CalibrationResult(
         optimized_camera_model=state.intrinsics,
         optimized_cameras_T_target=state.cameras_from_target,
-        detection_infos=detection_infos,
+        frame_infos=frame_infos,
         warp_info=warp_info,
     )
 
@@ -580,7 +578,7 @@ def _pinhole_splined_refine_inner(
     curr_intrinsics: PinholeSplined,
     curr_cameras_from_target: list[Pose],
     target_points: np.ndarray,
-    detections: list[Detection],
+    frames: list[Frame],
     warp_coordinates: WarpCoordinates | None,
     warp_kxy: tuple[float, float] | None = None,
 ) -> tuple[PinholeSplined, list[Pose], tuple[float, float] | None]:
@@ -589,7 +587,7 @@ def _pinhole_splined_refine_inner(
         intrinsics_parameters=curr_intrinsics._cpp_params(),
         cameras_from_target=[pose._to_cpp() for pose in curr_cameras_from_target],
         target_points=list(target_points),
-        detections=[d._to_cpp() for d in detections],
+        frames=[f._to_cpp() for f in frames],
         warp_coordinates=(
             warp_coordinates._to_cpp() if warp_coordinates is not None else None
         ),
@@ -625,7 +623,7 @@ def _compute_fov_from_opencv(
 
 def _calibrate_pinhole_splined(
     target_points: np.ndarray,
-    detections: list[Detection],
+    frames: list[Frame],
     config: PinholeSplinedConfig,
     outlier_threshold_stddevs: float | None,
     estimate_target_warp: bool,
@@ -646,7 +644,7 @@ def _calibrate_pinhole_splined(
     LOG.info("Calibrating seed opencv model...")
     start_time = default_timer()
     opencv_calibration_result = _opencv_calibrate(
-        target_points, detections, opencv_config, None, estimate_target_warp=False
+        target_points, frames, opencv_config, None, estimate_target_warp=False
     )
     end_time = default_timer()
     LOG.info(f"OpenCV seed model ready in {end_time - start_time:.1f}s")
@@ -706,7 +704,7 @@ def _calibrate_pinhole_splined(
             state.intrinsics,
             state.cameras_from_target,
             target_points,
-            state.detections,
+            state.frames,
             warp_coordinates,
             state.warp_kxy,
         )
@@ -717,7 +715,7 @@ def _calibrate_pinhole_splined(
 
     state = _run_with_outlier_filtering(
         optimize_fn,
-        _OptimizationState(prior_model, cameras_from_target, detections, None),
+        _OptimizationState(prior_model, cameras_from_target, frames, None),
         target_points,
         outlier_threshold_stddevs,
         warp_coordinates=warp_coordinates,
@@ -732,11 +730,11 @@ def _calibrate_pinhole_splined(
         kx, ky = state.warp_kxy
         LOG.info(f"Target warp optimized at kx={kx:.2f}, ky={ky:.2f}")
 
-    detection_infos = _compute_detection_infos(
+    frame_infos = _compute_frame_infos(
         state.intrinsics,
         state.cameras_from_target,
-        detections,
-        state.detections if state.detections is not detections else None,
+        frames,
+        state.frames if state.frames is not frames else None,
         target_points,
         warp_info,
     )
@@ -745,11 +743,11 @@ def _calibrate_pinhole_splined(
         state.intrinsics, seed_opencv_distortion_parameters=opencv_model.distortion_coeffs
     )
 
-    _log_residual_stats(detection_infos)
+    _log_residual_stats(frame_infos)
     return CalibrationResult(
         optimized_camera_model=final_intrinsics,
         optimized_cameras_T_target=state.cameras_from_target,
-        detection_infos=detection_infos,
+        frame_infos=frame_infos,
         warp_info=warp_info,
     )
 
@@ -757,7 +755,7 @@ def _calibrate_pinhole_splined(
 @overload
 def calibrate_camera(
     target_points: np.ndarray,
-    detections: list[Detection],
+    frames: list[Frame],
     camera_model_config: PinholeSplinedConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
@@ -767,7 +765,7 @@ def calibrate_camera(
 @overload
 def calibrate_camera(
     target_points: np.ndarray,
-    detections: list[Detection],
+    frames: list[Frame],
     camera_model_config: OpenCVConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
@@ -776,19 +774,19 @@ def calibrate_camera(
 
 def calibrate_camera(
     target_points: np.ndarray,
-    detections: list[Detection],
+    frames: list[Frame],
     camera_model_config: CameraModelConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
 ) -> CalibrationResult:
-    """Calibrate a camera from a set of target detections.
+    """Calibrate a camera from a set of per-image frames.
 
     Target warp estimation requires a planar target; it will be skipped
     automatically if the target points are not sufficiently coplanar.
 
     Args:
         target_points: 3D target point coordinates, shape (N, 3).
-        detections: Per-image detections, one per calibration image.
+        frames: Per-image frames, one per calibration image.
         camera_model_config: Specifies the camera model to fit.
         estimate_target_warp: Whether to estimate a quadratic warp of the target
             to account for slight non-planarity.
@@ -807,7 +805,7 @@ def calibrate_camera(
     if isinstance(camera_model_config, PinholeSplinedConfig):
         return _calibrate_pinhole_splined(
             target_points,
-            detections,
+            frames,
             camera_model_config,
             outlier_threshold_stddevs,
             estimate_target_warp,
@@ -816,7 +814,7 @@ def calibrate_camera(
     if isinstance(camera_model_config, OpenCVConfig):
         return _opencv_calibrate(
             target_points,
-            detections,
+            frames,
             camera_model_config,
             outlier_threshold_stddevs,
             estimate_target_warp,
