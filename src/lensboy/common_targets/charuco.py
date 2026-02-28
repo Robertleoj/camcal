@@ -6,7 +6,7 @@ from lensboy._internal.progress import progress
 from lensboy.calibration.calibrate import Detection
 
 
-def detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Detection:
+def _detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Detection:
     charuco_params = cv2.aruco.CharucoParameters()
     charuco_params.minMarkers = 1
 
@@ -31,7 +31,7 @@ def extract_detections_from_charuco(
     detections: list[Detection] = []
 
     for img in progress(images, desc="Detecting charuco"):
-        detection = detect_charuco(img, board)
+        detection = _detect_charuco(img, board)
         detections.append(detection)
 
     target_points = np.array(board.getChessboardCorners())
