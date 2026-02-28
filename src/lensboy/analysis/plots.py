@@ -667,16 +667,20 @@ def plot_residual_grid(
     mean_dy = np.zeros((ny, nx))
     counts = np.zeros((ny, nx), dtype=int)
 
+    norms = np.linalg.norm(res, axis=1)
+    sum_norms = np.zeros((ny, nx))
+
     for i in range(pos.shape[0]):
         cx, cy = ix[i], iy[i]
         counts[cy, cx] += 1
         mean_dx[cy, cx] += res[i, 0]
         mean_dy[cy, cx] += res[i, 1]
+        sum_norms[cy, cx] += norms[i]
 
     mask = counts > 0
     mean_dx[mask] /= counts[mask]
     mean_dy[mask] /= counts[mask]
-    mean_mag[mask] = np.sqrt(mean_dx[mask] ** 2 + mean_dy[mask] ** 2)
+    mean_mag[mask] = sum_norms[mask] / counts[mask]
 
     bg = "#111111"
     fg = "white"
