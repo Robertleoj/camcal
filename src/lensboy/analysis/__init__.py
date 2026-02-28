@@ -6,6 +6,7 @@ try:
         plot_residual_grid,
         plot_residual_histogram,
         plot_residual_vectors,
+        plot_target_and_poses,
         plot_target_warp,
     )
 except ImportError as e:
@@ -21,5 +22,6 @@ __all__ = [
     "plot_residual_grid",
     "plot_residual_histogram",
     "plot_residual_vectors",
+    "plot_target_and_poses",
     "plot_target_warp",
 ]

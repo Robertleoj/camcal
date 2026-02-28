@@ -731,6 +731,102 @@ def plot_residual_grid(
     plt.show()
 
 
+def plot_target_and_poses(
+    target_points: np.ndarray,
+    cameras_T_target: list[lb.Pose],
+    *,
+    triad_scale: float = 20.0,
+    title: str = "Target and camera poses",
+) -> None:
+    """3D scatter of the calibration target with camera poses shown as triads.
+
+    Each camera is drawn as a coordinate-frame triad (X=red, Y=green, Z=blue)
+    at the camera position in the target reference frame.
+
+    Args:
+        target_points: Calibration target 3D coordinates, shape (N, 3).
+        cameras_T_target: Camera-from-target poses, one per image.
+        triad_scale: Length of each triad axis arrow in target units.
+        title: Plot title.
+    """
+    bg = "#111111"
+    fg = "white"
+
+    fig = plt.figure(figsize=(14, 10))
+    fig.patch.set_facecolor(bg)
+    ax = fig.add_subplot(111, projection="3d")
+    ax.set_facecolor(bg)  # type: ignore
+
+    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):  # type: ignore
+        axis.pane.set_facecolor(bg)
+        axis.pane.set_edgecolor(fg)
+        axis.label.set_color(fg)
+    ax.tick_params(colors=fg)
+
+    # Target points
+    ax.scatter(
+        target_points[:, 0],
+        target_points[:, 1],
+        target_points[:, 2],
+        c="red",
+        s=8,
+        depthshade=True,
+        label="target points",
+    )
+
+    # Camera triads
+    axis_colors = ["red", "green", "blue"]
+    camera_origins = []
+    for i, pose in enumerate(cameras_T_target):
+        target_T_camera = pose.inverse()
+        origin = target_T_camera.translation
+        rotmat = target_T_camera.rotmat
+        camera_origins.append(origin)
+
+        for axis_idx, color in enumerate(axis_colors):
+            direction = rotmat[:, axis_idx] * triad_scale
+            ax.quiver(
+                origin[0],
+                origin[1],
+                origin[2],
+                direction[0],
+                direction[1],
+                direction[2],
+                color=color,
+                arrow_length_ratio=0.1,
+                linewidth=1.5,
+            )
+
+        ax.text(origin[0], origin[1], origin[2], f"  {i}", color=fg, fontsize=7)
+
+    camera_origins_arr = np.array(camera_origins)
+
+    # Equal aspect ratio
+    all_pts = np.vstack([target_points, camera_origins_arr])
+    ranges = all_pts.max(axis=0) - all_pts.min(axis=0)
+    max_range = ranges.max() / 2 * 1.1
+    mid = np.mean(all_pts, axis=0)
+    ax.set_xlim(mid[0] - max_range, mid[0] + max_range)  # type: ignore
+    ax.set_ylim(mid[1] - max_range, mid[1] + max_range)  # type: ignore
+    ax.set_zlim(mid[2] - max_range, mid[2] + max_range)  # type: ignore
+    ax.set_box_aspect([1, 1, 1])  # type: ignore
+
+    # View from the side of the camera cluster, slightly elevated
+    target_center = np.mean(target_points, axis=0)
+    camera_center = np.mean(camera_origins_arr, axis=0)
+    cam_dir = camera_center - target_center
+    cam_azim = np.degrees(np.arctan2(cam_dir[1], cam_dir[0]))
+    ax.view_init(elev=25, azim=cam_azim + 70)  # type: ignore
+
+    ax.set_xlabel("X", color=fg)
+    ax.set_ylabel("Y", color=fg)
+    ax.set_zlabel("Z", color=fg)  # type: ignore
+    ax.set_title(title, color=fg)
+
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_target_warp(
     target_points: np.ndarray,
     target_warp: lb.TargetWarp,

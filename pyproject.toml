@@ -68,7 +68,7 @@ dev = [
 
 
 [tool.ruff]
-exclude = ["**/*.pyi", "experimental/**"]
+exclude = ["**/*.pyi", "**/*.ipynb", "experimental/**"]
 line-length = 90
 
 [tool.ruff.lint]
