@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
 
-from lensboy._internal.image import to_gray
 from lensboy._internal.progress import progress
+from lensboy.analysis.image import to_gray
 from lensboy.calibration.calibrate import Frame
 
 

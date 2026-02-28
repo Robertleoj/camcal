@@ -14,6 +14,9 @@ requires-python = ">=3.11"
 
 dependencies = ["numpy>=1.26", "opencv-contrib-python>=4.8"]
 
+[project.optional-dependencies]
+analysis = ["matplotlib>=3.8"]
+
 [project.scripts]
 
 
@@ -65,7 +68,7 @@ dev = [
 
 
 [tool.ruff]
-exclude = ["**/*.pyi", "experimental/**"]
+exclude = ["**/*.pyi", "**/*.ipynb", "experimental/**"]
 line-length = 90
 
 [tool.ruff.lint]
@@ -74,7 +77,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 # Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
 select = ["E", "F", "I", "UP", "NPY201", "D"]
-ignore = ["F722", "D100", "D104", "D105"]
+ignore = ["F722", "D100", "D104", "D105", "D202"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]

@@ -1,5 +1,1 @@
 - Write good README
-- Make plug-n-play notebook that the user can use to calibrate using the library
-- make `analysis` extra, which includes vis libs and `lensboy.analysis`
-- make visualization tools
-  - Show how a straight grid is distorted by the model is pretty cool

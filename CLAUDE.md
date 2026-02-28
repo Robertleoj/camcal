@@ -32,3 +32,8 @@ Try not to duplicate information inside the docstring too much, and don't just r
 # Comments
 
 Keep comments minimal, only add comments when the code needs explaining why it's doing something.
+
+# Plots
+
+Follow the color scheme of the existing plots in the plots.py file.
+Making the type checker happy is less important in the plots if the plotting library APIs make it hard to make the types work. In this case the usage of `type: ignore` is fine.
