@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/logo.png" alt="lensboy" width="300">
+  <img src="media/logo.png" alt="lensboy" width="400">
 </p>
 
 # lensboy
