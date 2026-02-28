@@ -4,7 +4,7 @@
 
 # lensboy
 
-Camera calibration for vision engineers. Extremely simple to use, and maximally powerful.
+Camera calibration for vision engineers. Maximally powerful, minimally complex.
 
 Supports OpenCV camera models and spline-based distortion models for lenses that OpenCV can't handle.
 
