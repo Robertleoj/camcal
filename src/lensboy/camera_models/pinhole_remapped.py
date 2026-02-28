@@ -175,7 +175,7 @@ class PinholeRemapped(CameraModel):
             borderValue=border_value,
         )
 
-    def project_points_undistorted(self, points_in_cam: np.ndarray) -> np.ndarray:
+    def project_points(self, points_in_cam: np.ndarray) -> np.ndarray:
         """Project 3D camera-frame points into the undistorted image.
 
         Args:
