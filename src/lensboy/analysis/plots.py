@@ -2,6 +2,58 @@ import lensboy as lb
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import cv2
+
+
+class Color:
+    """Container for some common colors."""
+
+    red = (255, 0, 0)
+    green = (0, 255, 0)
+    blue = (0, 0, 255)
+
+
+def _draw_points(img, points, color=Color.green, r=4, thickness=-1):
+    for x, y in points:
+        cv2.circle(img, (int(x), int(y)), r, color, thickness)
+    return img
+
+
+def draw_frame_detections(
+    frame: lb.Frame,
+    *,
+    image: np.ndarray | None = None,
+    image_width: int | None = None,
+    image_height: int | None = None,
+    color: tuple[int, int, int] = Color.green,
+    r: int = 4,
+) -> np.ndarray:
+    """Draw detected points onto an image.
+
+    If no image is provided, draws on a blank (black) canvas whose size
+    is given by ``image_width`` and ``image_height``.
+
+    Args:
+        frame: Frame containing detected calibration points.
+        image: Optional BGR image to draw on (will be copied).
+        image_width: Canvas width when ``image`` is None.
+        image_height: Canvas height when ``image`` is None.
+        color: BGR circle colour.
+        r: Circle radius in pixels.
+
+    Returns:
+        BGR image with detections drawn, shape (H, W, 3).
+    """
+    if image is not None:
+        canvas = image.copy()
+    else:
+        if image_width is None or image_height is None:
+            raise ValueError(
+                "image_width and image_height are required when image is None"
+            )
+        canvas = np.zeros((image_height, image_width, 3), dtype=np.uint8)
+
+    return _draw_points(canvas, frame.detected_points_in_image, color=color, r=r)
 
 
 def plot_detection_coverage(
