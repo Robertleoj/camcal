@@ -150,11 +150,8 @@ def progress(iterable, *, total: int | None = None, desc: str = "doing thing", *
         for x in progress(xs, desc="doing thing"):
             ...
     """
-    if total is None:
-        try:
-            total = len(iterable)  # type: ignore[arg-type]
-        except Exception:
-            total = 0
+    iterable = list(iterable)
+    total = len(iterable)
 
     with Progress(total=total, desc=desc, **kwargs) as p:
         for item in iterable:

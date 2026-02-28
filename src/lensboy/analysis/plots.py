@@ -5,6 +5,7 @@ import numpy as np
 from matplotlib.colorbar import Colorbar
 
 import lensboy as lb
+from lensboy.analysis.image import to_color
 
 
 class Color:
@@ -53,7 +54,7 @@ def draw_points_in_image(
         BGR image with points drawn, shape (H, W, 3).
     """
     if image is not None:
-        canvas = image.copy()
+        canvas = to_color(image.copy())
     else:
         if image_width is None or image_height is None:
             raise ValueError(
@@ -777,7 +778,7 @@ def plot_target_and_poses(
     # Camera triads
     axis_colors = ["red", "green", "blue"]
     camera_origins = []
-    for i, pose in enumerate(cameras_T_target):
+    for pose in cameras_T_target:
         target_T_camera = pose.inverse()
         origin = target_T_camera.translation
         rotmat = target_T_camera.rotmat
@@ -797,8 +798,6 @@ def plot_target_and_poses(
                 linewidth=1.5,
             )
 
-        ax.text(origin[0], origin[1], origin[2], f"  {i}", color=fg, fontsize=7)
-
     camera_origins_arr = np.array(camera_origins)
 
     # Equal aspect ratio
@@ -810,13 +809,6 @@ def plot_target_and_poses(
     ax.set_ylim(mid[1] - max_range, mid[1] + max_range)  # type: ignore
     ax.set_zlim(mid[2] - max_range, mid[2] + max_range)  # type: ignore
     ax.set_box_aspect([1, 1, 1])  # type: ignore
-
-    # View from the side of the camera cluster, slightly elevated
-    target_center = np.mean(target_points, axis=0)
-    camera_center = np.mean(camera_origins_arr, axis=0)
-    cam_dir = camera_center - target_center
-    cam_azim = np.degrees(np.arctan2(cam_dir[1], cam_dir[0]))
-    ax.view_init(elev=25, azim=cam_azim + 70)  # type: ignore
 
     ax.set_xlabel("X", color=fg)
     ax.set_ylabel("Y", color=fg)
@@ -910,6 +902,107 @@ def plot_target_warp(
     ax.set_xlabel("warp x [target units]")
     ax.set_ylabel("warp y [target units]")
     ax.set_aspect("equal", adjustable="box")
+
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_worst_residual_frames(
+    frame_infos: list[lb.FrameInfo],
+    frames: list[lb.Frame],
+    images: list[np.ndarray],
+    *,
+    n: int = 5,
+    scale: float = 10.0,
+    title: str = "Worst residual frames",
+) -> None:
+    """Show the frames with the largest residuals, with residual vectors overlaid.
+
+    Frames are ranked by their single worst (max-magnitude) residual and the
+    top ``n`` are displayed in a single-column figure.  Each subplot shows the
+    image with quiver arrows from detected points in the direction and
+    magnitude of the residual, coloured by magnitude.
+
+    Args:
+        frame_infos: Per-frame reprojection diagnostics.
+        frames: Detected calibration frames (same order as ``frame_infos``).
+        images: Source images corresponding to each frame, shape (H, W) or (H, W, 3).
+        n: Number of worst frames to display.
+        scale: Multiplier applied to arrow lengths for visibility.
+        title: Overall figure title.
+    """
+    max_mags = [
+        float(np.max(np.linalg.norm(fi.residuals, axis=1)))
+        for fi in frame_infos
+    ]
+    ranked = sorted(range(len(max_mags)), key=lambda i: max_mags[i], reverse=True)
+    selected = ranked[:n]
+
+    bg = "#111111"
+    fg = "white"
+    cmap = plt.colormaps["plasma"]
+
+    h0, w0 = images[selected[0]].shape[:2]
+    panel_w = 14
+    panel_h = panel_w * (h0 / w0)
+    fig, axes = plt.subplots(
+        len(selected), 1,
+        figsize=(panel_w, panel_h * len(selected)),
+        squeeze=False,
+    )
+    fig.patch.set_facecolor(bg)
+    fig.suptitle(title, color=fg, fontsize=14)
+
+    for ax_row, idx in zip(axes, selected):
+        ax = ax_row[0]
+        fi = frame_infos[idx]
+        frame = frames[idx]
+        img = to_color(images[idx])
+
+        pos = frame.detected_points_in_image
+        res = fi.residuals
+        mags = np.linalg.norm(res, axis=1)
+        frame_norm = mcolors.Normalize(vmin=0, vmax=float(np.max(mags)))
+
+        ax.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))  # type: ignore[arg-type]
+
+        ax.quiver(
+            pos[:, 0],
+            pos[:, 1],
+            res[:, 0] * scale,
+            res[:, 1] * scale,
+            mags,
+            cmap=cmap,
+            norm=frame_norm,
+            angles="xy",
+            scale_units="xy",
+            scale=1.0,
+            width=0.002,
+            headwidth=2,
+            headlength=2,
+            headaxislength=1.5,
+        )
+
+        ax.set_facecolor(bg)
+        ax.tick_params(colors=fg)
+        ax.xaxis.label.set_color(fg)
+        ax.yaxis.label.set_color(fg)
+        ax.title.set_color(fg)
+        for spine in ax.spines.values():
+            spine.set_color(fg)
+
+        worst = float(max_mags[idx])
+        mean = float(np.mean(mags))
+        ax.set_title(f"Frame {idx}  (max={worst:.2f} px, mean={mean:.2f} px)")
+        ax.set_aspect("equal", adjustable="box")
+
+        cbar: Colorbar = fig.colorbar(
+            plt.cm.ScalarMappable(norm=frame_norm, cmap=cmap),  # type: ignore[arg-type]
+            ax=ax,
+            shrink=0.6,
+        )
+        cbar.set_label("residual [px]", color=fg)
+        cbar.ax.tick_params(colors=fg)
 
     plt.tight_layout()
     plt.show()
