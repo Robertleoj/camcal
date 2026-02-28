@@ -14,6 +14,37 @@ Supports OpenCV camera models and spline-based distortion models for lenses that
   <img src="media/showcase_2.png" width="345"> <img src="media/showcase_5.png" width="345">
 </p>
 
+## Quick example
+
+```python
+import lensboy as lb
+
+# detect calibration target in images
+target_points, frames = lb.extract_frames_from_charuco(board, imgs)
+
+# calibrate
+result = lb.calibrate_camera(
+    target_points, frames,
+    camera_model_config=lb.OpenCVConfig(
+        image_height=h, image_width=w, initial_focal_length=1000,
+    ),
+)
+
+# save
+result.optimized_camera_model.save("camera.json")
+```
+
+Need more accuracy? Just swap the config — same API, way more powerful:
+
+```python
+result = lb.calibrate_camera(
+    target_points, frames,
+    camera_model_config=lb.PinholeSplinedConfig(
+        image_height=h, image_width=w, initial_focal_length=1000,
+    ),
+)
+```
+
 ## Why lensboy
 
 Even for standard OpenCV models, lensboy gives you better calibrations than raw `cv2.calibrateCamera`:
@@ -44,4 +75,11 @@ See the [quickstart notebook](examples/quickstart.ipynb) for a full walkthrough 
 
 ## Spline models
 
-When OpenCV residuals show systematic patterns at the edges, switch to a spline model. These use B-spline grids instead of polynomial coefficients, and can capture arbitrary distortion patterns. The calibrated spline model can be converted to a pinhole model with undistortion maps for use in your application.
+When OpenCV's polynomial distortion model can't fully capture your lens, switch to a spline model. These use B-spline grids instead of polynomial coefficients, and can capture arbitrary distortion patterns.
+
+The calibrated spline model can be converted to a pinhole model with undistortion maps, so you can use it anywhere:
+
+```python
+pinhole = spline_model.get_pinhole_model()
+undistorted = pinhole.undistort(image)
+```
