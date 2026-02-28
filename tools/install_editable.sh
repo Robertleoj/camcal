@@ -1,1 +1,0 @@
-uv pip install --force-reinstall --no-build-isolation -e .

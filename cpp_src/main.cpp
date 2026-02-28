@@ -19,53 +19,6 @@ PYBIND11_MODULE(
     m
 ) {
     m.doc() = "lensboy for camera calibration";
-    m.def(
-        "add",
-        &add,
-        "Add two integers together - test",
-        py::arg("a"),
-        py::arg("b")
-    );
-
-    m.def(
-        "calibrate_opencv",
-        &lensboy::calibrate_opencv,
-        py::arg("intrinsics_initial_value"),
-        py::arg("intrinsics_param_optimize_mask"),
-        py::arg("cameras_from_target"),
-        py::arg("target_points"),
-        py::arg("frames"),
-        py::arg("warp_coordinates") = py::none(),
-        py::arg("warp_kxy_initial") = std::array<double, 2>{0.0, 0.0}
-    );
-
-    m.def(
-        "get_matching_spline_distortion_model",
-        &lensboy::get_matching_spline_distortion_model,
-        py::arg("opencv_distortion_params"),
-        py::arg("model_config")
-    );
-
-    m.def(
-        "fine_tune_pinhole_splined",
-        &lensboy::fine_tune_pinhole_splined,
-        py::arg("model_config"),
-        py::arg("intrinsics_parameters"),
-        py::arg("cameras_from_target"),
-        py::arg("target_points"),
-        py::arg("frames"),
-        py::arg("warp_coordinates") = py::none(),
-        py::arg("warp_kxy_initial") = std::array<double, 2>{0.0, 0.0}
-    );
-
-    m.def(
-        "project_pinhole_splined_points",
-        &lensboy::project_pinhole_splined_pywrapper,
-        py::arg("model_config"),
-        py::arg("intrinsics"),
-        py::arg("points_in_camera")
-    );
-
     py::class_<lensboy::PinholeSplinedConfig>(m, "PinholeSplinedConfig")
         .def(
             py::init<uint32_t, uint32_t, double, double, uint32_t, uint32_t>(),
@@ -166,15 +119,6 @@ PYBIND11_MODULE(
             }
         );
 
-    m.def(
-        "make_undistortion_maps_pinhole_splined",
-        &lensboy::make_undistortion_maps_pinhole_splined,
-        py::arg("model_config"),
-        py::arg("intrinsics"),
-        py::arg("k4"),
-        py::arg("image_size_wh")
-    );
-
     py::class_<lensboy::WarpCoordinates>(m, "WarpCoordinates")
         .def(
             py::init<lensboy::Vec6<double>, double, double>(),
@@ -193,4 +137,60 @@ PYBIND11_MODULE(
                 << ", y_scale=" << self.y_scale << ")";
             return oss.str();
         });
+
+    m.def(
+        "add",
+        &add,
+        "Add two integers together - test",
+        py::arg("a"),
+        py::arg("b")
+    );
+
+    m.def(
+        "calibrate_opencv",
+        &lensboy::calibrate_opencv,
+        py::arg("intrinsics_initial_value"),
+        py::arg("intrinsics_param_optimize_mask"),
+        py::arg("cameras_from_target"),
+        py::arg("target_points"),
+        py::arg("frames"),
+        py::arg("warp_coordinates") = py::none(),
+        py::arg("warp_kxy_initial") = std::array<double, 2>{0.0, 0.0}
+    );
+
+    m.def(
+        "get_matching_spline_distortion_model",
+        &lensboy::get_matching_spline_distortion_model,
+        py::arg("opencv_distortion_params"),
+        py::arg("model_config")
+    );
+
+    m.def(
+        "fine_tune_pinhole_splined",
+        &lensboy::fine_tune_pinhole_splined,
+        py::arg("model_config"),
+        py::arg("intrinsics_parameters"),
+        py::arg("cameras_from_target"),
+        py::arg("target_points"),
+        py::arg("frames"),
+        py::arg("warp_coordinates") = py::none(),
+        py::arg("warp_kxy_initial") = std::array<double, 2>{0.0, 0.0}
+    );
+
+    m.def(
+        "project_pinhole_splined_points",
+        &lensboy::project_pinhole_splined_pywrapper,
+        py::arg("model_config"),
+        py::arg("intrinsics"),
+        py::arg("points_in_camera")
+    );
+
+    m.def(
+        "make_undistortion_maps_pinhole_splined",
+        &lensboy::make_undistortion_maps_pinhole_splined,
+        py::arg("model_config"),
+        py::arg("intrinsics"),
+        py::arg("k4"),
+        py::arg("image_size_wh")
+    );
 }

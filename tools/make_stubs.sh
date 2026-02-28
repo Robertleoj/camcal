@@ -1,1 +1,0 @@
-pybind11-stubgen lensboy.lensboy_bindings -o src
