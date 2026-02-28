@@ -70,7 +70,6 @@ def plot_detection_coverage(
     image_height: int,
     title: str = "Coverage",
     s: float = 6.0,
-    alpha: float = 0.35,
 ) -> None:
     """Scatter-plot all detected points over the image extent.
 
@@ -82,7 +81,6 @@ def plot_detection_coverage(
         image_height: Sensor height in pixels, sets the y-axis limit.
         title: Plot title.
         s: Marker size passed to ``ax.scatter``.
-        alpha: Marker opacity passed to ``ax.scatter``.
     """
     pts_list = []
     for d in detections:
@@ -97,10 +95,22 @@ def plot_detection_coverage(
 
     pts = np.concatenate(pts_list, axis=0) if pts_list else np.empty((0, 2), dtype=float)
 
+    bg = "#111111"
+    fg = "white"
+    accent = "#00d4ff"
+
     fig, ax = plt.subplots(figsize=(20, 15))
+    fig.patch.set_facecolor(bg)
+    ax.set_facecolor(bg)
+    ax.tick_params(colors=fg)
+    ax.xaxis.label.set_color(fg)
+    ax.yaxis.label.set_color(fg)
+    ax.title.set_color(fg)
+    for spine in ax.spines.values():
+        spine.set_color(fg)
 
     if pts.shape[0] > 0:
-        ax.scatter(pts[:, 0], pts[:, 1], s=s, alpha=alpha)
+        ax.scatter(pts[:, 0], pts[:, 1], s=s, color=accent)
 
     ax.set_title(f"{title}  (N={pts.shape[0]})")
     ax.set_xlabel("x [px]")
@@ -110,8 +120,6 @@ def plot_detection_coverage(
     ax.set_ylim(image_height, 0)
 
     ax.set_aspect("equal", adjustable="box")
-    ax.grid(True, linewidth=0.5, alpha=0.3)
-
     plt.show()
 
 
@@ -328,8 +336,8 @@ def plot_residual_histogram(
     )
     cov_inv = np.linalg.inv(cov)
 
-    bg = "#1a1a2e"
-    fg = "#e0e0e0"
+    bg = "#111111"
+    fg = "white"
     accent = "#00d4ff"
 
     from matplotlib.gridspec import GridSpec
@@ -375,7 +383,7 @@ def plot_residual_histogram(
     ax_hist.set_title("Per-component histogram")
     ax_hist.set_xlabel("residual [px]")
     ax_hist.set_ylabel("count")
-    ax_hist.legend(facecolor="#2a2a4a", edgecolor=fg, labelcolor=fg, loc="upper right")
+    ax_hist.legend(facecolor=bg, edgecolor=fg, labelcolor=fg, loc="upper right")
     ax_hist.grid(True, linewidth=0.5, alpha=0.15, color=fg)
 
     # --- Right: 2D scatter + Gaussian contours ---
