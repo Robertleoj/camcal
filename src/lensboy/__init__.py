@@ -1,3 +1,4 @@
+from lensboy import analysis
 from lensboy.calibration.calibrate import (
     CalibrationResult,
     Frame,
@@ -13,6 +14,7 @@ from lensboy.common_targets.charuco import extract_frames_from_charuco
 from lensboy.geometry.pose import Pose
 
 __all__ = [
+    "analysis",
     "calibrate_camera",
     "Frame",
     "FrameInfo",
