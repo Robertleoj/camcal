@@ -1,8 +1,9 @@
-import lensboy as lb
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 import cv2
+import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
+import numpy as np
+
+import lensboy as lb
 
 
 class Color:
@@ -60,7 +61,6 @@ def draw_points_in_image(
         canvas = np.zeros((image_height, image_width, 3), dtype=np.uint8)
 
     return _draw_points(canvas, points_in_image, color=color, r=r)
-
 
 
 def plot_detection_coverage(
@@ -264,4 +264,176 @@ def plot_distortion_grid(
     ax1.set_ylim(H - 1, 0)
     ax1.set_aspect("equal")
 
+    plt.show()
+
+
+def plot_residual_histogram(
+    frame_infos: list[lb.FrameInfo],
+    *,
+    bins: int = 100,
+    n_sigma: float = 6.0,
+    title: str = "Reprojection residuals",
+) -> None:
+    """Per-component histogram and 2D scatter of reprojection residuals.
+
+    Left panel: stacked histogram (inliers blue, outliers red) with a 1D
+    Gaussian fit overlaid. Right panel: 2D scatter of residuals with fitted
+    2D Gaussian contours.  Both axes are trimmed to ±``n_sigma`` standard
+    deviations.
+
+    Args:
+        frame_infos: Per-frame reprojection diagnostics.
+        bins: Number of histogram bins.
+        n_sigma: Number of fitted-Gaussian standard deviations for axis limits.
+        title: Overall figure title.
+    """
+    inlier_2d: list[np.ndarray] = []
+    outlier_2d: list[np.ndarray] = []
+    for fi in frame_infos:
+        inlier_2d.append(fi.residuals[fi.inlier_mask])
+        outlier_2d.append(fi.residuals[~fi.inlier_mask])
+
+    inlier_pts = np.concatenate(inlier_2d) if inlier_2d else np.empty((0, 2))
+    outlier_pts = np.concatenate(outlier_2d) if outlier_2d else np.empty((0, 2))
+    all_pts = np.concatenate([inlier_pts, outlier_pts])  # (N, 2)
+
+    if all_pts.shape[0] == 0:
+        return
+
+    # --- 1D stats (fit on inliers only) ---
+    inlier_vals = inlier_pts.ravel()
+
+    mu_1d = float(np.mean(inlier_vals))
+    sigma_1d = float(np.std(inlier_vals))
+
+    lo = mu_1d - n_sigma * sigma_1d
+    hi = mu_1d + n_sigma * sigma_1d
+    bin_edges = np.linspace(lo, hi, bins + 1)
+
+    # --- 2D stats (fit on inliers only) ---
+    mu_2d = np.mean(inlier_pts, axis=0)  # (2,)
+    cov = np.cov(inlier_pts, rowvar=False)  # (2, 2)
+    cov_inv = np.linalg.inv(cov)
+    sigma_x = float(np.sqrt(cov[0, 0]))
+    sigma_y = float(np.sqrt(cov[1, 1]))
+
+    bg = "#1a1a2e"
+    fg = "#e0e0e0"
+    accent = "#00d4ff"
+
+    from matplotlib.gridspec import GridSpec
+
+    fig = plt.figure(figsize=(20, 14))
+    fig.patch.set_facecolor(bg)
+    fig.suptitle(title, color=fg, fontsize=14)
+
+    gs = GridSpec(2, 2, figure=fig)
+    ax_hist = fig.add_subplot(gs[0, 0])
+    ax_2d = fig.add_subplot(gs[1, 0])
+    ax_full = fig.add_subplot(gs[:, 1])
+
+    for ax in (ax_hist, ax_2d, ax_full):
+        ax.set_facecolor(bg)
+        ax.tick_params(colors=fg)
+        ax.xaxis.label.set_color(fg)
+        ax.yaxis.label.set_color(fg)
+        ax.title.set_color(fg)
+        for spine in ax.spines.values():
+            spine.set_color(fg)
+
+    # --- Top-left: histogram (inliers only) ---
+    ax_hist.hist(
+        inlier_vals,
+        bins=bin_edges,
+        color=accent,
+    )
+
+    x = np.linspace(lo, hi, 500)
+    bin_width = (hi - lo) / bins
+    scale = inlier_vals.size * bin_width
+    pdf = (
+        scale
+        / (sigma_1d * np.sqrt(2 * np.pi))
+        * np.exp(-0.5 * ((x - mu_1d) / sigma_1d) ** 2)
+    )
+    ax_hist.plot(
+        x, pdf, color="white", linewidth=1.5, label=f"Gaussian fit (σ={sigma_1d:.3f} px)"
+    )
+
+    ax_hist.set_xlim(lo, hi)
+    ax_hist.set_title("Per-component histogram")
+    ax_hist.set_xlabel("residual [px]")
+    ax_hist.set_ylabel("count")
+    ax_hist.legend(facecolor="#2a2a4a", edgecolor=fg, labelcolor=fg, loc="upper right")
+    ax_hist.grid(True, linewidth=0.5, alpha=0.15, color=fg)
+
+    # --- Right: 2D scatter + Gaussian contours ---
+    sigma_max = max(sigma_x, sigma_y)
+    gx = np.linspace(mu_2d[0] - n_sigma * sigma_max, mu_2d[0] + n_sigma * sigma_max, 400)
+    gy = np.linspace(mu_2d[1] - n_sigma * sigma_max, mu_2d[1] + n_sigma * sigma_max, 400)
+    GX, GY = np.meshgrid(gx, gy)
+    diff = np.stack([GX - mu_2d[0], GY - mu_2d[1]], axis=-1)  # (400, 400, 2)
+    maha2 = np.einsum("...i,ij,...j", diff, cov_inv, diff)
+
+    # --- Bottom: scatter + contour lines ---
+    contour_levels = [1.0, 4.0, 9.0]
+    cs = ax_2d.contour(
+        GX, GY, maha2, levels=contour_levels, colors=accent, linewidths=1.2
+    )
+    labels = ax_2d.clabel(
+        cs,
+        fmt={1.0: "1σ", 4.0: "2σ", 9.0: "3σ"},
+        fontsize=8,
+    )
+    for lbl in labels:
+        lbl.set_color(bg)
+        lbl.set_bbox({"facecolor": accent, "pad": 1.5, "edgecolor": "none"})
+
+    if inlier_pts.shape[0] > 0:
+        ax_2d.scatter(
+            inlier_pts[:, 0],
+            inlier_pts[:, 1],
+            s=3,
+            alpha=0.15,
+            color="white",
+            edgecolors="none",
+        )
+
+    lim = n_sigma * sigma_max
+    ax_2d.set_xlim(mu_2d[0] - lim, mu_2d[0] + lim)
+    ax_2d.set_ylim(mu_2d[1] - lim, mu_2d[1] + lim)
+    ax_2d.set_aspect("equal", adjustable="box")
+    ax_2d.set_xlabel("x residual [px]")
+    ax_2d.set_ylabel("y residual [px]")
+    ax_2d.set_title(f"2D residuals (σx={sigma_x:.3f}, σy={sigma_y:.3f} px)")
+
+    # --- Right column: full-range scatter highlighting outliers ---
+    if inlier_pts.shape[0] > 0:
+        ax_full.scatter(
+            inlier_pts[:, 0],
+            inlier_pts[:, 1],
+            s=3,
+            alpha=0.15,
+            color="white",
+            edgecolors="none",
+        )
+    if outlier_pts.shape[0] > 0:
+        ax_full.scatter(
+            outlier_pts[:, 0],
+            outlier_pts[:, 1],
+            s=20,
+            alpha=0.9,
+            color="#ff4444",
+            edgecolors="white",
+            linewidths=0.5,
+            zorder=10,
+        )
+
+    ax_full.set_aspect("equal", adjustable="box")
+    ax_full.set_xlabel("x residual [px]")
+    ax_full.set_ylabel("y residual [px]")
+    n_outliers = outlier_pts.shape[0] // 2  # 2 components per point
+    ax_full.set_title(f"Full range ({n_outliers} outlier points)")
+
+    plt.tight_layout()
     plt.show()
