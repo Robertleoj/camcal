@@ -759,8 +759,8 @@ def plot_target_and_poses(
     ax.set_facecolor(bg)  # type: ignore
 
     for axis in (ax.xaxis, ax.yaxis, ax.zaxis):  # type: ignore
-        axis.pane.set_facecolor(bg)
-        axis.pane.set_edgecolor(fg)
+        axis.pane.set_facecolor(bg)  # type: ignore[union-attr]
+        axis.pane.set_edgecolor(fg)  # type: ignore[union-attr]
         axis.label.set_color(fg)
     ax.tick_params(colors=fg)
 
@@ -768,7 +768,7 @@ def plot_target_and_poses(
     ax.scatter(
         target_points[:, 0],
         target_points[:, 1],
-        target_points[:, 2],
+        target_points[:, 2],  # type: ignore[arg-type]
         c="red",
         s=8,
         depthshade=True,
@@ -931,10 +931,7 @@ def plot_worst_residual_frames(
         scale: Multiplier applied to arrow lengths for visibility.
         title: Overall figure title.
     """
-    max_mags = [
-        float(np.max(np.linalg.norm(fi.residuals, axis=1)))
-        for fi in frame_infos
-    ]
+    max_mags = [float(np.max(np.linalg.norm(fi.residuals, axis=1))) for fi in frame_infos]
     ranked = sorted(range(len(max_mags)), key=lambda i: max_mags[i], reverse=True)
     selected = ranked[:n]
 
@@ -946,7 +943,8 @@ def plot_worst_residual_frames(
     panel_w = 14
     panel_h = panel_w * (h0 / w0)
     fig, axes = plt.subplots(
-        len(selected), 1,
+        len(selected),
+        1,
         figsize=(panel_w, panel_h * len(selected)),
         squeeze=False,
     )

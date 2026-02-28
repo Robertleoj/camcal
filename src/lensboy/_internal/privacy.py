@@ -3,9 +3,9 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from lensboy._internal.progress import progress
 from lensboy.camera_models.base_model import CameraModel
 from lensboy.geometry.pose import Pose
-from lensboy._internal.progress import progress
 
 BUFFER_M = 50
 

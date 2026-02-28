@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import TextIO
+from typing import TextIO, TypeVar
+
+_T = TypeVar("_T")
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -142,7 +145,13 @@ class Progress:
 
 
 # Small helper for drop-in-ish usage:
-def progress(iterable, *, total: int | None = None, desc: str = "doing thing", **kwargs):
+def progress(
+    iterable: Iterable[_T],
+    *,
+    total: int | None = None,
+    desc: str = "doing thing",
+    **kwargs,
+) -> Iterator[_T]:
     """
     Wrap an iterable and yield items while updating progress.
 
