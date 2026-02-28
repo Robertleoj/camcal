@@ -2,6 +2,8 @@ import cv2
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colorbar import Colorbar
+
 import lensboy as lb
 
 
@@ -404,7 +406,7 @@ def plot_residual_histogram(
     # --- Top-left: histogram (inliers only) ---
     ax_hist.hist(
         inlier_vals,
-        bins=bin_edges,
+        bins=bin_edges,  # type: ignore
         color=accent,
     )
 
@@ -494,6 +496,236 @@ def plot_residual_histogram(
     ax_full.set_ylabel("y residual [px]")
     n_outliers = outlier_pts.shape[0] // 2  # 2 components per point
     ax_full.set_title(f"Full range ({n_outliers} outlier points)")
+
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_residual_vectors(
+    frames: list[lb.Frame],
+    frame_infos: list[lb.FrameInfo],
+    *,
+    image_width: int,
+    image_height: int,
+    title: str = "Residual vectors",
+    scale: float = 10.0,
+    scale_by_magnitude: bool = True,
+    color_by: str = "magnitude",
+) -> None:
+    """Quiver plot of reprojection residual vectors over the image plane.
+
+    Each arrow is placed at the detected point location with direction and
+    length given by the residual.
+
+    Args:
+        frames: Detected calibration frames.
+        frame_infos: Matching per-frame reprojection diagnostics.
+        image_width: Sensor width in pixels, sets the x-axis limit.
+        image_height: Sensor height in pixels, sets the y-axis limit.
+        title: Plot title.
+        scale: Multiplier applied to arrow lengths for visibility.
+        scale_by_magnitude: When False, all arrows are drawn with uniform
+            length (direction only).
+        color_by: ``"magnitude"`` colours by residual norm, ``"angle"``
+            colours by residual direction using a cyclic colormap.
+    """
+    positions: list[np.ndarray] = []
+    residuals: list[np.ndarray] = []
+    for frame, fi in zip(frames, frame_infos):
+        positions.append(frame.detected_points_in_image)
+        residuals.append(fi.residuals)
+
+    pos = np.concatenate(positions) if positions else np.empty((0, 2))
+    res = np.concatenate(residuals) if residuals else np.empty((0, 2))
+
+    if pos.shape[0] == 0:
+        return
+
+    magnitudes = np.linalg.norm(res, axis=1)
+
+    if scale_by_magnitude:
+        arrows = res * scale
+    else:
+        safe_mag = np.where(magnitudes > 0, magnitudes, 1.0)
+        arrows = res / safe_mag[:, None] * scale
+
+    bg = "#111111"
+    fg = "white"
+
+    fig, ax = plt.subplots(figsize=(20, 15))
+    fig.patch.set_facecolor(bg)
+    ax.set_facecolor(bg)
+    ax.tick_params(colors=fg)
+    ax.xaxis.label.set_color(fg)
+    ax.yaxis.label.set_color(fg)
+    ax.title.set_color(fg)
+    for spine in ax.spines.values():
+        spine.set_color(fg)
+
+    if color_by == "angle":
+        angles = np.arctan2(res[:, 1], res[:, 0])
+        color_values = angles
+        norm = mcolors.Normalize(vmin=-np.pi, vmax=np.pi)
+        cmap = plt.colormaps["hsv"]
+        cbar_label = "residual angle [rad]"
+    elif color_by == "magnitude":
+        color_values = magnitudes
+        norm = mcolors.Normalize(vmin=0, vmax=np.percentile(magnitudes, 95))
+        cmap = plt.colormaps["plasma"]
+        cbar_label = "residual magnitude [px]"
+    else:
+        raise ValueError(f"color_by must be 'magnitude' or 'angle', got {color_by!r}")
+
+    q = ax.quiver(
+        pos[:, 0],
+        pos[:, 1],
+        arrows[:, 0],
+        arrows[:, 1],
+        color_values,
+        cmap=cmap,
+        norm=norm,
+        angles="xy",
+        scale_units="xy",
+        scale=1.0,
+        width=0.001,
+        headwidth=1.5,
+        headlength=1.5,
+        headaxislength=1.5,
+    )
+
+    cbar: Colorbar = fig.colorbar(q, ax=ax, shrink=0.6)
+    cbar.set_label(cbar_label, color=fg)
+    cbar.ax.tick_params(colors=fg)
+
+    ax.set_title(f"{title}  (N={pos.shape[0]}, scale={scale}x)")
+    ax.set_xlabel("x [px]")
+    ax.set_ylabel("y [px]")
+    ax.set_xlim(0, image_width)
+    ax.set_ylim(image_height, 0)
+    ax.set_aspect("equal", adjustable="box")
+
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_residual_grid(
+    frames: list[lb.Frame],
+    frame_infos: list[lb.FrameInfo],
+    *,
+    image_width: int,
+    image_height: int,
+    grid_cells: int = 50,
+    arrow_scale: float = 100.0,
+    title: str = "Residual grid",
+) -> None:
+    """Binned residual summary showing per-cell magnitude and mean direction.
+
+    The image plane is divided into a grid. Each cell is coloured by the mean
+    inlier residual magnitude and has an arrow showing the mean residual
+    vector, revealing spatial bias patterns.
+
+    Args:
+        frames: Detected calibration frames.
+        frame_infos: Matching per-frame reprojection diagnostics.
+        image_width: Sensor width in pixels, sets the x-axis limit.
+        image_height: Sensor height in pixels, sets the y-axis limit.
+        grid_cells: Number of grid cells along the longer image axis.
+        arrow_scale: Multiplier applied to the mean-residual arrows.
+        title: Plot title.
+    """
+    positions: list[np.ndarray] = []
+    residuals: list[np.ndarray] = []
+    for frame, fi in zip(frames, frame_infos):
+        positions.append(frame.detected_points_in_image[fi.inlier_mask])
+        residuals.append(fi.residuals[fi.inlier_mask])
+
+    pos = np.concatenate(positions) if positions else np.empty((0, 2))
+    res = np.concatenate(residuals) if residuals else np.empty((0, 2))
+
+    if pos.shape[0] == 0:
+        return
+
+    aspect = image_width / image_height
+    if aspect >= 1:
+        nx = grid_cells
+        ny = max(1, int(round(grid_cells / aspect)))
+    else:
+        ny = grid_cells
+        nx = max(1, int(round(grid_cells * aspect)))
+
+    cell_w = image_width / nx
+    cell_h = image_height / ny
+
+    ix = np.clip((pos[:, 0] / cell_w).astype(int), 0, nx - 1)
+    iy = np.clip((pos[:, 1] / cell_h).astype(int), 0, ny - 1)
+
+    mean_mag = np.full((ny, nx), np.nan)
+    mean_dx = np.zeros((ny, nx))
+    mean_dy = np.zeros((ny, nx))
+    counts = np.zeros((ny, nx), dtype=int)
+
+    for i in range(pos.shape[0]):
+        cx, cy = ix[i], iy[i]
+        counts[cy, cx] += 1
+        mean_dx[cy, cx] += res[i, 0]
+        mean_dy[cy, cx] += res[i, 1]
+
+    mask = counts > 0
+    mean_dx[mask] /= counts[mask]
+    mean_dy[mask] /= counts[mask]
+    mean_mag[mask] = np.sqrt(mean_dx[mask] ** 2 + mean_dy[mask] ** 2)
+
+    bg = "#111111"
+    fg = "white"
+
+    fig, ax = plt.subplots(figsize=(20, 15))
+    fig.patch.set_facecolor(bg)
+    ax.set_facecolor(bg)
+    ax.tick_params(colors=fg)
+    ax.xaxis.label.set_color(fg)
+    ax.yaxis.label.set_color(fg)
+    ax.title.set_color(fg)
+    for spine in ax.spines.values():
+        spine.set_color(fg)
+
+    im = ax.imshow(
+        mean_mag,
+        extent=[0, image_width, image_height, 0],
+        cmap="plasma",
+        interpolation="nearest",
+        aspect="auto",
+    )
+
+    cbar: Colorbar = fig.colorbar(im, ax=ax, shrink=0.6)
+    cbar.set_label("mean residual magnitude [px]", color=fg)
+    cbar.ax.tick_params(colors=fg)
+
+    cx_arr = (np.arange(nx) + 0.5) * cell_w
+    cy_arr = (np.arange(ny) + 0.5) * cell_h
+    CX, CY = np.meshgrid(cx_arr, cy_arr)
+
+    arrow_mask = mask & (mean_mag > 0)
+    ax.quiver(
+        CX[arrow_mask],
+        CY[arrow_mask],
+        mean_dx[arrow_mask] * arrow_scale,
+        mean_dy[arrow_mask] * arrow_scale,
+        color="white",
+        angles="xy",
+        scale_units="xy",
+        scale=1.0,
+        width=0.002,
+        headwidth=3,
+        headlength=3,
+        headaxislength=2,
+    )
+
+    ax.set_title(f"{title}  ({nx}x{ny} grid, arrow_scale={arrow_scale}x)")
+    ax.set_xlabel("x [px]")
+    ax.set_ylabel("y [px]")
+    ax.set_xlim(0, image_width)
+    ax.set_ylim(image_height, 0)
+    ax.set_aspect("equal", adjustable="box")
 
     plt.tight_layout()
     plt.show()
