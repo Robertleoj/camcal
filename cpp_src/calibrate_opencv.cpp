@@ -2,6 +2,7 @@
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
 #include <fmt/format.h>
+#include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 #include <spdlog/spdlog.h>
 #include "./calibrate.hpp"
@@ -15,23 +16,35 @@ constexpr size_t opencv_num_params = 4 + 12;
 struct ReprojectionError {
     ReprojectionError(
         const double observed_x,
-        const double observed_y
+        const double observed_y,
+        const bool has_warp,
+        const WarpCoordinates warp_coords
     )
         : observed_x(observed_x),
-          observed_y(observed_y) {}
+          observed_y(observed_y),
+          has_warp(has_warp),
+          warp_coords(warp_coords) {}
 
     template <typename T>
     bool operator()(
         const T* const intrinsics,
         const T* const camera_from_target,
         const T* const point_in_target,
+        const T* const kxy,
         T* residuals
     ) const {
         Vec6<T> eigen_camera_from_target(camera_from_target);
         Vec3<T> eigen_point_in_target(point_in_target);
 
+        Vec3<T> warped_point;
+        if (has_warp) {
+            warped_point = apply_warp_to_target_point(eigen_point_in_target, warp_coords, kxy);
+        } else {
+            warped_point = eigen_point_in_target;
+        }
+
         Vec3<T> eigen_point_in_cam =
-            transform_point(eigen_camera_from_target, eigen_point_in_target);
+            transform_point(eigen_camera_from_target, warped_point);
 
         Vec2<T> image_point;
         project_opencv(intrinsics, eigen_point_in_cam, image_point);
@@ -44,15 +57,19 @@ struct ReprojectionError {
 
     static ceres::CostFunction* create(
         const double observed_x,
-        const double observed_y
+        const double observed_y,
+        const bool has_warp,
+        const WarpCoordinates& warp_coords
     ) {
-        return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 16, 6, 3>(
-            new ReprojectionError(observed_x, observed_y)
+        return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 16, 6, 3, 2>(
+            new ReprojectionError(observed_x, observed_y, has_warp, warp_coords)
         );
     }
 
     double observed_x;
     double observed_y;
+    bool has_warp;
+    WarpCoordinates warp_coords;
 };
 
 struct OptimizationState {
@@ -103,9 +120,14 @@ py::dict calibrate_opencv(
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         detections,
-    std::optional<WarpCoordinates> warp_coordinates
+    std::optional<WarpCoordinates> warp_coordinates,
+    std::array<double, 2> warp_kxy_initial
 ) {
     ceres::Problem problem;
+
+    const bool has_warp = warp_coordinates.has_value();
+    const WarpCoordinates warp_coords = has_warp ? *warp_coordinates : WarpCoordinates{};
+    double warp_kxy[2] = {warp_kxy_initial[0], warp_kxy_initial[1]};
 
     OptimizationState state = OptimizationState::from_calibrate_camera_input(
         intrinsics_initial_value,
@@ -128,6 +150,11 @@ py::dict calibrate_opencv(
         fixed_intrinsics_param_indices
     );
     problem.SetManifold(state.intrinsics.data(), manifold);
+
+    problem.AddParameterBlock(warp_kxy, 2);
+    if (!has_warp) {
+        problem.SetParameterBlockConstant(warp_kxy);
+    }
 
     for (auto& cam : state.cameras_from_target) {
         problem.AddParameterBlock(cam.data(), cam.size());
@@ -159,11 +186,12 @@ py::dict calibrate_opencv(
                 state.target_points[target_point_indices[observation_idx]];
 
             problem.AddResidualBlock(
-                ReprojectionError::create(observation(0, 0), observation(1, 0)),
+                ReprojectionError::create(observation(0, 0), observation(1, 0), has_warp, warp_coords),
                 nullptr,
                 state.intrinsics.data(),
                 camera_pose.data(),
-                target.data()
+                target.data(),
+                warp_kxy
             );
         }
     }
@@ -182,7 +210,9 @@ py::dict calibrate_opencv(
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 
-    return state.make_dict();
+    py::dict result = state.make_dict();
+    result["warp_kxy"] = py::array_t<double>(2, warp_kxy);
+    return result;
 }
 
 }  // namespace lensboy

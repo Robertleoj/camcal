@@ -72,35 +72,35 @@ class PinholeSplinedIntrinsicsParameters:
     def k4(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64]) -> None:
         ...
 class WarpCoordinates:
-    def __init__(self, center_in_target: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"], x_axis: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"], y_axis: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]) -> None:
+    def __init__(self, target_from_warp_frame: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"], x_scale: typing.SupportsFloat, y_scale: typing.SupportsFloat) -> None:
         ...
     def __repr__(self) -> str:
         ...
     @property
-    def center_in_target(self) -> typing.Annotated[numpy.typing.NDArray[numpy.float64], "[3, 1]"]:
+    def target_from_warp_frame(self) -> typing.Annotated[numpy.typing.NDArray[numpy.float64], "[6, 1]"]:
         ...
-    @center_in_target.setter
-    def center_in_target(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]) -> None:
-        ...
-    @property
-    def x_axis(self) -> typing.Annotated[numpy.typing.NDArray[numpy.float64], "[3, 1]"]:
-        ...
-    @x_axis.setter
-    def x_axis(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]) -> None:
+    @target_from_warp_frame.setter
+    def target_from_warp_frame(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"]) -> None:
         ...
     @property
-    def y_axis(self) -> typing.Annotated[numpy.typing.NDArray[numpy.float64], "[3, 1]"]:
+    def x_scale(self) -> float:
         ...
-    @y_axis.setter
-    def y_axis(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]) -> None:
+    @x_scale.setter
+    def x_scale(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def y_scale(self) -> float:
+        ...
+    @y_scale.setter
+    def y_scale(self, arg0: typing.SupportsFloat) -> None:
         ...
 def add(a: typing.SupportsInt, b: typing.SupportsInt) -> int:
     """
     Add two integers together - test
     """
-def calibrate_opencv(intrinsics_initial_value: collections.abc.Sequence[typing.SupportsFloat], intrinsics_param_optimize_mask: collections.abc.Sequence[bool], cameras_from_target: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"]], target_points: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]], detections: collections.abc.Sequence[tuple[collections.abc.Sequence[typing.SupportsInt], collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]]]], warp_coordinates: ... | None = None) -> dict:
+def calibrate_opencv(intrinsics_initial_value: collections.abc.Sequence[typing.SupportsFloat], intrinsics_param_optimize_mask: collections.abc.Sequence[bool], cameras_from_target: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"]], target_points: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]], detections: collections.abc.Sequence[tuple[collections.abc.Sequence[typing.SupportsInt], collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]]]], warp_coordinates: ... | None = None, warp_kxy_initial: typing.Annotated[collections.abc.Sequence[typing.SupportsFloat], "FixedSize(2)"] = [0.0, 0.0]) -> dict:
     ...
-def fine_tune_pinhole_splined(model_config: ..., intrinsics_parameters: ..., cameras_from_target: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"]], target_points: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]], detections: collections.abc.Sequence[tuple[collections.abc.Sequence[typing.SupportsInt], collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]]]], warp_coordinates: ... | None = None) -> dict:
+def fine_tune_pinhole_splined(model_config: ..., intrinsics_parameters: ..., cameras_from_target: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"]], target_points: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]], detections: collections.abc.Sequence[tuple[collections.abc.Sequence[typing.SupportsInt], collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]]]], warp_coordinates: ... | None = None, warp_kxy_initial: typing.Annotated[collections.abc.Sequence[typing.SupportsFloat], "FixedSize(2)"] = [0.0, 0.0]) -> dict:
     ...
 def get_matching_spline_distortion_model(opencv_distortion_params: collections.abc.Sequence[typing.SupportsFloat], model_config: ...) -> dict:
     ...

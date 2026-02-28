@@ -35,7 +35,8 @@ PYBIND11_MODULE(
         py::arg("cameras_from_target"),
         py::arg("target_points"),
         py::arg("detections"),
-        py::arg("warp_coordinates") = py::none()
+        py::arg("warp_coordinates") = py::none(),
+        py::arg("warp_kxy_initial") = std::array<double, 2>{0.0, 0.0}
     );
 
     m.def(
@@ -53,7 +54,8 @@ PYBIND11_MODULE(
         py::arg("cameras_from_target"),
         py::arg("target_points"),
         py::arg("detections"),
-        py::arg("warp_coordinates") = py::none()
+        py::arg("warp_coordinates") = py::none(),
+        py::arg("warp_kxy_initial") = std::array<double, 2>{0.0, 0.0}
     );
 
     m.def(
@@ -175,20 +177,20 @@ PYBIND11_MODULE(
 
     py::class_<lensboy::WarpCoordinates>(m, "WarpCoordinates")
         .def(
-            py::init<lensboy::Vec3<double>, lensboy::Vec3<double>, lensboy::Vec3<double>>(),
-            py::arg("center_in_target"),
-            py::arg("x_axis"),
-            py::arg("y_axis")
+            py::init<lensboy::Vec6<double>, double, double>(),
+            py::arg("target_from_warp_frame"),
+            py::arg("x_scale"),
+            py::arg("y_scale")
         )
-        .def_readwrite("center_in_target", &lensboy::WarpCoordinates::center_in_target)
-        .def_readwrite("x_axis", &lensboy::WarpCoordinates::x_axis)
-        .def_readwrite("y_axis", &lensboy::WarpCoordinates::y_axis)
+        .def_readwrite("target_from_warp_frame", &lensboy::WarpCoordinates::target_from_warp_frame)
+        .def_readwrite("x_scale", &lensboy::WarpCoordinates::x_scale)
+        .def_readwrite("y_scale", &lensboy::WarpCoordinates::y_scale)
         .def("__repr__", [](const lensboy::WarpCoordinates& self) {
             std::ostringstream oss;
             oss << "WarpCoordinates("
-                << "center_in_target=[" << self.center_in_target.transpose() << "]"
-                << ", x_axis=[" << self.x_axis.transpose() << "]"
-                << ", y_axis=[" << self.y_axis.transpose() << "])";
+                << "target_from_warp_frame=[" << self.target_from_warp_frame.transpose() << "]"
+                << ", x_scale=" << self.x_scale
+                << ", y_scale=" << self.y_scale << ")";
             return oss.str();
         });
 }

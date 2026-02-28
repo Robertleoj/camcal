@@ -6,6 +6,7 @@ from timeit import default_timer
 from typing import Generic, TypeVar, overload
 
 import cv2
+from matplotlib import scale
 import numpy as np
 
 from lensboy import lensboy_bindings as lbb
@@ -77,10 +78,62 @@ class DetectionInfo:
 
 
 @dataclass
+class WarpCoordinates:
+    target_from_warp_frame: Pose
+    x_scale: float
+    y_scale: float
+
+    def to_cpp(self) -> lbb.WarpCoordinates:
+        return lbb.WarpCoordinates(
+            target_from_warp_frame=self.target_from_warp_frame.to_cpp(),
+            x_scale=self.x_scale,
+            y_scale=self.y_scale,
+        )
+
+    @staticmethod
+    def from_cpp(cpp: lbb.WarpCoordinates) -> "WarpCoordinates":
+        return WarpCoordinates(
+            target_from_warp_frame=Pose.from_cpp(cpp.target_from_warp_frame),
+            x_scale=cpp.x_scale,
+            y_scale=cpp.y_scale,
+        )
+
+
+@dataclass
+class TargetWarp:
+    warp_coordinates: WarpCoordinates
+    object_warp: tuple[float, float]
+
+    def warp_target(self, target_points: np.ndarray) -> np.ndarray:
+        points_in_warp = self.warp_coordinates.target_from_warp_frame.inverse().apply(
+            target_points
+        )
+        x_in_warp = points_in_warp[:, 0]
+        y_in_warp = points_in_warp[:, 1]
+
+        scaled_x_in_warp = x_in_warp / self.warp_coordinates.x_scale
+        scaled_y_in_warp = y_in_warp / self.warp_coordinates.y_scale
+
+        kx, ky = self.object_warp
+
+        z = kx * (1 - scaled_x_in_warp**2) + ky * (1 - scaled_y_in_warp**2)
+
+        warped_points_in_warp = points_in_warp.copy()
+        warped_points_in_warp[:, 2] = z
+
+        warped_points_in_target = self.warp_coordinates.target_from_warp_frame.apply(
+            warped_points_in_warp
+        )
+
+        return warped_points_in_target
+
+
+@dataclass
 class CalibrationResult(Generic[T]):
     optimized_camera_model: T
     optimized_cameras_T_target: list[Pose]
     detection_infos: list[DetectionInfo]
+    warp_info: TargetWarp | None = None
 
 
 def _project_and_calculate_residuals(
@@ -88,10 +141,13 @@ def _project_and_calculate_residuals(
     camera_from_target: Pose,
     detection: Detection,
     model: OpenCV | PinholeSplined,
+    target_warp: TargetWarp | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     point_indices = detection.target_point_indices
 
     points_in_target = target_points[point_indices]
+    if target_warp is not None:
+        points_in_target = target_warp.warp_target(points_in_target)
     points_in_camera = camera_from_target.apply(points_in_target)
 
     projected_points_in_image = model.project_points(points_in_camera)
@@ -157,7 +213,9 @@ def _opencv_calibrate_inner(
     curr_cameras_from_target: list[Pose],
     target_points: np.ndarray,
     detections: list[Detection],
-) -> tuple[OpenCV, list[Pose]]:
+    warp_coordinates: WarpCoordinates | None = None,
+    warp_kxy: tuple[float, float] | None = None,
+) -> tuple[OpenCV, list[Pose], tuple[float, float] | None]:
     params = curr_intrinsics._params()
     mask = config.optimize_mask()
     intrinsics_param_optimize_mask = mask.tolist()
@@ -172,6 +230,10 @@ def _opencv_calibrate_inner(
         cameras_from_target=cameras_from_target_in,
         target_points=list(target_points),
         detections=[d.to_cpp() for d in detections],
+        warp_coordinates=(
+            warp_coordinates.to_cpp() if warp_coordinates is not None else None
+        ),
+        warp_kxy_initial=list(warp_kxy) if warp_kxy is not None else [0.0, 0.0],
     )
     end_time = default_timer()
     LOG.info(f"Ran optimizer in {end_time - start_time:.2f}s")
@@ -182,7 +244,12 @@ def _opencv_calibrate_inner(
         Pose.from_cpp(np.array(a)) for a in result["cameras_from_target"]
     ]
 
-    return optimized_intrinsics, optimized_cameras_from_target
+    out_kxy: tuple[float, float] | None = None
+    if warp_coordinates is not None:
+        kxy_arr = np.array(result["warp_kxy"])
+        out_kxy = (float(kxy_arr[0]), float(kxy_arr[1]))
+
+    return optimized_intrinsics, optimized_cameras_from_target, out_kxy
 
 
 def _compute_detection_infos(
@@ -191,6 +258,7 @@ def _compute_detection_infos(
     original_detections: list[Detection],
     filtered_detections: list[Detection] | None,
     target_points: np.ndarray,
+    target_warp: TargetWarp | None = None,
 ) -> list[DetectionInfo]:
     detection_infos: list[DetectionInfo] = []
     for i in range(len(cameras_from_target)):
@@ -199,6 +267,7 @@ def _compute_detection_infos(
             cameras_from_target[i],
             original_detections[i],
             intrinsics,
+            target_warp,
         )
 
         if filtered_detections is not None:
@@ -235,22 +304,36 @@ def _run_with_outlier_filtering(
     target_points: np.ndarray,
     original_detections: list[Detection],
     outlier_threshold_stddevs: float | None,
+    initial_extra=None,
+    warp_coordinates: WarpCoordinates | None = None,
 ):
     curr_intrinsics = initial_intrinsics
     curr_cameras_from_target = initial_cameras_from_target
     curr_detections = original_detections
+    curr_extra = initial_extra
     total_observations = sum(len(d) for d in original_detections)
 
     for i in range(MAX_OUTLIER_FILTER_PASSES + 1):
-        curr_intrinsics, curr_cameras_from_target = optimize_fn(
-            curr_intrinsics, curr_cameras_from_target, target_points, curr_detections
+        curr_intrinsics, curr_cameras_from_target, curr_extra = optimize_fn(
+            curr_intrinsics,
+            curr_cameras_from_target,
+            target_points,
+            curr_detections,
+            curr_extra,
         )
 
         if outlier_threshold_stddevs is None or i == MAX_OUTLIER_FILTER_PASSES:
             break
 
+        curr_target_warp = (
+            TargetWarp(warp_coordinates, curr_extra)
+            if warp_coordinates is not None and curr_extra is not None
+            else None
+        )
         curr_residuals = [
-            _project_and_calculate_residuals(target_points, cam, det, curr_intrinsics)[1]
+            _project_and_calculate_residuals(
+                target_points, cam, det, curr_intrinsics, curr_target_warp
+            )[1]
             for cam, det in zip(curr_cameras_from_target, curr_detections)
         ]
 
@@ -273,7 +356,7 @@ def _run_with_outlier_filtering(
             f" ({total_outliers / total_observations * 100:.1f}%) - going again..."
         )
 
-    return curr_intrinsics, curr_cameras_from_target, curr_detections
+    return curr_intrinsics, curr_cameras_from_target, curr_detections, curr_extra
 
 
 def _initialize_poses_with_pnp(
@@ -303,11 +386,80 @@ def _initialize_poses_with_pnp(
     return poses
 
 
+_PLANARITY_RATIO_THRESHOLD = 0.1
+_RECT_FIT_RATIO_THRESHOLD = 0.85
+
+
+def _make_warp_coordinates(target_points: np.ndarray) -> WarpCoordinates | None:
+    centroid = target_points.mean(axis=0)
+    centered = target_points - centroid
+    _, s, Vt = np.linalg.svd(centered, full_matrices=False)
+
+    planarity_ratio = s[2] / s[1] if s[1] > 1e-10 else np.inf
+    if planarity_ratio > _PLANARITY_RATIO_THRESHOLD:
+        LOG.warning(
+            "Target warp can only be estimated with a planar target "
+            f"(planarity ratio {planarity_ratio:.3f} > {_PLANARITY_RATIO_THRESHOLD}). "
+            "Skipping warp estimation."
+        )
+        return None
+
+    x_in_plane = Vt[0]
+    y_in_plane = Vt[1]
+    points_2d = centered @ np.column_stack([x_in_plane, y_in_plane])
+
+    pts32 = points_2d.astype(np.float32)
+    rect = cv2.minAreaRect(pts32)
+    rect_w, rect_h = float(rect[1][0]), float(rect[1][1])
+    rect_area = rect_w * rect_h
+    hull_area = float(cv2.contourArea(cv2.convexHull(pts32)))
+
+    use_rect = rect_area > 1e-10 and hull_area / rect_area > _RECT_FIT_RATIO_THRESHOLD
+
+    if use_rect:
+        box = cv2.boxPoints(rect).astype(float)
+        e0 = box[1] - box[0]
+        e1 = box[3] - box[0]
+        u = e0 / np.linalg.norm(e0)
+        v = e1 / np.linalg.norm(e1)
+        cx2, cy2 = float(rect[0][0]), float(rect[0][1])
+        x_scale = float(np.linalg.norm(e0) / 2.0)
+        y_scale = float(np.linalg.norm(e1) / 2.0)
+    else:
+        LOG.info("Target is not rectangular; falling back to PCA for warp frame axes.")
+        eigvals, eigvecs = np.linalg.eigh(np.cov(points_2d.T))
+        order = np.argsort(eigvals)[::-1]
+        u = eigvecs[:, order[0]]
+        v = eigvecs[:, order[1]]
+        proj_u = points_2d @ u
+        proj_v = points_2d @ v
+        cu = (proj_u.max() + proj_u.min()) / 2.0
+        cv_val = (proj_v.max() + proj_v.min()) / 2.0
+        center_2d = cu * u + cv_val * v
+        cx2, cy2 = float(center_2d[0]), float(center_2d[1])
+        x_scale = float((proj_u.max() - proj_u.min()) / 2.0)
+        y_scale = float((proj_v.max() - proj_v.min()) / 2.0)
+
+    x_hat = u[0] * x_in_plane + u[1] * y_in_plane
+    y_hat = v[0] * x_in_plane + v[1] * y_in_plane
+    z_hat = np.cross(x_hat, y_hat)
+
+    center_3d = centroid + cx2 * x_in_plane + cy2 * y_in_plane
+    R = np.column_stack([x_hat, y_hat, z_hat])
+
+    return WarpCoordinates(
+        target_from_warp_frame=Pose.from_rotmat_trans(rotmat=R, trans=center_3d),
+        x_scale=x_scale,
+        y_scale=y_scale,
+    )
+
+
 def _opencv_calibrate(
     target_points: np.ndarray,
     detections: list[Detection],
     config: OpenCVConfig,
     outlier_threshold_stddevs: float | None,
+    estimate_target_warp: bool,
 ) -> CalibrationResult[OpenCV]:
     assert target_points.ndim == 2 and target_points.shape[1] == 3, (
         f"Expected (N, 3) target_points, got {target_points.shape}"
@@ -321,10 +473,16 @@ def _opencv_calibrate(
         initial_intrinsics, target_points, detections
     )
 
-    def optimize_fn(intrinsics, cameras, tp, dets):
-        return _opencv_calibrate_inner(intrinsics, config, cameras, tp, dets)
+    warp_coordinates = None
+    if estimate_target_warp:
+        warp_coordinates = _make_warp_coordinates(target_points)
 
-    curr_intrinsics, curr_cameras_from_target, curr_detections = (
+    def optimize_fn(intrinsics, cameras, tp, dets, kxy):
+        return _opencv_calibrate_inner(
+            intrinsics, config, cameras, tp, dets, warp_coordinates, kxy
+        )
+
+    curr_intrinsics, curr_cameras_from_target, curr_detections, final_kxy = (
         _run_with_outlier_filtering(
             optimize_fn,
             initial_intrinsics,
@@ -332,8 +490,13 @@ def _opencv_calibrate(
             target_points,
             detections,
             outlier_threshold_stddevs,
+            warp_coordinates=warp_coordinates,
         )
     )
+
+    warp_info = None
+    if warp_coordinates is not None and final_kxy is not None:
+        warp_info = TargetWarp(warp_coordinates=warp_coordinates, object_warp=final_kxy)
 
     detection_infos = _compute_detection_infos(
         curr_intrinsics,
@@ -341,6 +504,7 @@ def _opencv_calibrate(
         detections,
         curr_detections if curr_detections is not detections else None,
         target_points,
+        warp_info,
     )
 
     _log_residual_stats(detection_infos)
@@ -348,6 +512,7 @@ def _opencv_calibrate(
         optimized_camera_model=curr_intrinsics,
         optimized_cameras_T_target=curr_cameras_from_target,
         detection_infos=detection_infos,
+        warp_info=warp_info,
     )
 
 
@@ -356,13 +521,19 @@ def _pinhole_splined_refine_inner(
     curr_cameras_from_target: list[Pose],
     target_points: np.ndarray,
     detections: list[Detection],
-) -> tuple[PinholeSplined, list[Pose]]:
+    warp_coordinates: WarpCoordinates | None,
+    warp_kxy: tuple[float, float] | None = None,
+) -> tuple[PinholeSplined, list[Pose], tuple[float, float] | None]:
     fine_tune_result = lbb.fine_tune_pinhole_splined(
         model_config=curr_intrinsics._cpp_config(),
         intrinsics_parameters=curr_intrinsics._cpp_params(),
         cameras_from_target=[pose.to_cpp() for pose in curr_cameras_from_target],
         target_points=list(target_points),
         detections=[d.to_cpp() for d in detections],
+        warp_coordinates=(
+            warp_coordinates.to_cpp() if warp_coordinates is not None else None
+        ),
+        warp_kxy_initial=list(warp_kxy) if warp_kxy is not None else [0.0, 0.0],
     )
 
     optimized_cameras_from_target = [
@@ -375,7 +546,12 @@ def _pinhole_splined_refine_inner(
         dy_grid=fine_tune_result["dy_grid"],
     )
 
-    return optimized_intrinsics, optimized_cameras_from_target
+    out_kxy: tuple[float, float] | None = None
+    if warp_coordinates is not None:
+        kxy_arr = np.array(fine_tune_result["warp_kxy"])
+        out_kxy = (float(kxy_arr[0]), float(kxy_arr[1]))
+
+    return optimized_intrinsics, optimized_cameras_from_target, out_kxy
 
 
 def _compute_fov_from_opencv(
@@ -392,6 +568,7 @@ def _calibrate_pinhole_splined(
     detections: list[Detection],
     config: PinholeSplinedConfig,
     outlier_threshold_stddevs: float | None,
+    estimate_target_warp: bool,
 ) -> CalibrationResult[PinholeSplined]:
     assert target_points.ndim == 2 and target_points.shape[1] == 3, (
         f"Expected (N, 3) target_points, got {target_points.shape}"
@@ -409,7 +586,7 @@ def _calibrate_pinhole_splined(
     LOG.info("Calibrating seed opencv model...")
     start_time = default_timer()
     opencv_calibration_result = _opencv_calibrate(
-        target_points, detections, opencv_config, None
+        target_points, detections, opencv_config, None, estimate_target_warp=False
     )
     end_time = default_timer()
     LOG.info(f"OpenCV seed model ready in {end_time - start_time:.1f}s")
@@ -456,21 +633,34 @@ def _calibrate_pinhole_splined(
 
     cameras_from_target = opencv_calibration_result.optimized_cameras_T_target
 
-    def optimize_fn(intrinsics, cameras, tp, dets):
+    warp_coordinates = None
+    if estimate_target_warp:
+        warp_coordinates = _make_warp_coordinates(target_points)
+
+    def optimize_fn(intrinsics, cameras, tp, dets, kxy):
         LOG.info("Running full optimization...")
         start = default_timer()
-        result = _pinhole_splined_refine_inner(intrinsics, cameras, tp, dets)
+        result = _pinhole_splined_refine_inner(
+            intrinsics, cameras, tp, dets, warp_coordinates, kxy
+        )
         LOG.info(f"Performed full optimization in {default_timer() - start:.2f}s")
         return result
 
-    curr_intrinsics, curr_cameras, curr_detections = _run_with_outlier_filtering(
-        optimize_fn,
-        prior_model,
-        cameras_from_target,
-        target_points,
-        detections,
-        outlier_threshold_stddevs,
+    curr_intrinsics, curr_cameras, curr_detections, final_kxy = (
+        _run_with_outlier_filtering(
+            optimize_fn,
+            prior_model,
+            cameras_from_target,
+            target_points,
+            detections,
+            outlier_threshold_stddevs,
+            warp_coordinates=warp_coordinates,
+        )
     )
+
+    warp_info = None
+    if warp_coordinates is not None and final_kxy is not None:
+        warp_info = TargetWarp(warp_coordinates=warp_coordinates, object_warp=final_kxy)
 
     detection_infos = _compute_detection_infos(
         curr_intrinsics,
@@ -478,6 +668,7 @@ def _calibrate_pinhole_splined(
         detections,
         curr_detections if curr_detections is not detections else None,
         target_points,
+        warp_info,
     )
 
     metadata = PinholeSplinedCalibrationMetadata(
@@ -491,6 +682,7 @@ def _calibrate_pinhole_splined(
         optimized_camera_model=curr_intrinsics,
         optimized_cameras_T_target=curr_cameras,
         detection_infos=detection_infos,
+        warp_info=warp_info,
     )
 
 
@@ -499,6 +691,7 @@ def calibrate_camera(
     target_points: np.ndarray,
     detections: list[Detection],
     camera_model_config: PinholeSplinedConfig,
+    estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
 ) -> CalibrationResult[PinholeSplined]: ...
 
@@ -508,6 +701,7 @@ def calibrate_camera(
     target_points: np.ndarray,
     detections: list[Detection],
     camera_model_config: OpenCVConfig,
+    estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
 ) -> CalibrationResult[OpenCV]: ...
 
@@ -516,6 +710,7 @@ def calibrate_camera(
     target_points: np.ndarray,
     detections: list[Detection],
     camera_model_config: CameraModelConfig,
+    estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
 ) -> CalibrationResult:
     assert target_points.ndim == 2 and target_points.shape[1] == 3, (
@@ -526,12 +721,20 @@ def calibrate_camera(
     )
     if isinstance(camera_model_config, PinholeSplinedConfig):
         return _calibrate_pinhole_splined(
-            target_points, detections, camera_model_config, outlier_threshold_stddevs
+            target_points,
+            detections,
+            camera_model_config,
+            outlier_threshold_stddevs,
+            estimate_target_warp,
         )
 
     if isinstance(camera_model_config, OpenCVConfig):
         return _opencv_calibrate(
-            target_points, detections, camera_model_config, outlier_threshold_stddevs
+            target_points,
+            detections,
+            camera_model_config,
+            outlier_threshold_stddevs,
+            estimate_target_warp,
         )
 
     raise RuntimeError("Invalid config")

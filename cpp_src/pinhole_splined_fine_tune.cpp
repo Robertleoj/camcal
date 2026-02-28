@@ -10,6 +10,7 @@
 
 #include "./calibrate.hpp"
 #include "./cameramodels.hpp"
+#include "./ceres_geometry.hpp"
 #include "./pybind_utils.hpp"
 
 namespace lensboy {
@@ -101,33 +102,6 @@ struct KnotPrior2D {
     }
 };
 
-template <typename T>
-Vec3<T> apply_warp_to_target_point(
-    const Vec3<T>& p_target,
-    const WarpCoordinates& warp,
-    const T* const kxy
-) {
-    const double sx = warp.x_axis.norm();
-    const double sy = warp.y_axis.norm();
-    const Vec3<double> x_hat = warp.x_axis / sx;
-    const Vec3<double> y_hat = warp.y_axis / sy;
-    const Vec3<double> z_hat = x_hat.cross(y_hat);
-
-    const Vec3<T> d = p_target - warp.center_in_target.cast<T>();
-
-    const T wx = T(x_hat[0]) * d[0] + T(x_hat[1]) * d[1] + T(x_hat[2]) * d[2];
-    const T wy = T(y_hat[0]) * d[0] + T(y_hat[1]) * d[1] + T(y_hat[2]) * d[2];
-
-    const T xs = wx / T(sx);
-    const T ys = wy / T(sy);
-    const T z_warp = kxy[0] * (T(1.0) - xs * xs) + kxy[1] * (T(1.0) - ys * ys);
-
-    Vec3<T> result = warp.center_in_target.cast<T>();
-    result[0] += T(x_hat[0]) * wx + T(y_hat[0]) * wy + T(z_hat[0]) * z_warp;
-    result[1] += T(x_hat[1]) * wx + T(y_hat[1]) * wy + T(z_hat[1]) * z_warp;
-    result[2] += T(x_hat[2]) * wx + T(y_hat[2]) * wy + T(z_hat[2]) * z_warp;
-    return result;
-}
 
 struct ReprojectionErrorSplined {
     const SplineMap& map;
@@ -441,7 +415,8 @@ py::dict fine_tune_pinhole_splined(
     std::vector<Vec3<double>>& target_points,
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         detections,
-    std::optional<WarpCoordinates> warp_coordinates
+    std::optional<WarpCoordinates> warp_coordinates,
+    std::array<double, 2> warp_kxy_initial
 ) {
     auto dxb = intrinsics_parameters.dx_grid.request();
     auto dyb = intrinsics_parameters.dy_grid.request();
@@ -474,7 +449,7 @@ py::dict fine_tune_pinhole_splined(
     const double lambda = 1e-1;
     const double sqrt_lambda = std::sqrt(lambda);
 
-    double warp_kxy[2] = {0.0, 0.0};
+    double warp_kxy[2] = {warp_kxy_initial[0], warp_kxy_initial[1]};
 
     SplineMap map(model_config);
 
