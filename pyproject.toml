@@ -77,7 +77,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 # Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
 select = ["E", "F", "I", "UP", "NPY201", "D"]
-ignore = ["F722", "D100", "D104", "D105"]
+ignore = ["F722", "D100", "D104", "D105", "D202"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
