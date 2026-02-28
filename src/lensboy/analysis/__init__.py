@@ -5,6 +5,7 @@ from lensboy.analysis.plots import (
     plot_residual_grid,
     plot_residual_histogram,
     plot_residual_vectors,
+    plot_target_warp,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "plot_residual_grid",
     "plot_residual_histogram",
     "plot_residual_vectors",
+    "plot_target_warp",
 ]

@@ -729,3 +729,91 @@ def plot_residual_grid(
 
     plt.tight_layout()
     plt.show()
+
+
+def plot_target_warp(
+    target_points: np.ndarray,
+    target_warp: lb.TargetWarp,
+    *,
+    grid_res: int = 300,
+    contour_levels: int = 15,
+    title: str = "Target warp",
+) -> None:
+    """Contour plot of the target warp z-displacement viewed from above.
+
+    Evaluates the warp function over a dense grid in the warp frame's xy plane
+    and shows filled contours of the z height, with target point positions
+    scattered on top.
+
+    Args:
+        target_points: Calibration target 3D coordinates, shape (N, 3).
+        target_warp: Estimated target warp.
+        grid_res: Number of grid samples along each axis.
+        contour_levels: Number of contour lines.
+        title: Plot title.
+    """
+    wc = target_warp.warp_coordinates
+    kx, ky = target_warp.object_warp
+
+    s = np.linspace(-1, 1, grid_res)
+    SX, SY = np.meshgrid(s, s)
+    Z = kx * (1 - SX**2) + ky * (1 - SY**2)
+
+    gx = SX * wc.x_scale
+    gy = SY * wc.y_scale
+
+    pts_in_warp = wc.target_from_warp_frame.inverse().apply(target_points)
+
+    bg = "#111111"
+    fg = "white"
+
+    fig, ax = plt.subplots(figsize=(14, 12))
+    fig.patch.set_facecolor(bg)
+    ax.set_facecolor(bg)
+    ax.tick_params(colors=fg)
+    ax.xaxis.label.set_color(fg)
+    ax.yaxis.label.set_color(fg)
+    ax.title.set_color(fg)
+    for spine in ax.spines.values():
+        spine.set_color(fg)
+
+    im = ax.imshow(
+        Z,
+        extent=[gx.min(), gx.max(), gy.min(), gy.max()],
+        cmap="plasma",
+        aspect="auto",
+        interpolation="bilinear",
+        origin="lower",
+    )
+    cs = ax.contour(gx, gy, Z, levels=contour_levels, colors="black", linewidths=0.4)
+    ax.clabel(cs, fontsize=7, colors="black", fmt="%.4f")
+
+    cbar: Colorbar = fig.colorbar(im, ax=ax, shrink=0.6)
+    cbar.set_label("z displacement [target units]", color=fg)
+    cbar.ax.tick_params(colors=fg)
+
+    ax.scatter(
+        pts_in_warp[:, 0],
+        pts_in_warp[:, 1],
+        s=25,
+        color="red",
+        edgecolors="black",
+        linewidths=0.5,
+        zorder=10,
+        label="target points",
+    )
+    ax.legend(facecolor=bg, edgecolor=fg, labelcolor=fg, loc="upper right")
+
+    margin = 0.1
+    x_extent = gx.max() - gx.min()
+    y_extent = gy.max() - gy.min()
+    ax.set_xlim(gx.min() - margin * x_extent, gx.max() + margin * x_extent)
+    ax.set_ylim(gy.min() - margin * y_extent, gy.max() + margin * y_extent)
+
+    ax.set_title(f"{title}  (kx={kx:.5f}, ky={ky:.5f})")
+    ax.set_xlabel("warp x [target units]")
+    ax.set_ylabel("warp y [target units]")
+    ax.set_aspect("equal", adjustable="box")
+
+    plt.tight_layout()
+    plt.show()
