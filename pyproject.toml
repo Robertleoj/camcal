@@ -73,11 +73,18 @@ line-length = 90
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 # Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
-select = ["E", "F", "I", "UP", "NPY201"]
-ignore = ["F722"]
+select = ["E", "F", "I", "UP", "NPY201", "D"]
+ignore = ["F722", "D100", "D104", "D105"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"src/lensboy/_internal/**" = ["D"]
+"src/lensboy/camera_models/base_model.py" = ["D"]
 
 [tool.pyright]
 useLibraryCodeForTypes = true

@@ -12,6 +12,16 @@ from lensboy.camera_models.pinhole_remapped import PinholeRemapped
 
 @dataclass
 class PinholeSplinedConfig(CameraModelConfig):
+    """Configuration for fitting a PinholeSplined model.
+
+    Attributes:
+        image_height: Image height in pixels.
+        image_width: Image width in pixels.
+        initial_focal_length: Initial focal length guess in pixels.
+        num_knots_x: Number of spline knots along the x axis.
+        num_knots_y: Number of spline knots along the y axis.
+    """
+
     image_height: int
     image_width: int
 
@@ -22,12 +32,33 @@ class PinholeSplinedConfig(CameraModelConfig):
 
 
 @dataclass
-class PinholeSplinedCalibrationMetadata:
-    seed_opencv_distortion_params: np.ndarray
-
-
-@dataclass
 class PinholeSplined(CameraModel):
+    """Pinhole camera model with a 2D B-spline distortion field.
+
+    The distortion is represented as two grids of spline knot values (dx_grid,
+    dy_grid) defined over the image domain. Use get_pinhole_model(),
+    get_pinhole_model_fov(), or get_pinhole_model_alpha() to obtain an
+    undistorted PinholeRemapped view.
+
+    Attributes:
+        image_width: Image width in pixels.
+        image_height: Image height in pixels.
+        fx: Focal length along x in pixels.
+        fy: Focal length along y in pixels.
+        cx: Principal point x in pixels.
+        cy: Principal point y in pixels.
+        dx_grid: Spline knot values for the x distortion component,
+            shape (num_knots_y, num_knots_x).
+        dy_grid: Spline knot values for the y distortion component,
+            shape (num_knots_y, num_knots_x).
+        num_knots_x: Number of spline knots along the x axis.
+        num_knots_y: Number of spline knots along the y axis.
+        fov_deg_x: Horizontal field of view in degrees.
+        fov_deg_y: Vertical field of view in degrees.
+        seed_opencv_distortion_parameters: Seed OpenCV distortion coefficients
+            used during calibration; None otherwise.
+    """
+
     image_width: int
     image_height: int
 
@@ -45,7 +76,7 @@ class PinholeSplined(CameraModel):
     fov_deg_x: float
     fov_deg_y: float
 
-    calibration_metadata: PinholeSplinedCalibrationMetadata | None = None
+    seed_opencv_distortion_parameters: np.ndarray | None = None
 
     def __post_init__(self):
         assert self.dx_grid.ndim == 2, f"Expected 2D dx_grid, got {self.dx_grid.ndim}D"
@@ -80,6 +111,14 @@ class PinholeSplined(CameraModel):
         self,
         points_in_cam: np.ndarray,
     ) -> np.ndarray:
+        """Project 3D camera-frame points to pixel coordinates.
+
+        Args:
+            points_in_cam: Shape (N, 3).
+
+        Returns:
+            Projected pixel coordinates, shape (N, 2).
+        """
         assert points_in_cam.ndim == 2 and points_in_cam.shape[1] == 3, (
             f"Expected (N, 3) array, got {points_in_cam.shape}"
         )
@@ -106,6 +145,19 @@ class PinholeSplined(CameraModel):
         target_fov_deg_y: float | None = None,
         image_size_wh: tuple[int, int] | None = None,
     ) -> PinholeRemapped:
+        """Build an undistorted pinhole view with a specified field of view.
+
+        Args:
+            target_fov_deg_x: Desired horizontal FOV in degrees.
+                Defaults to the model's fov_deg_x.
+            target_fov_deg_y: Desired vertical FOV in degrees.
+                Defaults to the model's fov_deg_y.
+            image_size_wh: Output image size as (width, height).
+                Defaults to the model's image size.
+
+        Returns:
+            Undistorted pinhole model with precomputed remap tables.
+        """
         fov_x = target_fov_deg_x if target_fov_deg_x is not None else self.fov_deg_x
         fov_y = target_fov_deg_y if target_fov_deg_y is not None else self.fov_deg_y
 
@@ -129,6 +181,17 @@ class PinholeSplined(CameraModel):
         k4: tuple[float, float, float, float] | None = None,
         image_size_wh: tuple[int, int] | None = None,
     ) -> PinholeRemapped:
+        """Build an undistorted pinhole view with explicit intrinsics.
+
+        Args:
+            k4: Pinhole intrinsics as (fx, fy, cx, cy).
+                Defaults to the model's intrinsics.
+            image_size_wh: Output image size as (width, height).
+                Defaults to the model's image size.
+
+        Returns:
+            Undistorted pinhole model with precomputed remap tables.
+        """
         if k4 is None:
             k4 = self._k4()
 
@@ -159,11 +222,24 @@ class PinholeSplined(CameraModel):
         self,
         alpha: float,
         image_size_wh: tuple[int, int] | None = None,
-    ):
-        if self.calibration_metadata is None:
+    ) -> PinholeRemapped:
+        """Build an undistorted pinhole view using OpenCV's alpha scaling.
+
+        alpha=0 crops to only valid (non-black) pixels; alpha=1 keeps all
+        pixels with black borders. Requires seed_opencv_distortion_parameters to be set.
+
+        Args:
+            alpha: Scaling parameter in [0, 1].
+            image_size_wh: Output image size as (width, height).
+                Defaults to the model's image size.
+
+        Returns:
+            Undistorted pinhole model with precomputed remap tables.
+        """
+        if self.seed_opencv_distortion_parameters is None:
             raise ValueError("Require reference opencv distortion coefficients for this")
 
-        dist = self.calibration_metadata.seed_opencv_distortion_params
+        dist = self.seed_opencv_distortion_parameters
         K = self._K()
 
         if image_size_wh is None:

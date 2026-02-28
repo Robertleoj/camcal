@@ -1,4 +1,4 @@
-- Add target warp functionality
+- Rename Detection to Frame
 - Write good README
 - document public functions with docstrings
 - Implement saving and loading the models (json works)

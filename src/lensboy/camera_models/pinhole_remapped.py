@@ -8,6 +8,26 @@ from lensboy.camera_models.base_model import CameraModel
 
 @dataclass
 class PinholeRemapped(CameraModel):
+    """An undistorted pinhole view of a distorted camera model.
+
+    Stores precomputed remap tables (map_x, map_y) that map each output pixel
+    back to its location in the original distorted image. Use undistort() to
+    remap images and project_points_undistorted() to project into the
+    undistorted image.
+
+    Attributes:
+        image_width: Output (undistorted) image width in pixels.
+        image_height: Output (undistorted) image height in pixels.
+        fx: Focal length along x in pixels.
+        fy: Focal length along y in pixels.
+        cx: Principal point x in pixels.
+        cy: Principal point y in pixels.
+        map_x: Per-pixel source x coordinate in the distorted image, shape (H, W).
+        map_y: Per-pixel source y coordinate in the distorted image, shape (H, W).
+        input_image_width: Expected input (distorted) image width in pixels.
+        input_image_height: Expected input (distorted) image height in pixels.
+    """
+
     image_width: int
     image_height: int
 
@@ -40,6 +60,18 @@ class PinholeRemapped(CameraModel):
         border_mode: int = cv2.BORDER_CONSTANT,
         border_value: int | float | tuple[int, int, int] | tuple[int, int, int, int] = 0,
     ) -> np.ndarray:
+        """Remap a distorted input image to the undistorted pinhole view.
+
+        Args:
+            image: Input image, shape (H, W) or (H, W, C).
+            interpolation: OpenCV interpolation flag.
+            border_mode: OpenCV border mode flag.
+            border_value: Fill value for out-of-bounds pixels.
+
+        Returns:
+            Undistorted image, shape (image_height, image_width) or
+            (image_height, image_width, C).
+        """
         if image.ndim not in (2, 3):
             raise ValueError(f"image must be HxW or HxWxC, got {image.shape}")
 
@@ -63,6 +95,14 @@ class PinholeRemapped(CameraModel):
         )
 
     def project_points_undistorted(self, points_in_cam: np.ndarray) -> np.ndarray:
+        """Project 3D camera-frame points into the undistorted image.
+
+        Args:
+            points_in_cam: Shape (N, 3).
+
+        Returns:
+            Projected pixel coordinates, shape (N, 2).
+        """
         assert points_in_cam.ndim == 2 and points_in_cam.shape[1] == 3, (
             f"Expected (N, 3) array, got {points_in_cam.shape}"
         )

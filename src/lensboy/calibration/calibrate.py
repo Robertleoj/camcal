@@ -6,7 +6,6 @@ from timeit import default_timer
 from typing import Generic, TypeVar, overload
 
 import cv2
-from matplotlib import scale
 import numpy as np
 
 from lensboy import lensboy_bindings as lbb
@@ -14,7 +13,6 @@ from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
 from lensboy.camera_models.opencv import OpenCV, OpenCVConfig
 from lensboy.camera_models.pinhole_splined import (
     PinholeSplined,
-    PinholeSplinedCalibrationMetadata,
     PinholeSplinedConfig,
 )
 from lensboy.geometry.pose import Pose
@@ -27,6 +25,14 @@ MAX_OUTLIER_FILTER_PASSES = 2
 
 @dataclass
 class Detection:
+    """Detected calibration target points in a single image.
+
+    Attributes:
+        target_point_indices: Index into the target point array for each detection,
+            shape (N,).
+        detected_points_in_image: Corresponding pixel coordinates, shape (N, 2).
+    """
+
     target_point_indices: np.ndarray
     detected_points_in_image: np.ndarray
 
@@ -55,7 +61,7 @@ class Detection:
             f"got {self.detected_points_in_image.dtype}"
         )
 
-    def to_cpp(self) -> tuple[list[int], list[np.ndarray]]:
+    def _to_cpp(self) -> tuple[list[int], list[np.ndarray]]:
         return (self.target_point_indices.tolist(), list(self.detected_points_in_image))
 
     def __len__(self):
@@ -68,6 +74,14 @@ _IntrinsicsT = TypeVar("_IntrinsicsT", OpenCV, PinholeSplined)
 
 @dataclass
 class DetectionInfo:
+    """Per-image reprojection diagnostics computed after calibration.
+
+    Attributes:
+        projected_points: Model-projected pixel coordinates, shape (N, 2).
+        residuals: Pixel-space residuals (detected minus projected), shape (N, 2).
+        inlier_mask: Boolean mask indicating inlier points, shape (N,).
+    """
+
     # N x 2
     projected_points: np.ndarray
 
@@ -88,21 +102,32 @@ class _OptimizationState(Generic[_IntrinsicsT]):
 
 @dataclass
 class WarpCoordinates:
+    """Maps target points into a planar frame scaled to [-1, 1] for warp estimation.
+
+    Attributes:
+        target_from_warp_frame: The target should be coplanar with the xy plane
+            of this frame.
+        x_scale: Half-extent of the target along the warp x-axis, in target units.
+        y_scale: Half-extent of the target along the warp y-axis, in target units.
+    """
+
     target_from_warp_frame: Pose
     x_scale: float
     y_scale: float
 
-    def to_cpp(self) -> lbb.WarpCoordinates:
+    def _to_cpp(self) -> lbb.WarpCoordinates:
+        """Serialise to the C++ bindings representation."""
         return lbb.WarpCoordinates(
-            target_from_warp_frame=self.target_from_warp_frame.to_cpp(),
+            target_from_warp_frame=self.target_from_warp_frame._to_cpp(),
             x_scale=self.x_scale,
             y_scale=self.y_scale,
         )
 
     @staticmethod
-    def from_cpp(cpp: lbb.WarpCoordinates) -> "WarpCoordinates":
+    def _from_cpp(cpp: lbb.WarpCoordinates) -> "WarpCoordinates":
+        """Deserialise from the C++ bindings representation."""
         return WarpCoordinates(
-            target_from_warp_frame=Pose.from_cpp(cpp.target_from_warp_frame),
+            target_from_warp_frame=Pose._from_cpp(cpp.target_from_warp_frame),
             x_scale=cpp.x_scale,
             y_scale=cpp.y_scale,
         )
@@ -110,10 +135,28 @@ class WarpCoordinates:
 
 @dataclass
 class TargetWarp:
+    """Quadratic warp applied to the calibration target to model slight non-planarity.
+
+    The warp displaces each point along the target normal by
+    kx*(1 - x²) + ky*(1 - y²), where x and y are scaled to [-1, 1].
+
+    Attributes:
+        warp_coordinates: Frame and scale used to map target points to [-1, 1].
+        object_warp: Quadratic warp coefficients (kx, ky).
+    """
+
     warp_coordinates: WarpCoordinates
     object_warp: tuple[float, float]
 
     def warp_target(self, target_points: np.ndarray) -> np.ndarray:
+        """Apply the quadratic warp to 3D target points.
+
+        Args:
+            target_points: Shape (N, 3).
+
+        Returns:
+            Warped points in the target frame, shape (N, 3).
+        """
         points_in_warp = self.warp_coordinates.target_from_warp_frame.inverse().apply(
             target_points
         )
@@ -139,6 +182,15 @@ class TargetWarp:
 
 @dataclass
 class CalibrationResult(Generic[T]):
+    """Output of camera calibration.
+
+    Attributes:
+        optimized_camera_model: The calibrated camera model.
+        optimized_cameras_T_target: One pose per image (camera-from-target).
+        detection_infos: Per-image reprojection diagnostics, one per input image.
+        warp_info: Estimated target warp, or None if not estimated.
+    """
+
     optimized_camera_model: T
     optimized_cameras_T_target: list[Pose]
     detection_infos: list[DetectionInfo]
@@ -183,12 +235,10 @@ def _robust_sigma_xy(residuals: list[np.ndarray]) -> float:
 
 
 def _radius_threshold_from_k(k: float) -> float:
-    """
-    If x,y ~ N(0, sigma^2), then r^2/sigma^2 ~ chi2(df=2).
-    A 1D ±kσ "inlier probability" is p = 2*Phi(k)-1.
-    For df=2: chi2 CDF is 1-exp(-x/2), so quantile is x = -2 ln(1-p).
-    Threshold radius = sqrt(x) * sigma.
-    """
+    # If x,y ~ N(0, sigma^2), then r^2/sigma^2 ~ chi2(df=2).
+    # A 1D ±kσ "inlier probability" is p = 2*Phi(k)-1.
+    # For df=2: chi2 CDF is 1-exp(-x/2), so quantile is x = -2 ln(1-p).
+    # Threshold radius = sqrt(x) * sigma.
     p1 = 0.5 * (1.0 + math.erf(k / math.sqrt(2.0)))
     p = 2.0 * p1 - 1.0
     x = -2.0 * np.log(1.0 - p)
@@ -229,7 +279,7 @@ def _opencv_calibrate_inner(
     mask = config.optimize_mask()
     intrinsics_param_optimize_mask = mask.tolist()
 
-    cameras_from_target_in = [p.to_cpp() for p in curr_cameras_from_target]
+    cameras_from_target_in = [p._to_cpp() for p in curr_cameras_from_target]
 
     LOG.info("Running full optimization...")
     start_time = default_timer()
@@ -238,9 +288,9 @@ def _opencv_calibrate_inner(
         intrinsics_param_optimize_mask=intrinsics_param_optimize_mask,
         cameras_from_target=cameras_from_target_in,
         target_points=list(target_points),
-        detections=[d.to_cpp() for d in detections],
+        detections=[d._to_cpp() for d in detections],
         warp_coordinates=(
-            warp_coordinates.to_cpp() if warp_coordinates is not None else None
+            warp_coordinates._to_cpp() if warp_coordinates is not None else None
         ),
         warp_kxy_initial=list(warp_kxy) if warp_kxy is not None else [0.0, 0.0],
     )
@@ -250,7 +300,7 @@ def _opencv_calibrate_inner(
     optimized_intrinsics = curr_intrinsics._with_params(result["intrinsics"])
 
     optimized_cameras_from_target: list[Pose] = [
-        Pose.from_cpp(np.array(a)) for a in result["cameras_from_target"]
+        Pose._from_cpp(np.array(a)) for a in result["cameras_from_target"]
     ]
 
     out_kxy: tuple[float, float] | None = None
@@ -537,17 +587,17 @@ def _pinhole_splined_refine_inner(
     fine_tune_result = lbb.fine_tune_pinhole_splined(
         model_config=curr_intrinsics._cpp_config(),
         intrinsics_parameters=curr_intrinsics._cpp_params(),
-        cameras_from_target=[pose.to_cpp() for pose in curr_cameras_from_target],
+        cameras_from_target=[pose._to_cpp() for pose in curr_cameras_from_target],
         target_points=list(target_points),
-        detections=[d.to_cpp() for d in detections],
+        detections=[d._to_cpp() for d in detections],
         warp_coordinates=(
-            warp_coordinates.to_cpp() if warp_coordinates is not None else None
+            warp_coordinates._to_cpp() if warp_coordinates is not None else None
         ),
         warp_kxy_initial=list(warp_kxy) if warp_kxy is not None else [0.0, 0.0],
     )
 
     optimized_cameras_from_target = [
-        Pose.from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_target"]
+        Pose._from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_target"]
     ]
 
     optimized_intrinsics = replace(
@@ -691,11 +741,9 @@ def _calibrate_pinhole_splined(
         warp_info,
     )
 
-    metadata = PinholeSplinedCalibrationMetadata(
-        seed_opencv_distortion_params=opencv_model.distortion_coeffs
+    final_intrinsics = replace(
+        state.intrinsics, seed_opencv_distortion_parameters=opencv_model.distortion_coeffs
     )
-
-    final_intrinsics = replace(state.intrinsics, calibration_metadata=metadata)
 
     _log_residual_stats(detection_infos)
     return CalibrationResult(
@@ -733,6 +781,23 @@ def calibrate_camera(
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
 ) -> CalibrationResult:
+    """Calibrate a camera from a set of target detections.
+
+    Target warp estimation requires a planar target; it will be skipped
+    automatically if the target points are not sufficiently coplanar.
+
+    Args:
+        target_points: 3D target point coordinates, shape (N, 3).
+        detections: Per-image detections, one per calibration image.
+        camera_model_config: Specifies the camera model to fit.
+        estimate_target_warp: Whether to estimate a quadratic warp of the target
+            to account for slight non-planarity.
+        outlier_threshold_stddevs: Sigma threshold for outlier rejection.
+            Pass None to disable.
+
+    Returns:
+        Calibration result containing the optimised model and per-image diagnostics.
+    """
     assert target_points.ndim == 2 and target_points.shape[1] == 3, (
         f"Expected (N, 3) target_points, got {target_points.shape}"
     )

@@ -28,6 +28,16 @@ def _detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Detection
 def extract_detections_from_charuco(
     board: cv2.aruco.CharucoBoard, images: list[np.ndarray]
 ) -> tuple[np.ndarray, list[Detection]]:
+    """Detect ChArUco corners in a batch of images.
+
+    Args:
+        board: The ChArUco board definition.
+        images: Calibration images, each of shape (H, W) or (H, W, C).
+
+    Returns:
+        target_points: 3D corner coordinates from the board definition, shape (N, 3).
+        detections: Per-image detections, one per input image.
+    """
     detections: list[Detection] = []
 
     for img in progress(images, desc="Detecting charuco"):

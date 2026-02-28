@@ -19,6 +19,19 @@ def _mask(*idx: int) -> np.ndarray:
 
 @dataclass
 class OpenCVConfig(CameraModelConfig):
+    """Configuration for fitting an OpenCV pinhole + distortion model.
+
+    Preset boolean masks for common distortion subsets are available as class
+    attributes: NONE, STANDARD, RADIAL_6, TANGENTIAL, THIN_PRISM, FULL_12.
+
+    Attributes:
+        image_height: Image height in pixels.
+        image_width: Image width in pixels.
+        initial_focal_length: Initial focal length guess in pixels.
+        included_distoriton_coefficients: Boolean mask selecting which of the 12
+            OpenCV distortion coefficients to optimise, shape (12,).
+    """
+
     image_height: int
     image_width: int
 
@@ -43,6 +56,12 @@ class OpenCVConfig(CameraModelConfig):
         )
 
     def optimize_mask(self) -> np.ndarray:
+        """Return the optimization parameter mask over [fx, fy, cx, cy, *distortion].
+
+        Returns:
+            Boolean mask of shape (16,); the first 4 entries (intrinsics) are
+            always True.
+        """
         mask = np.zeros(16, dtype=bool)
 
         mask[:4] = True
@@ -50,6 +69,7 @@ class OpenCVConfig(CameraModelConfig):
         return mask
 
     def get_initial_value(self) -> OpenCV:
+        """Construct the initial OpenCV model from this config."""
         return OpenCV(
             image_height=self.image_height,
             image_width=self.image_width,
@@ -63,6 +83,18 @@ class OpenCVConfig(CameraModelConfig):
 
 @dataclass
 class OpenCV(CameraModel):
+    """OpenCV pinhole + distortion camera model.
+
+    Attributes:
+        image_width: Image width in pixels.
+        image_height: Image height in pixels.
+        fx: Focal length along x in pixels.
+        fy: Focal length along y in pixels.
+        cx: Principal point x in pixels.
+        cy: Principal point y in pixels.
+        distortion_coeffs: Full 12-parameter OpenCV distortion vector, shape (12,).
+    """
+
     image_width: int
     image_height: int
 
@@ -99,6 +131,14 @@ class OpenCV(CameraModel):
         self,
         points_in_cam: np.ndarray,
     ) -> np.ndarray:
+        """Project 3D camera-frame points to pixel coordinates.
+
+        Args:
+            points_in_cam: Shape (N, 3).
+
+        Returns:
+            Projected pixel coordinates, shape (N, 2).
+        """
         assert points_in_cam.ndim == 2 and points_in_cam.shape[1] == 3, (
             f"Expected (N, 3) array, got {points_in_cam.shape}"
         )
@@ -114,14 +154,25 @@ class OpenCV(CameraModel):
         )[0].reshape(-1, 2)
 
     def K(self):
+        """Return the 3x3 camera intrinsics matrix."""
         return np.array([[self.fx, 0, self.cx], [0, self.fy, self.cy], [0, 0, 1]])
 
     @property
     def fov_deg_x(self) -> float:
+        """Horizontal field of view in degrees.
+
+        Computed by undistorting the image border pixels and measuring the
+        angular span of the resulting normalised coordinates.
+        """
         return self._compute_fov()[0]
 
     @property
     def fov_deg_y(self) -> float:
+        """Vertical field of view in degrees.
+
+        Computed by undistorting the image border pixels and measuring the
+        angular span of the resulting normalised coordinates.
+        """
         return self._compute_fov()[1]
 
     def _compute_fov(self) -> tuple[float, float]:
