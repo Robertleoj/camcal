@@ -2,7 +2,6 @@ import cv2
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
-
 import lensboy as lb
 
 
@@ -70,10 +69,12 @@ def plot_detection_coverage(
     image_height: int,
     title: str = "Coverage",
     s: float = 6.0,
+    grid_cells: int = 30,
 ) -> None:
-    """Scatter-plot all detected points over the image extent.
+    """Scatter-plot all detected points with a smoothed coverage heatmap.
 
-    Useful for checking that calibration frames adequately cover the sensor area.
+    Shows a density heatmap behind the scatter points so that regions with
+    poor coverage are immediately visible as dark patches.
 
     Args:
         detections: Frames containing detected calibration points.
@@ -81,6 +82,7 @@ def plot_detection_coverage(
         image_height: Sensor height in pixels, sets the y-axis limit.
         title: Plot title.
         s: Marker size passed to ``ax.scatter``.
+        grid_cells: Number of grid cells along the longer image axis for the heatmap.
     """
     pts_list = []
     for d in detections:
@@ -110,6 +112,28 @@ def plot_detection_coverage(
         spine.set_color(fg)
 
     if pts.shape[0] > 0:
+        aspect = image_width / image_height
+        if aspect >= 1:
+            nx = grid_cells
+            ny = max(1, int(round(grid_cells / aspect)))
+        else:
+            ny = grid_cells
+            nx = max(1, int(round(grid_cells * aspect)))
+
+        counts, _, _ = np.histogram2d(
+            pts[:, 0],
+            pts[:, 1],
+            bins=[nx, ny],
+            range=[[0, image_width], [0, image_height]],
+        )
+        # counts is (nx, ny) with x along axis 0 — transpose so y is rows
+        ax.imshow(
+            counts.T,
+            extent=[0, image_width, image_height, 0],  # type: ignore
+            cmap="inferno",
+            interpolation="gaussian",
+            aspect="auto",
+        )
         ax.scatter(pts[:, 0], pts[:, 1], s=s, color=accent)
 
     ax.set_title(f"{title}  (N={pts.shape[0]})")
@@ -127,7 +151,9 @@ def plot_distortion_grid(
     model: lb.OpenCV | lb.PinholeSplined,
     *,
     grid_step_norm: float = 0.05,
-    fov_fraction: float = 1.0,
+    fov_fraction: float | None = None,
+    ux_max: float | None = None,
+    uy_max: float | None = None,
     cmap_name: str = "jet",
 ) -> None:
     """Project a regular grid through a camera model to visualize distortion.
@@ -139,6 +165,8 @@ def plot_distortion_grid(
         model: Camera model instance.
         grid_step_norm: Spacing between grid lines in normalized coordinates.
         fov_fraction: Fraction of the full FOV to sample (0, 1].
+        ux_max: Upper bound in normalized x, mirrored to negative.
+        uy_max: Upper bound in normalized y, mirrored to negative.
         cmap_name: Matplotlib colormap name.
     """
 
@@ -148,11 +176,24 @@ def plot_distortion_grid(
     cx = model.cx
     cy = model.cy
 
-    fov_x = np.deg2rad(model.fov_deg_x)
-    fov_y = np.deg2rad(model.fov_deg_y)
+    fov_x_half = np.tan(np.deg2rad(model.fov_deg_x) / 2.0)
+    fov_y_half = np.tan(np.deg2rad(model.fov_deg_y) / 2.0)
 
-    x_half = np.tan(fov_x / 2.0) * fov_fraction
-    y_half = np.tan(fov_y / 2.0) * fov_fraction
+    if fov_fraction is not None:
+        x_half = fov_x_half * fov_fraction
+        y_half = fov_y_half * fov_fraction
+    elif ux_max is not None or uy_max is not None:
+        x_half = ux_max if ux_max is not None else fov_x_half
+        y_half = uy_max if uy_max is not None else fov_y_half
+    else:
+        x_half = fov_x_half
+        y_half = fov_y_half
+
+    if ux_max is not None and fov_fraction is not None:
+        x_half = min(x_half, ux_max)
+    if uy_max is not None and fov_fraction is not None:
+        y_half = min(y_half, uy_max)
+
     x_min, x_max = -x_half, +x_half
     y_min, y_max = -y_half, +y_half
 
@@ -199,10 +240,10 @@ def plot_distortion_grid(
                 seg = uv[run]
                 ax.plot(seg[:, 0], seg[:, 1], linewidth=lw, color=color)
 
-    fig_w = 12
-    panel_h = fig_w * (H / W)
+    panel_w = 10
+    panel_h = panel_w * (H / W)
     fig, (ax0, ax1) = plt.subplots(
-        2, 1, figsize=(fig_w, 2 * panel_h), constrained_layout=True
+        1, 2, figsize=(2 * panel_w, panel_h), constrained_layout=True
     )
 
     fig.patch.set_facecolor("#111111")
