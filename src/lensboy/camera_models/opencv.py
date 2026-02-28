@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -174,6 +176,64 @@ class OpenCV(CameraModel):
         angular span of the resulting normalised coordinates.
         """
         return self._compute_fov()[1]
+
+    def save(self, path: Path | str) -> None:
+        """Serialize the model to a JSON file.
+
+        Args:
+            path: Destination file path.
+        """
+        Path(path).write_text(json.dumps(self.to_json(), indent=4))
+
+    @staticmethod
+    def load(path: Path | str) -> OpenCV:
+        """Load a model from a JSON file written by save().
+
+        Args:
+            path: Path to the JSON file.
+
+        Returns:
+            Reconstructed model.
+        """
+        return OpenCV.from_json(json.loads(Path(path).read_text()))
+
+    def to_json(self) -> dict:
+        """Serialize the model to a JSON-compatible dict.
+
+        Returns:
+            Dict with all model parameters. Distortion coefficients are stored
+            as a list of length 12.
+        """
+        return {
+            "type": "opencv",
+            "image_width": self.image_width,
+            "image_height": self.image_height,
+            "fx": self.fx,
+            "fy": self.fy,
+            "cx": self.cx,
+            "cy": self.cy,
+            "distortion_coeffs": self.distortion_coeffs.tolist(),
+        }
+
+    @staticmethod
+    def from_json(data: dict) -> OpenCV:
+        """Reconstruct a model from a dict produced by to_json().
+
+        Args:
+            data: Dict with all model parameters.
+
+        Returns:
+            Reconstructed model.
+        """
+        return OpenCV(
+            image_width=data["image_width"],
+            image_height=data["image_height"],
+            fx=data["fx"],
+            fy=data["fy"],
+            cx=data["cx"],
+            cy=data["cy"],
+            distortion_coeffs=np.array(data["distortion_coeffs"], dtype=np.float64),
+        )
 
     def _compute_fov(self) -> tuple[float, float]:
         n = 200

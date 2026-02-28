@@ -1,4 +1,8 @@
+from __future__ import annotations
+
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -41,6 +45,83 @@ class PinholeRemapped(CameraModel):
 
     input_image_width: int
     input_image_height: int
+
+    def save(self, dir_path: Path | str) -> None:
+        """Serialize the model to a directory.
+
+        Writes model.json with scalar parameters, and map_x.npy / map_y.npy
+        for the remap arrays.
+
+        Args:
+            dir_path: Destination directory (created if it doesn't exist).
+        """
+        p = Path(dir_path)
+        p.mkdir(parents=True, exist_ok=True)
+        d, map_x, map_y = self.to_json()
+        (p / "model.json").write_text(json.dumps(d, indent=4))
+        np.save(p / "map_x.npy", map_x)
+        np.save(p / "map_y.npy", map_y)
+
+    @staticmethod
+    def load(dir_path: Path | str) -> PinholeRemapped:
+        """Load a model from a directory written by save().
+
+        Args:
+            dir_path: Directory containing model.json, map_x.npy, map_y.npy.
+
+        Returns:
+            Reconstructed model.
+        """
+        p = Path(dir_path)
+        data = json.loads((p / "model.json").read_text())
+        map_x = np.load(p / "map_x.npy")
+        map_y = np.load(p / "map_y.npy")
+        return PinholeRemapped.from_json(data, map_x, map_y)
+
+    def to_json(self) -> tuple[dict, np.ndarray, np.ndarray]:
+        """Serialize scalar parameters and return the remap arrays separately.
+
+        Returns:
+            Tuple of (dict with scalar parameters, map_x of shape (H, W),
+            map_y of shape (H, W)).
+        """
+        d = {
+            "type": "pinhole_remapped",
+            "image_width": self.image_width,
+            "image_height": self.image_height,
+            "fx": self.fx,
+            "fy": self.fy,
+            "cx": self.cx,
+            "cy": self.cy,
+            "input_image_width": self.input_image_width,
+            "input_image_height": self.input_image_height,
+        }
+        return d, self.map_x, self.map_y
+
+    @staticmethod
+    def from_json(data: dict, map_x: np.ndarray, map_y: np.ndarray) -> PinholeRemapped:
+        """Reconstruct a model from a dict and remap arrays.
+
+        Args:
+            data: Dict with scalar parameters, as produced by to_json().
+            map_x: Per-pixel source x coordinates, shape (H, W).
+            map_y: Per-pixel source y coordinates, shape (H, W).
+
+        Returns:
+            Reconstructed model.
+        """
+        return PinholeRemapped(
+            image_width=data["image_width"],
+            image_height=data["image_height"],
+            fx=data["fx"],
+            fy=data["fy"],
+            cx=data["cx"],
+            cy=data["cy"],
+            map_x=map_x,
+            map_y=map_y,
+            input_image_width=data["input_image_width"],
+            input_image_height=data["input_image_height"],
+        )
 
     def __post_init__(self):
         assert self.map_x.ndim == 2, f"Expected 2D map_x, got {self.map_x.ndim}D"

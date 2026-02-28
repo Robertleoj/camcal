@@ -1,4 +1,3 @@
-- Rename Detection to Frame
 - Write good README
 - Implement saving and loading the models (json works)
 - Make plug-n-play notebook that the user can use to calibrate using the library

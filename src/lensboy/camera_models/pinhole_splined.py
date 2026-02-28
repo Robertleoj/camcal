@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -86,6 +88,83 @@ class PinholeSplined(CameraModel):
         assert self.dy_grid.ndim == 2, f"Expected 2D dy_grid, got {self.dy_grid.ndim}D"
         assert np.issubdtype(self.dy_grid.dtype, np.floating), (
             f"Expected floating dtype for dy_grid, got {self.dy_grid.dtype}"
+        )
+
+    def save(self, path: Path | str) -> None:
+        """Serialize the model to a JSON file.
+
+        Args:
+            path: Destination file path.
+        """
+        Path(path).write_text(json.dumps(self.to_json(), indent=4))
+
+    @staticmethod
+    def load(path: Path | str) -> PinholeSplined:
+        """Load a model from a JSON file written by save().
+
+        Args:
+            path: Path to the JSON file.
+
+        Returns:
+            Reconstructed model.
+        """
+        return PinholeSplined.from_json(json.loads(Path(path).read_text()))
+
+    def to_json(self) -> dict:
+        """Serialize the model to a JSON-compatible dict.
+
+        Returns:
+            Dict with all model parameters. Spline grids are stored as nested
+            lists of shape (num_knots_y, num_knots_x).
+        """
+        return {
+            "type": "pinhole_splined",
+            "image_width": self.image_width,
+            "image_height": self.image_height,
+            "fx": self.fx,
+            "fy": self.fy,
+            "cx": self.cx,
+            "cy": self.cy,
+            "dx_grid": self.dx_grid.tolist(),
+            "dy_grid": self.dy_grid.tolist(),
+            "num_knots_x": self.num_knots_x,
+            "num_knots_y": self.num_knots_y,
+            "fov_deg_x": self.fov_deg_x,
+            "fov_deg_y": self.fov_deg_y,
+            "seed_opencv_distortion_parameters": (
+                self.seed_opencv_distortion_parameters.tolist()
+                if self.seed_opencv_distortion_parameters is not None
+                else None
+            ),
+        }
+
+    @staticmethod
+    def from_json(data: dict) -> PinholeSplined:
+        """Reconstruct a model from a dict produced by to_json().
+
+        Args:
+            data: Dict with all model parameters.
+
+        Returns:
+            Reconstructed model.
+        """
+        seed = data["seed_opencv_distortion_parameters"]
+        return PinholeSplined(
+            image_width=data["image_width"],
+            image_height=data["image_height"],
+            fx=data["fx"],
+            fy=data["fy"],
+            cx=data["cx"],
+            cy=data["cy"],
+            dx_grid=np.array(data["dx_grid"], dtype=np.float64),
+            dy_grid=np.array(data["dy_grid"], dtype=np.float64),
+            num_knots_x=data["num_knots_x"],
+            num_knots_y=data["num_knots_y"],
+            fov_deg_x=data["fov_deg_x"],
+            fov_deg_y=data["fov_deg_y"],
+            seed_opencv_distortion_parameters=(
+                np.array(seed, dtype=np.float64) if seed is not None else None
+            ),
         )
 
     @staticmethod
