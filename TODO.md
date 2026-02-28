@@ -1,5 +1,4 @@
 - Write good README
-- Implement saving and loading the models (json works)
 - Make plug-n-play notebook that the user can use to calibrate using the library
 - make `analysis` extra, which includes vis libs and `lensboy.analysis`
 - make visualization tools
