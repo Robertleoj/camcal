@@ -300,22 +300,33 @@ def plot_residual_histogram(
     if all_pts.shape[0] == 0:
         return
 
-    # --- 1D stats (fit on inliers only) ---
+    # --- 1D stats (robust fit on inliers only) ---
     inlier_vals = inlier_pts.ravel()
 
-    mu_1d = float(np.mean(inlier_vals))
-    sigma_1d = float(np.std(inlier_vals))
+    mu_1d = float(np.median(inlier_vals))
+    mad = float(np.median(np.abs(inlier_vals - mu_1d)))
+    sigma_1d = 1.4826 * mad
 
     lo = mu_1d - n_sigma * sigma_1d
     hi = mu_1d + n_sigma * sigma_1d
     bin_edges = np.linspace(lo, hi, bins + 1)
 
-    # --- 2D stats (fit on inliers only) ---
-    mu_2d = np.mean(inlier_pts, axis=0)  # (2,)
-    cov = np.cov(inlier_pts, rowvar=False)  # (2, 2)
+    # --- 2D stats (robust fit on inliers only) ---
+    mu_2d = np.median(inlier_pts, axis=0)  # (2,)
+    mad_x = float(np.median(np.abs(inlier_pts[:, 0] - mu_2d[0])))
+    mad_y = float(np.median(np.abs(inlier_pts[:, 1] - mu_2d[1])))
+    sigma_x = 1.4826 * mad_x
+    sigma_y = 1.4826 * mad_y
+    # Keep sample correlation for the off-diagonal
+    sample_cov = np.cov(inlier_pts, rowvar=False)
+    rho = sample_cov[0, 1] / np.sqrt(sample_cov[0, 0] * sample_cov[1, 1])
+    cov = np.array(
+        [
+            [sigma_x**2, rho * sigma_x * sigma_y],
+            [rho * sigma_x * sigma_y, sigma_y**2],
+        ]
+    )
     cov_inv = np.linalg.inv(cov)
-    sigma_x = float(np.sqrt(cov[0, 0]))
-    sigma_y = float(np.sqrt(cov[1, 1]))
 
     bg = "#1a1a2e"
     fg = "#e0e0e0"
@@ -357,7 +368,7 @@ def plot_residual_histogram(
         * np.exp(-0.5 * ((x - mu_1d) / sigma_1d) ** 2)
     )
     ax_hist.plot(
-        x, pdf, color="white", linewidth=1.5, label=f"Gaussian fit (σ={sigma_1d:.3f} px)"
+        x, pdf, color="white", linewidth=1.5, label=f"Gaussian (MAD σ={sigma_1d:.3f} px)"
     )
 
     ax_hist.set_xlim(lo, hi)
