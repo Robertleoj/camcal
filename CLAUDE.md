@@ -1,4 +1,5 @@
 Don't go too deep without exposing and sanity checking your approach with the user.
+Reveal your thinking and processing as much as possible!
 
 Try to avoid thinking deeply unless explicity instructed to do so.
 
