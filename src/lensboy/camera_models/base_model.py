@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-import numpy as np
-
 from dataclasses import dataclass
+
+import numpy as np
 
 
 @dataclass

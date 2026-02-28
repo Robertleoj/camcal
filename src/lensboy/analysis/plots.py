@@ -690,7 +690,7 @@ def plot_residual_grid(
 
     im = ax.imshow(
         mean_mag,
-        extent=[0, image_width, image_height, 0],
+        extent=[0, image_width, image_height, 0],  # type: ignore[arg-type]
         cmap="plasma",
         interpolation="nearest",
         aspect="auto",
@@ -779,7 +779,7 @@ def plot_target_warp(
 
     im = ax.imshow(
         Z,
-        extent=[gx.min(), gx.max(), gy.min(), gy.max()],
+        extent=[gx.min(), gx.max(), gy.min(), gy.max()],  # type: ignore[arg-type]
         cmap="plasma",
         aspect="auto",
         interpolation="bilinear",
