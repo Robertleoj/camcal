@@ -2,8 +2,6 @@
   <img src="media/logo.png" alt="lensboy" width="100%">
 </p>
 
-# lensboy
-
 Camera calibration for vision engineers. Maximally powerful, minimally complex.
 
 Supports OpenCV camera models and spline-based distortion models for lenses that OpenCV can't handle.
