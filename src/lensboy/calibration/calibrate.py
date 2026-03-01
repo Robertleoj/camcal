@@ -203,6 +203,41 @@ class CalibrationResult(Generic[T]):
     frame_infos: list[FrameInfo]
     warp_info: TargetWarp | None = None
 
+    def residual_sigma_map(self) -> float:
+        """Robust MAP estimate of residual standard deviation over inliers.
+
+        Uses the MAD-based estimator (sigma = 1.4826 * MAD) on all inlier
+        residual components (x and y combined).
+
+        Returns:
+            Estimated residual standard deviation in pixels.
+        """
+        inlier_vals = np.concatenate(
+            [fi.residuals[fi.inlier_mask] for fi in self.frame_infos]
+        ).ravel()
+        mu = float(np.median(inlier_vals))
+        mad = float(np.median(np.abs(inlier_vals - mu)))
+        return 1.4826 * mad
+
+    def num_outliers(self) -> int:
+        """Count the total number of outlier detections across all frames.
+
+        Returns:
+            Total outlier count.
+        """
+        return sum(
+            int(np.count_nonzero(~fi.inlier_mask))
+            for fi in self.frame_infos
+        )
+
+    def num_detections(self) -> int:
+        """Count the total number of detections across all frames.
+
+        Returns:
+            Total detection count (inliers + outliers).
+        """
+        return sum(len(fi.residuals) for fi in self.frame_infos)
+
 
 def _project_and_calculate_residuals(
     target_points: np.ndarray,
