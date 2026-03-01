@@ -57,7 +57,7 @@ Even for standard OpenCV models, lensboy gives you better calibrations than raw 
 - **Target warp estimation** compensates for non-flat calibration boards
 - **Analysis tools** to verify your calibration is actually good
 
-For wide-angle lenses where OpenCV's polynomial distortion model isn't enough, lensboy offers spline-based distortion models that can capture arbitrary distortion patterns. This approach is inspired by [mrcal](https://mrcal.secretsauce.net/), but lensboy is designed to be easier to use and trivial to install.
+For cheap or wide-angle lenses where OpenCV's polynomial distortion model isn't enough, lensboy offers spline-based distortion models that can capture arbitrary distortion patterns. This approach is inspired by [mrcal](https://mrcal.secretsauce.net/), but lensboy is designed to be easier to use and trivial to install.
 
 ## Install
 
