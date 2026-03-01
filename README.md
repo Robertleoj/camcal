@@ -51,13 +51,14 @@ result = lb.calibrate_camera(
 
 ## Why lensboy
 
-Even for standard OpenCV models, lensboy gives you better calibrations than raw `cv2.calibrateCamera`:
+Even for standard OpenCV models, lensboy gives you better calibrations than raw `cv2.calibrateCamera`, as clearly demonstrated in the [model comparison notebook](examples/model_comparison.ipynb). This is achieved mainly by two means:
 
 - **Automatic outlier filtering** removes bad detections
 - **Target warp estimation** compensates for non-flat calibration boards
-- **Analysis tools** to verify your calibration is actually good
 
 For cheap or wide-angle lenses where OpenCV's polynomial distortion model isn't enough, lensboy offers spline-based distortion models that can capture arbitrary distortion patterns. This approach is inspired by [mrcal](https://mrcal.secretsauce.net/), but lensboy is designed to be easier to use and trivial to install.
+
+Lensboy also offers strong **analysis tools** to verify your calibration is actually good. These are demonstrated in the example notebooks.
 
 ## Install
 
