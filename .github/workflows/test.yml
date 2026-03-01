@@ -18,8 +18,16 @@ jobs:
           key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: vcpkg-${{ runner.os }}-${{ runner.arch }}-
 
+      - name: Install vcpkg and C++ dependencies
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git $HOME/vcpkg
+          $HOME/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          VCPKG_ROOT=$HOME/vcpkg $HOME/vcpkg/vcpkg install --no-print-usage
+
       - name: Install package
         run: uv sync
+        env:
+          VCPKG_ROOT: /home/runner/vcpkg
 
       - name: Run tests
         run: uv run pytest tests/
