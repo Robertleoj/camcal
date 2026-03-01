@@ -20,7 +20,7 @@ py::dict calibrate_opencv(
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         frames,
     std::optional<WarpCoordinates> warp_coordinates = std::nullopt,
-    std::array<double, 2> warp_kxy_initial = {0.0, 0.0}
+    std::array<double, 5> warp_coeffs_initial = {0.0, 0.0, 0.0, 0.0, 0.0}
 );
 
 py::dict get_matching_spline_distortion_model(
@@ -36,7 +36,7 @@ py::dict fine_tune_pinhole_splined(
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         frames,
     std::optional<WarpCoordinates> warp_coordinates = std::nullopt,
-    std::array<double, 2> warp_kxy_initial = {0.0, 0.0}
+    std::array<double, 5> warp_coeffs_initial = {0.0, 0.0, 0.0, 0.0, 0.0}
 );
 
 }  // namespace lensboy

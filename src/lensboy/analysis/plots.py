@@ -847,11 +847,17 @@ def plot_target_warp(
         title: Plot title.
     """
     wc = target_warp.warp_coordinates
-    kx, ky = target_warp.object_warp
+    a, b, c, d, e = target_warp.object_warp
 
     s = np.linspace(-1, 1, grid_res)
     SX, SY = np.meshgrid(s, s)
-    Z = kx * (1 - SX**2) + ky * (1 - SY**2)
+
+    # P2(t) = 0.5*(3t²-1), P4(t) = 0.125*(35t⁴-30t²+3)
+    P2X = 0.5 * (3 * SX**2 - 1)
+    P2Y = 0.5 * (3 * SY**2 - 1)
+    P4X = 0.125 * (35 * SX**4 - 30 * SX**2 + 3)
+    P4Y = 0.125 * (35 * SY**4 - 30 * SY**2 + 3)
+    Z = a * P2X + b * P2Y + c * P2X * P2Y + d * P4X + e * P4Y
 
     gx = SX * wc.x_scale
     gy = SY * wc.y_scale
@@ -904,7 +910,8 @@ def plot_target_warp(
     ax.set_xlim(gx.min() - margin * x_extent, gx.max() + margin * x_extent)
     ax.set_ylim(gy.min() - margin * y_extent, gy.max() + margin * y_extent)
 
-    ax.set_title(f"{title}  (kx={kx:.5f}, ky={ky:.5f})")
+    coeff_str = ", ".join(f"{v:.5f}" for v in (a, b, c, d, e))
+    ax.set_title(f"{title}  ({coeff_str})")
     ax.set_xlabel("warp x [target units]")
     ax.set_ylabel("warp y [target units]")
     ax.set_aspect("equal", adjustable="box")

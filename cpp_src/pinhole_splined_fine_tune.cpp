@@ -118,7 +118,7 @@ struct ReprojectionErrorSplined {
     // clang-format off
     template <typename T>
     bool operator()(
-        const T* const cam, const T* const kxy,
+        const T* const cam, const T* const warp_coeffs,
         const T* const dx00, const T* const dx01, const T* const dx02, const T* const dx03,
         const T* const dx04, const T* const dx05, const T* const dx06, const T* const dx07,
         const T* const dx08, const T* const dx09, const T* const dx10, const T* const dx11,
@@ -140,7 +140,7 @@ struct ReprojectionErrorSplined {
             pw_warped = apply_warp_to_target_point(
                 Vec3<T>(pw.cast<T>()),
                 warp_coords,
-                kxy
+                warp_coeffs
             );
         } else {
             pw_warped = pw.cast<T>();
@@ -237,7 +237,7 @@ static inline void BuildProblem(
     const double* k4p,
     double* dxp,
     double* dyp,
-    double* warp_kxy,
+    double* warp_coeffs,
     const std::optional<WarpCoordinates>& warp_coordinates,
     const std::vector<Vec6<double>>& cameras_from_target,
     const std::vector<Vec3<double>>& target_points,
@@ -258,10 +258,10 @@ static inline void BuildProblem(
     problem.AddParameterBlock(const_cast<double*>(k4p), 4);
     problem.SetParameterBlockConstant(const_cast<double*>(k4p));
 
-    // warp kxy block (always present; constant when no warp)
-    problem.AddParameterBlock(warp_kxy, 2);
+    // warp coeffs block (always present; constant when no warp)
+    problem.AddParameterBlock(warp_coeffs, 5);
     if (!warp_coordinates.has_value()) {
-        problem.SetParameterBlockConstant(warp_kxy);
+        problem.SetParameterBlockConstant(warp_coeffs);
     }
 
     // per-knot blocks (size 1)
@@ -345,7 +345,7 @@ static inline void BuildProblem(
                 hw ? *warp_coordinates : WarpCoordinates{};
             // clang-format off
             auto* cost = new ceres::AutoDiffCostFunction<
-                ReprojectionErrorSplined, 2, 6, 2,
+                ReprojectionErrorSplined, 2, 6, 5,
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 16 dx knots
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1   // 16 dy knots
             >(new ReprojectionErrorSplined{
@@ -355,7 +355,7 @@ static inline void BuildProblem(
             // Build parameter list: cam + kxy + 16 dx + 16 dy
             std::array<double*, 34> blocks{};
             blocks[0] = const_cast<double*>(cam6.data());
-            blocks[1] = warp_kxy;
+            blocks[1] = warp_coeffs;
             for (int i = 0; i < 16; i++) { blocks[2 + i]  = dx_blocks[flat[i]]; }
             for (int i = 0; i < 16; i++) { blocks[18 + i] = dy_blocks[flat[i]]; }
 
@@ -383,7 +383,7 @@ py::dict fine_tune_pinhole_splined(
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         frames,
     std::optional<WarpCoordinates> warp_coordinates,
-    std::array<double, 2> warp_kxy_initial
+    std::array<double, 5> warp_coeffs_initial
 ) {
     auto dxb = intrinsics_parameters.dx_grid.request();
     auto dyb = intrinsics_parameters.dy_grid.request();
@@ -416,7 +416,13 @@ py::dict fine_tune_pinhole_splined(
     const double lambda = 1e-1;
     const double sqrt_lambda = std::sqrt(lambda);
 
-    double warp_kxy[2] = {warp_kxy_initial[0], warp_kxy_initial[1]};
+    double warp_coeffs[5] = {
+        warp_coeffs_initial[0],
+        warp_coeffs_initial[1],
+        warp_coeffs_initial[2],
+        warp_coeffs_initial[3],
+        warp_coeffs_initial[4]
+    };
 
     SplineMap map(model_config);
 
@@ -446,7 +452,7 @@ py::dict fine_tune_pinhole_splined(
             k4p,
             dxp,
             dyp,
-            warp_kxy,
+            warp_coeffs,
             warp_coordinates,
             cameras_from_target,
             target_points,
@@ -484,7 +490,7 @@ py::dict fine_tune_pinhole_splined(
     py::dict out;
     out["dx_grid"] = intrinsics_parameters.dx_grid;
     out["dy_grid"] = intrinsics_parameters.dy_grid;
-    out["warp_kxy"] = py::array_t<double>(2, warp_kxy);
+    out["warp_coeffs"] = py::array_t<double>(5, warp_coeffs);
 
     std::vector<std::vector<double>> poses_out;
     poses_out.reserve(cameras_from_target.size());

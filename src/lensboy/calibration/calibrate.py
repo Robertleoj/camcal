@@ -97,7 +97,7 @@ class _OptimizationState(Generic[_IntrinsicsT]):
     intrinsics: _IntrinsicsT
     cameras_from_target: list[Pose]
     frames: list[Frame]
-    warp_kxy: tuple[float, float] | None
+    warp_coeffs: tuple[float, float, float, float, float] | None
 
 
 @dataclass
@@ -135,21 +135,22 @@ class WarpCoordinates:
 
 @dataclass
 class TargetWarp:
-    """Quadratic warp applied to the calibration target to model slight non-planarity.
+    """Legendre-polynomial warp applied to the calibration target to model non-planarity.
 
     The warp displaces each point along the target normal by
-    kx*(1 - x²) + ky*(1 - y²), where x and y are scaled to [-1, 1].
+    a*P2(x) + b*P2(y) + c*P2(x)*P2(y) + d*P4(x) + e*P4(y),
+    where x and y are scaled to [-1, 1] and P2, P4 are Legendre polynomials.
 
     Attributes:
         warp_coordinates: Frame and scale used to map target points to [-1, 1].
-        object_warp: Quadratic warp coefficients (kx, ky).
+        object_warp: Legendre warp coefficients (a, b, c, d, e).
     """
 
     warp_coordinates: WarpCoordinates
-    object_warp: tuple[float, float]
+    object_warp: tuple[float, float, float, float, float]
 
     def warp_target(self, target_points: np.ndarray) -> np.ndarray:
-        """Apply the quadratic warp to 3D target points.
+        """Apply the Legendre warp to 3D target points.
 
         Args:
             target_points: Shape (N, 3).
@@ -163,12 +164,18 @@ class TargetWarp:
         x_in_warp = points_in_warp[:, 0]
         y_in_warp = points_in_warp[:, 1]
 
-        scaled_x_in_warp = x_in_warp / self.warp_coordinates.x_scale
-        scaled_y_in_warp = y_in_warp / self.warp_coordinates.y_scale
+        sx = x_in_warp / self.warp_coordinates.x_scale
+        sy = y_in_warp / self.warp_coordinates.y_scale
 
-        kx, ky = self.object_warp
+        a, b, c, d, e = self.object_warp
 
-        z = kx * (1 - scaled_x_in_warp**2) + ky * (1 - scaled_y_in_warp**2)
+        # P2(t) = 0.5*(3t²-1), P4(t) = 0.125*(35t⁴-30t²+3)
+        p2x = 0.5 * (3 * sx**2 - 1)
+        p2y = 0.5 * (3 * sy**2 - 1)
+        p4x = 0.125 * (35 * sx**4 - 30 * sx**2 + 3)
+        p4y = 0.125 * (35 * sy**4 - 30 * sy**2 + 3)
+
+        z = a * p2x + b * p2y + c * p2x * p2y + d * p4x + e * p4y
 
         warped_points_in_warp = points_in_warp.copy()
         warped_points_in_warp[:, 2] = z
@@ -273,8 +280,8 @@ def _opencv_calibrate_inner(
     target_points: np.ndarray,
     frames: list[Frame],
     warp_coordinates: WarpCoordinates | None = None,
-    warp_kxy: tuple[float, float] | None = None,
-) -> tuple[OpenCV, list[Pose], tuple[float, float] | None]:
+    warp_coeffs: tuple[float, float, float, float, float] | None = None,
+) -> tuple[OpenCV, list[Pose], tuple[float, float, float, float, float] | None]:
     params = curr_intrinsics._params()
     mask = config.optimize_mask()
     intrinsics_param_optimize_mask = mask.tolist()
@@ -292,7 +299,7 @@ def _opencv_calibrate_inner(
         warp_coordinates=(
             warp_coordinates._to_cpp() if warp_coordinates is not None else None
         ),
-        warp_kxy_initial=list(warp_kxy) if warp_kxy is not None else [0.0, 0.0],
+        warp_coeffs_initial=list(warp_coeffs) if warp_coeffs is not None else [0.0] * 5,
     )
     end_time = default_timer()
     LOG.info(f"Ran optimizer in {end_time - start_time:.2f}s")
@@ -303,12 +310,18 @@ def _opencv_calibrate_inner(
         Pose._from_cpp(np.array(a)) for a in result["cameras_from_target"]
     ]
 
-    out_kxy: tuple[float, float] | None = None
+    out_coeffs: tuple[float, float, float, float, float] | None = None
     if warp_coordinates is not None:
-        kxy_arr = np.array(result["warp_kxy"])
-        out_kxy = (float(kxy_arr[0]), float(kxy_arr[1]))
+        arr = np.array(result["warp_coeffs"])
+        out_coeffs = (
+            float(arr[0]),
+            float(arr[1]),
+            float(arr[2]),
+            float(arr[3]),
+            float(arr[4]),
+        )
 
-    return optimized_intrinsics, optimized_cameras_from_target, out_kxy
+    return optimized_intrinsics, optimized_cameras_from_target, out_coeffs
 
 
 def _compute_frame_infos(
@@ -375,8 +388,8 @@ def _run_with_outlier_filtering(
             break
 
         curr_target_warp = (
-            TargetWarp(warp_coordinates, state.warp_kxy)
-            if warp_coordinates is not None and state.warp_kxy is not None
+            TargetWarp(warp_coordinates, state.warp_coeffs)
+            if warp_coordinates is not None and state.warp_coeffs is not None
             else None
         )
         curr_residuals = [
@@ -534,10 +547,10 @@ def _opencv_calibrate(
             target_points,
             state.frames,
             warp_coordinates,
-            state.warp_kxy,
+            state.warp_coeffs,
         )
         return replace(
-            state, intrinsics=intrinsics, cameras_from_target=cameras, warp_kxy=kxy
+            state, intrinsics=intrinsics, cameras_from_target=cameras, warp_coeffs=kxy
         )
 
     state = _run_with_outlier_filtering(
@@ -549,12 +562,11 @@ def _opencv_calibrate(
     )
 
     warp_info = None
-    if warp_coordinates is not None and state.warp_kxy is not None:
+    if warp_coordinates is not None and state.warp_coeffs is not None:
         warp_info = TargetWarp(
-            warp_coordinates=warp_coordinates, object_warp=state.warp_kxy
+            warp_coordinates=warp_coordinates, object_warp=state.warp_coeffs
         )
-        kx, ky = state.warp_kxy
-        LOG.info(f"Target warp optimized at kx={kx:.2f}, ky={ky:.2f}")
+        LOG.info(f"Target warp coefficients: {state.warp_coeffs}")
 
     frame_infos = _compute_frame_infos(
         state.intrinsics,
@@ -580,8 +592,8 @@ def _pinhole_splined_refine_inner(
     target_points: np.ndarray,
     frames: list[Frame],
     warp_coordinates: WarpCoordinates | None,
-    warp_kxy: tuple[float, float] | None = None,
-) -> tuple[PinholeSplined, list[Pose], tuple[float, float] | None]:
+    warp_coeffs: tuple[float, float, float, float, float] | None = None,
+) -> tuple[PinholeSplined, list[Pose], tuple[float, float, float, float, float] | None]:
     fine_tune_result = lbb.fine_tune_pinhole_splined(
         model_config=curr_intrinsics._cpp_config(),
         intrinsics_parameters=curr_intrinsics._cpp_params(),
@@ -591,7 +603,7 @@ def _pinhole_splined_refine_inner(
         warp_coordinates=(
             warp_coordinates._to_cpp() if warp_coordinates is not None else None
         ),
-        warp_kxy_initial=list(warp_kxy) if warp_kxy is not None else [0.0, 0.0],
+        warp_coeffs_initial=list(warp_coeffs) if warp_coeffs is not None else [0.0] * 5,
     )
 
     optimized_cameras_from_target = [
@@ -604,12 +616,18 @@ def _pinhole_splined_refine_inner(
         dy_grid=fine_tune_result["dy_grid"],
     )
 
-    out_kxy: tuple[float, float] | None = None
+    out_coeffs: tuple[float, float, float, float, float] | None = None
     if warp_coordinates is not None:
-        kxy_arr = np.array(fine_tune_result["warp_kxy"])
-        out_kxy = (float(kxy_arr[0]), float(kxy_arr[1]))
+        arr = np.array(fine_tune_result["warp_coeffs"])
+        out_coeffs = (
+            float(arr[0]),
+            float(arr[1]),
+            float(arr[2]),
+            float(arr[3]),
+            float(arr[4]),
+        )
 
-    return optimized_intrinsics, optimized_cameras_from_target, out_kxy
+    return optimized_intrinsics, optimized_cameras_from_target, out_coeffs
 
 
 def _compute_fov_from_opencv(
@@ -706,11 +724,11 @@ def _calibrate_pinhole_splined(
             target_points,
             state.frames,
             warp_coordinates,
-            state.warp_kxy,
+            state.warp_coeffs,
         )
         LOG.info(f"Performed full optimization in {default_timer() - start:.2f}s")
         return replace(
-            state, intrinsics=intrinsics, cameras_from_target=cameras, warp_kxy=kxy
+            state, intrinsics=intrinsics, cameras_from_target=cameras, warp_coeffs=kxy
         )
 
     state = _run_with_outlier_filtering(
@@ -722,13 +740,12 @@ def _calibrate_pinhole_splined(
     )
 
     warp_info = None
-    if warp_coordinates is not None and state.warp_kxy is not None:
+    if warp_coordinates is not None and state.warp_coeffs is not None:
         warp_info = TargetWarp(
-            warp_coordinates=warp_coordinates, object_warp=state.warp_kxy
+            warp_coordinates=warp_coordinates, object_warp=state.warp_coeffs
         )
 
-        kx, ky = state.warp_kxy
-        LOG.info(f"Target warp optimized at kx={kx:.2f}, ky={ky:.2f}")
+        LOG.info(f"Target warp coefficients: {state.warp_coeffs}")
 
     frame_infos = _compute_frame_infos(
         state.intrinsics,

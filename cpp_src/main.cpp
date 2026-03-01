@@ -159,7 +159,8 @@ PYBIND11_MODULE(
         py::arg("target_points"),
         py::arg("frames"),
         py::arg("warp_coordinates") = py::none(),
-        py::arg("warp_kxy_initial") = std::array<double, 2>{0.0, 0.0}
+        py::arg("warp_coeffs_initial") =
+            std::array<double, 5>{0.0, 0.0, 0.0, 0.0, 0.0}
     );
 
     m.def(
@@ -178,7 +179,8 @@ PYBIND11_MODULE(
         py::arg("target_points"),
         py::arg("frames"),
         py::arg("warp_coordinates") = py::none(),
-        py::arg("warp_kxy_initial") = std::array<double, 2>{0.0, 0.0}
+        py::arg("warp_coeffs_initial") =
+            std::array<double, 5>{0.0, 0.0, 0.0, 0.0, 0.0}
     );
 
     m.def(

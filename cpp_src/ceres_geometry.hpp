@@ -31,7 +31,7 @@ template <typename T>
 Vec3<T> apply_warp_to_target_point(
     const Vec3<T>& p_target,
     const WarpCoordinates& warp,
-    const T* const kxy
+    const T* const coeffs  // [a, b, c, d, e] – 5 Legendre warp coefficients
 ) {
     const Vec3<double> rv = warp.target_from_warp_frame.head<3>();
     const Vec3<double> center = warp.target_from_warp_frame.tail<3>();
@@ -52,7 +52,17 @@ Vec3<T> apply_warp_to_target_point(
 
     const T xs = wx / T(warp.x_scale);
     const T ys = wy / T(warp.y_scale);
-    const T z_warp = kxy[0] * (T(1.0) - xs * xs) + kxy[1] * (T(1.0) - ys * ys);
+
+    // P2(t) = 0.5 * (3t^2 - 1),  P4(t) = 0.125 * (35t^4 - 30t^2 + 3)
+    const T xs2 = xs * xs;
+    const T ys2 = ys * ys;
+    const T p2x = T(0.5) * (T(3.0) * xs2 - T(1.0));
+    const T p2y = T(0.5) * (T(3.0) * ys2 - T(1.0));
+    const T p4x = T(0.125) * (T(35.0) * xs2 * xs2 - T(30.0) * xs2 + T(3.0));
+    const T p4y = T(0.125) * (T(35.0) * ys2 * ys2 - T(30.0) * ys2 + T(3.0));
+
+    const T z_warp = coeffs[0] * p2x + coeffs[1] * p2y + coeffs[2] * p2x * p2y +
+                     coeffs[3] * p4x + coeffs[4] * p4y;
 
     Vec3<T> result = center.cast<T>();
     result[0] += T(x_hat[0]) * wx + T(y_hat[0]) * wy + T(z_hat[0]) * z_warp;

@@ -30,7 +30,7 @@ struct ReprojectionError {
         const T* const intrinsics,
         const T* const camera_from_target,
         const T* const point_in_target,
-        const T* const kxy,
+        const T* const warp_coeffs,
         T* residuals
     ) const {
         Vec6<T> eigen_camera_from_target(camera_from_target);
@@ -41,7 +41,7 @@ struct ReprojectionError {
             warped_point = apply_warp_to_target_point(
                 eigen_point_in_target,
                 warp_coords,
-                kxy
+                warp_coeffs
             );
         } else {
             warped_point = eigen_point_in_target;
@@ -66,7 +66,7 @@ struct ReprojectionError {
         const WarpCoordinates& warp_coords
     ) {
         return new ceres::
-            AutoDiffCostFunction<ReprojectionError, 2, 16, 6, 3, 2>(
+            AutoDiffCostFunction<ReprojectionError, 2, 16, 6, 3, 5>(
                 new ReprojectionError(
                     observed_x,
                     observed_y,
@@ -131,14 +131,20 @@ py::dict calibrate_opencv(
     std::vector<std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
         frames,
     std::optional<WarpCoordinates> warp_coordinates,
-    std::array<double, 2> warp_kxy_initial
+    std::array<double, 5> warp_coeffs_initial
 ) {
     ceres::Problem problem;
 
     const bool has_warp = warp_coordinates.has_value();
     const WarpCoordinates warp_coords =
         has_warp ? *warp_coordinates : WarpCoordinates{};
-    double warp_kxy[2] = {warp_kxy_initial[0], warp_kxy_initial[1]};
+    double warp_coeffs[5] = {
+        warp_coeffs_initial[0],
+        warp_coeffs_initial[1],
+        warp_coeffs_initial[2],
+        warp_coeffs_initial[3],
+        warp_coeffs_initial[4]
+    };
 
     OptimizationState state = OptimizationState::from_calibrate_camera_input(
         intrinsics_initial_value,
@@ -162,9 +168,9 @@ py::dict calibrate_opencv(
     );
     problem.SetManifold(state.intrinsics.data(), manifold);
 
-    problem.AddParameterBlock(warp_kxy, 2);
+    problem.AddParameterBlock(warp_coeffs, 5);
     if (!has_warp) {
-        problem.SetParameterBlockConstant(warp_kxy);
+        problem.SetParameterBlockConstant(warp_coeffs);
     }
 
     for (auto& cam : state.cameras_from_target) {
@@ -207,7 +213,7 @@ py::dict calibrate_opencv(
                 state.intrinsics.data(),
                 camera_pose.data(),
                 target.data(),
-                warp_kxy
+                warp_coeffs
             );
         }
     }
@@ -227,7 +233,7 @@ py::dict calibrate_opencv(
     ceres::Solve(options, &problem, &summary);
 
     py::dict result = state.make_dict();
-    result["warp_kxy"] = py::array_t<double>(2, warp_kxy);
+    result["warp_coeffs"] = py::array_t<double>(5, warp_coeffs);
     return result;
 }
 
