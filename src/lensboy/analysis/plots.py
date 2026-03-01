@@ -4,6 +4,7 @@ import cv2
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.collections import LineCollection
 from matplotlib.colorbar import Colorbar
 
 import lensboy as lb
@@ -917,6 +918,325 @@ def plot_target_warp(
     ax.set_aspect("equal", adjustable="box")
 
     plt.tight_layout()
+    plt.show()
+
+
+def _remap_point(model: lb.PinholeRemapped, x: float, y: float) -> tuple[float, float]:
+    """Look up undistorted pixel in the remap tables with bilinear interpolation."""
+    ix, iy = int(x), int(y)
+    ix = min(max(ix, 0), model.image_width - 2)
+    iy = min(max(iy, 0), model.image_height - 2)
+    fx, fy = x - ix, y - iy
+    fx = min(max(fx, 0.0), 1.0)
+    fy = min(max(fy, 0.0), 1.0)
+    w00 = (1 - fx) * (1 - fy)
+    w10 = fx * (1 - fy)
+    w01 = (1 - fx) * fy
+    w11 = fx * fy
+    dx = float(
+        w00 * model.map_x[iy, ix]
+        + w10 * model.map_x[iy, ix + 1]
+        + w01 * model.map_x[iy + 1, ix]
+        + w11 * model.map_x[iy + 1, ix + 1]
+    )
+    dy = float(
+        w00 * model.map_y[iy, ix]
+        + w10 * model.map_y[iy, ix + 1]
+        + w01 * model.map_y[iy + 1, ix]
+        + w11 * model.map_y[iy + 1, ix + 1]
+    )
+    return dx, dy
+
+
+def plot_undistortion(
+    model: lb.PinholeRemapped,
+    *,
+    image: np.ndarray | None = None,
+    grid_step_px: int = 50,
+    line_thickness: int | None = None,
+) -> None:
+    """Visualize distortion and undistortion with grid warping.
+
+    Row 1: regular grid in distorted pixel space (left) remapped to
+    undistorted pixel space (right).  Row 2: regular grid in undistorted
+    pixel space (right) mapped back to distorted pixel space (left).
+    When an image is provided, a third row shows the original and
+    undistorted image.
+
+    Args:
+        model: Undistorted pinhole model with remap tables.
+        image: Optional distorted input image, shape (H, W) or (H, W, 3).
+        grid_step_px: Spacing between grid lines in pixels.
+        line_thickness: Line width in pixels.  When None, chosen automatically
+            based on the image diagonal.
+    """
+    W_in = model.input_image_width
+    H_in = model.input_image_height
+    W_out = model.image_width
+    H_out = model.image_height
+
+    if line_thickness is None:
+        diag = np.hypot(W_in, H_in)
+        line_thickness = max(1, int(round(diag / 800)))
+
+    cmap = plt.colormaps["jet"]
+    x_lines = np.arange(grid_step_px, W_in, grid_step_px)
+    y_lines = np.arange(grid_step_px, H_in, grid_step_px)
+
+    # Smooth diagonal color gradient masked to grid lines
+    yy, xx = np.mgrid[0:H_in, 0:W_in]
+    diag_pos = (xx / W_in + yy / H_in) / 2.0
+    gradient_img = (cmap(diag_pos)[:, :, :3] * 255).astype(np.uint8)
+
+    grid_mask = np.zeros((H_in, W_in), dtype=np.uint8)
+    for x0 in x_lines:
+        cv2.line(
+            grid_mask, (int(x0), 0), (int(x0), H_in - 1), 255, thickness=line_thickness
+        )
+    for y0 in y_lines:
+        cv2.line(
+            grid_mask, (0, int(y0)), (W_in - 1, int(y0)), 255, thickness=line_thickness
+        )
+
+    grid_img = gradient_img * (grid_mask[:, :, None] > 0)
+
+    # White concentric rectangles snapped to grid intersections
+    rect_step = grid_step_px * 4
+    rect_thickness = line_thickness * 2
+    rect_cx = round(W_in / 2.0 / grid_step_px) * grid_step_px
+    rect_cy = round(H_in / 2.0 / grid_step_px) * grid_step_px
+    aspect = W_in / H_in
+    corner_len = grid_step_px
+    n_rects = max(1, int(min(rect_cx, rect_cy) / rect_step))
+    for i in range(1, n_rects + 1):
+        half_h = i * rect_step
+        half_w = round(half_h * aspect / grid_step_px) * grid_step_px
+        x1, y1 = int(rect_cx - half_w), int(rect_cy - half_h)
+        x2, y2 = int(rect_cx + half_w), int(rect_cy + half_h)
+        for cx, cy, sx, sy in [
+            (x1, y1, 1, 1),
+            (x2, y1, -1, 1),
+            (x1, y2, 1, -1),
+            (x2, y2, -1, -1),
+        ]:
+            for color, thickness in [
+                ((0, 0, 0), rect_thickness * 3),
+                ((255, 255, 255), rect_thickness),
+            ]:
+                cv2.line(grid_img, (cx, cy), (cx + sx * corner_len, cy), color, thickness)
+                cv2.line(grid_img, (cx, cy), (cx, cy + sy * corner_len), color, thickness)
+
+    undistorted_img = model.undistort(grid_img, interpolation=cv2.INTER_LANCZOS4)
+
+    # --- Row 2: regular grid in undistorted space mapped to distorted space ---
+    x_lines_out = np.arange(grid_step_px, W_out, grid_step_px)
+    y_lines_out = np.arange(grid_step_px, H_out, grid_step_px)
+
+    def _diag_colored_segments(
+        xs: np.ndarray,
+        ys: np.ndarray,
+        w: float,
+        h: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Build LineCollection segments with diagonal-gradient jet colors.
+
+        Args:
+            xs: x coordinates of the polyline, shape (N,).
+            ys: y coordinates of the polyline, shape (N,).
+            w: Width used to normalize x for the diagonal gradient.
+            h: Height used to normalize y for the diagonal gradient.
+
+        Returns:
+            Segments array of shape (N-1, 2, 2) and colors array of shape (N-1, 4).
+        """
+        pts = np.column_stack([xs, ys])
+        segs = np.stack([pts[:-1], pts[1:]], axis=1)
+        mid_x = (xs[:-1] + xs[1:]) / 2.0
+        mid_y = (ys[:-1] + ys[1:]) / 2.0
+        diag = (mid_x / w + mid_y / h) / 2.0
+        colors = cmap(diag)
+        return segs, colors
+
+    n_rows = 3 if image is not None else 2
+    panel_w = 10
+    panel_h = panel_w * (H_in / W_in)
+    fig, axes = plt.subplots(
+        n_rows,
+        2,
+        figsize=(2 * panel_w, panel_h * n_rows),
+        constrained_layout=True,
+        squeeze=False,
+    )
+
+    fig.patch.set_facecolor("#111111")
+
+    for ax in axes.flat:
+        ax.set_facecolor("#111111")
+        ax.tick_params(colors="white")
+        ax.xaxis.label.set_color("white")
+        ax.yaxis.label.set_color("white")
+        ax.title.set_color("white")
+        for spine in ax.spines.values():
+            spine.set_color("white")
+
+    # Row 1: distorted grid → undistorted (rasterized)
+    axes[0, 0].imshow(grid_img)
+    axes[0, 0].set_title("Grid in distorted pixel space")
+    axes[0, 0].set_xlabel("u (px)")
+    axes[0, 0].set_ylabel("v (px)")
+    axes[0, 0].set_aspect("equal")
+
+    axes[0, 1].imshow(undistorted_img)
+    axes[0, 1].set_title("Grid in undistorted pixel space")
+    axes[0, 1].set_xlabel("u (px)")
+    axes[0, 1].set_ylabel("v (px)")
+    axes[0, 1].set_aspect("equal")
+
+    # Row 2 right: regular grid in undistorted space (diagonal gradient)
+    # Convert cv2 pixel line width to matplotlib points to match row 1
+    mpl_lw = line_thickness * panel_w * 72 / W_out
+    n_subdivide = 64
+    for x0 in x_lines_out:
+        ys = np.linspace(0, H_out, n_subdivide)
+        xs = np.full_like(ys, float(x0))
+        segs, colors = _diag_colored_segments(xs, ys, W_out, H_out)
+        axes[1, 1].add_collection(LineCollection(segs, colors=colors, linewidths=mpl_lw))
+    for y0 in y_lines_out:
+        xs = np.linspace(0, W_out, n_subdivide)
+        ys = np.full_like(xs, float(y0))
+        segs, colors = _diag_colored_segments(xs, ys, W_out, H_out)
+        axes[1, 1].add_collection(LineCollection(segs, colors=colors, linewidths=mpl_lw))
+
+    # Row 2 right: corner markers in undistorted space
+    px_to_pt = panel_w * 72 / W_out
+    marker_lw_inner = rect_thickness * px_to_pt
+    marker_lw_border = rect_thickness * 3 * px_to_pt
+    rect_cx_out = round(W_out / 2.0 / grid_step_px) * grid_step_px
+    rect_cy_out = round(H_out / 2.0 / grid_step_px) * grid_step_px
+    aspect_out = W_out / H_out
+    n_rects_out = max(1, int(min(rect_cx_out, rect_cy_out) / rect_step))
+    for i in range(1, n_rects_out + 1):
+        half_h = i * rect_step
+        half_w = round(half_h * aspect_out / grid_step_px) * grid_step_px
+        x1, y1 = rect_cx_out - half_w, rect_cy_out - half_h
+        x2, y2 = rect_cx_out + half_w, rect_cy_out + half_h
+        for cx, cy, sx, sy in [
+            (x1, y1, 1, 1),
+            (x2, y1, -1, 1),
+            (x1, y2, 1, -1),
+            (x2, y2, -1, -1),
+        ]:
+            for color, lw in [("black", marker_lw_border), ("white", marker_lw_inner)]:
+                axes[1, 1].plot(
+                    [cx, cx + sx * corner_len],
+                    [cy, cy],
+                    color=color,
+                    linewidth=lw,
+                    solid_capstyle="butt",
+                )
+                axes[1, 1].plot(
+                    [cx, cx],
+                    [cy, cy + sy * corner_len],
+                    color=color,
+                    linewidth=lw,
+                    solid_capstyle="butt",
+                )
+
+    axes[1, 1].set_xlim(0, W_out)
+    axes[1, 1].set_ylim(H_out, 0)
+    axes[1, 1].set_title("Grid in undistorted pixel space")
+    axes[1, 1].set_xlabel("u (px)")
+    axes[1, 1].set_ylabel("v (px)")
+    axes[1, 1].set_aspect("equal")
+
+    # Row 2 left: same grid traced through remap tables to distorted space
+    # Color each segment by its undistorted-space position for consistency
+    for x0 in x_lines_out:
+        u = int(round(x0))
+        if 0 <= u < W_out:
+            dx = model.map_x[:, u]
+            dy = model.map_y[:, u]
+            # Color by undistorted position: x=x0, y varies over rows
+            src_ys = np.arange(H_out, dtype=np.float64)
+            segs, colors = _diag_colored_segments(dx, dy, W_out, H_out)
+            # Recompute colors from undistorted coordinates
+            mid_y = (src_ys[:-1] + src_ys[1:]) / 2.0
+            diag_vals = (x0 / W_out + mid_y / H_out) / 2.0
+            colors = cmap(diag_vals)
+            axes[1, 0].add_collection(
+                LineCollection(segs, colors=colors, linewidths=mpl_lw)
+            )
+    for y0 in y_lines_out:
+        v = int(round(y0))
+        if 0 <= v < H_out:
+            dx = model.map_x[v, :]
+            dy = model.map_y[v, :]
+            src_xs = np.arange(W_out, dtype=np.float64)
+            segs, colors = _diag_colored_segments(dx, dy, W_out, H_out)
+            # Recompute colors from undistorted coordinates
+            mid_x = (src_xs[:-1] + src_xs[1:]) / 2.0
+            diag_vals = (mid_x / W_out + y0 / H_out) / 2.0
+            colors = cmap(diag_vals)
+            axes[1, 0].add_collection(
+                LineCollection(segs, colors=colors, linewidths=mpl_lw)
+            )
+
+    # Row 2 left: corner markers traced through remap tables
+    n_marker_pts = 16
+    for i in range(1, n_rects_out + 1):
+        half_h = i * rect_step
+        half_w = round(half_h * aspect_out / grid_step_px) * grid_step_px
+        x1, y1 = rect_cx_out - half_w, rect_cy_out - half_h
+        x2, y2 = rect_cx_out + half_w, rect_cy_out + half_h
+        for cx, cy, sx, sy in [
+            (x1, y1, 1, 1),
+            (x2, y1, -1, 1),
+            (x1, y2, 1, -1),
+            (x2, y2, -1, -1),
+        ]:
+            # Sample along each arm and trace through remap
+            h_ts = np.linspace(0, 1, n_marker_pts)
+            h_xs = cx + h_ts * sx * corner_len
+            h_ys = np.full_like(h_ts, cy)
+            h_d = np.array([_remap_point(model, px, py) for px, py in zip(h_xs, h_ys)])
+            v_ys = cy + h_ts * sy * corner_len
+            v_xs = np.full_like(h_ts, cx)
+            v_d = np.array([_remap_point(model, px, py) for px, py in zip(v_xs, v_ys)])
+            for color, lw in [("black", marker_lw_border), ("white", marker_lw_inner)]:
+                axes[1, 0].plot(
+                    h_d[:, 0], h_d[:, 1], color=color, linewidth=lw, solid_capstyle="butt"
+                )
+                axes[1, 0].plot(
+                    v_d[:, 0], v_d[:, 1], color=color, linewidth=lw, solid_capstyle="butt"
+                )
+
+    axes[1, 0].set_xlim(0, W_in)
+    axes[1, 0].set_ylim(H_in, 0)
+    axes[1, 0].set_title("Grid in distorted pixel space")
+    axes[1, 0].set_xlabel("u (px)")
+    axes[1, 0].set_ylabel("v (px)")
+    axes[1, 0].set_aspect("equal")
+
+    # Row 3: original and undistorted image
+    if image is not None:
+        img_rgb = cv2.cvtColor(to_color(image), cv2.COLOR_BGR2RGB)
+        undistorted_rgb = cv2.cvtColor(
+            to_color(model.undistort(image, interpolation=cv2.INTER_LANCZOS4)),
+            cv2.COLOR_BGR2RGB,
+        )
+
+        axes[2, 0].imshow(img_rgb)
+        axes[2, 0].set_title("Distorted image")
+        axes[2, 0].set_xlabel("u (px)")
+        axes[2, 0].set_ylabel("v (px)")
+        axes[2, 0].set_aspect("equal")
+
+        axes[2, 1].imshow(undistorted_rgb)
+        axes[2, 1].set_title("Undistorted image")
+        axes[2, 1].set_xlabel("u (px)")
+        axes[2, 1].set_ylabel("v (px)")
+        axes[2, 1].set_aspect("equal")
+
     plt.show()
 
 

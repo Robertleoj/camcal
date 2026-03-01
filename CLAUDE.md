@@ -4,6 +4,7 @@ Reveal your thinking and processing as much as possible!
 Try to avoid thinking deeply unless explicity instructed to do so.
 
 Don't worry about linting errors if `ruff check --fix` and `ruff format` will fix them.
+But do not run any of the linter checks on the terminal yourself, I'll handle that.
 
 # Docstrings
 
