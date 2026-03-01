@@ -69,6 +69,7 @@ dev = [
     "ruff>=0.14.1",
     "scikit-build-core>=0.11.6",
     "slamd>=2.1.12",
+    "pytest>=9.0.2",
 ]
 
 
