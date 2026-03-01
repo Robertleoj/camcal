@@ -37,9 +37,9 @@ Vec3<T> apply_warp_to_target_point(
     const Vec3<double> center = warp.target_from_warp_frame.tail<3>();
 
     const double angle = rv.norm();
-    const Eigen::Matrix3d R = angle < 1e-10
-        ? Eigen::Matrix3d::Identity()
-        : Eigen::AngleAxisd(angle, rv / angle).toRotationMatrix();
+    const Eigen::Matrix3d R =
+        angle < 1e-10 ? Eigen::Matrix3d::Identity()
+                      : Eigen::AngleAxisd(angle, rv / angle).toRotationMatrix();
 
     const Vec3<double> x_hat = R.col(0);
     const Vec3<double> y_hat = R.col(1);

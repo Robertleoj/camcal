@@ -12,4 +12,4 @@ static void require(
         throw std::invalid_argument(msg);
     }
 }
-}
+}  // namespace lensboy

@@ -38,7 +38,11 @@ struct ReprojectionError {
 
         Vec3<T> warped_point;
         if (has_warp) {
-            warped_point = apply_warp_to_target_point(eigen_point_in_target, warp_coords, kxy);
+            warped_point = apply_warp_to_target_point(
+                eigen_point_in_target,
+                warp_coords,
+                kxy
+            );
         } else {
             warped_point = eigen_point_in_target;
         }
@@ -61,9 +65,15 @@ struct ReprojectionError {
         const bool has_warp,
         const WarpCoordinates& warp_coords
     ) {
-        return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 16, 6, 3, 2>(
-            new ReprojectionError(observed_x, observed_y, has_warp, warp_coords)
-        );
+        return new ceres::
+            AutoDiffCostFunction<ReprojectionError, 2, 16, 6, 3, 2>(
+                new ReprojectionError(
+                    observed_x,
+                    observed_y,
+                    has_warp,
+                    warp_coords
+                )
+            );
     }
 
     double observed_x;
@@ -126,7 +136,8 @@ py::dict calibrate_opencv(
     ceres::Problem problem;
 
     const bool has_warp = warp_coordinates.has_value();
-    const WarpCoordinates warp_coords = has_warp ? *warp_coordinates : WarpCoordinates{};
+    const WarpCoordinates warp_coords =
+        has_warp ? *warp_coordinates : WarpCoordinates{};
     double warp_kxy[2] = {warp_kxy_initial[0], warp_kxy_initial[1]};
 
     OptimizationState state = OptimizationState::from_calibrate_camera_input(
@@ -186,7 +197,12 @@ py::dict calibrate_opencv(
                 state.target_points[target_point_indices[observation_idx]];
 
             problem.AddResidualBlock(
-                ReprojectionError::create(observation(0, 0), observation(1, 0), has_warp, warp_coords),
+                ReprojectionError::create(
+                    observation(0, 0),
+                    observation(1, 0),
+                    has_warp,
+                    warp_coords
+                ),
                 nullptr,
                 state.intrinsics.data(),
                 camera_pose.data(),

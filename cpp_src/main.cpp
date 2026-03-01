@@ -126,15 +126,19 @@ PYBIND11_MODULE(
             py::arg("x_scale"),
             py::arg("y_scale")
         )
-        .def_readwrite("target_from_warp_frame", &lensboy::WarpCoordinates::target_from_warp_frame)
+        .def_readwrite(
+            "target_from_warp_frame",
+            &lensboy::WarpCoordinates::target_from_warp_frame
+        )
         .def_readwrite("x_scale", &lensboy::WarpCoordinates::x_scale)
         .def_readwrite("y_scale", &lensboy::WarpCoordinates::y_scale)
         .def("__repr__", [](const lensboy::WarpCoordinates& self) {
             std::ostringstream oss;
             oss << "WarpCoordinates("
-                << "target_from_warp_frame=[" << self.target_from_warp_frame.transpose() << "]"
-                << ", x_scale=" << self.x_scale
-                << ", y_scale=" << self.y_scale << ")";
+                << "target_from_warp_frame=["
+                << self.target_from_warp_frame.transpose() << "]"
+                << ", x_scale=" << self.x_scale << ", y_scale=" << self.y_scale
+                << ")";
             return oss.str();
         });
 

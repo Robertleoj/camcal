@@ -95,13 +95,16 @@ struct SplineMap {
 struct KnotPrior2D {
     double s, x0, y0;
     template <typename T>
-    bool operator()(const T* const dx, const T* const dy, T* residuals) const {
+    bool operator()(
+        const T* const dx,
+        const T* const dy,
+        T* residuals
+    ) const {
         residuals[0] = T(s) * (dx[0] - T(x0));
         residuals[1] = T(s) * (dy[0] - T(y0));
         return true;
     }
 };
-
 
 struct ReprojectionErrorSplined {
     const SplineMap& map;
@@ -112,36 +115,33 @@ struct ReprojectionErrorSplined {
     bool has_warp;
     WarpCoordinates warp_coords;
 
+    // clang-format off
     template <typename T>
     bool operator()(
-        const T* const cam,
-        const T* const kxy,
-        const T* const dx00, const T* const dx01, const T* const dx02,
-        const T* const dx03, const T* const dx04, const T* const dx05,
-        const T* const dx06, const T* const dx07, const T* const dx08,
-        const T* const dx09, const T* const dx10, const T* const dx11,
-        const T* const dx12, const T* const dx13, const T* const dx14,
-        const T* const dx15,
-        const T* const dy00, const T* const dy01, const T* const dy02,
-        const T* const dy03, const T* const dy04, const T* const dy05,
-        const T* const dy06, const T* const dy07, const T* const dy08,
-        const T* const dy09, const T* const dy10, const T* const dy11,
-        const T* const dy12, const T* const dy13, const T* const dy14,
-        const T* const dy15,
+        const T* const cam, const T* const kxy,
+        const T* const dx00, const T* const dx01, const T* const dx02, const T* const dx03,
+        const T* const dx04, const T* const dx05, const T* const dx06, const T* const dx07,
+        const T* const dx08, const T* const dx09, const T* const dx10, const T* const dx11,
+        const T* const dx12, const T* const dx13, const T* const dx14, const T* const dx15,
+        const T* const dy00, const T* const dy01, const T* const dy02, const T* const dy03,
+        const T* const dy04, const T* const dy05, const T* const dy06, const T* const dy07,
+        const T* const dy08, const T* const dy09, const T* const dy10, const T* const dy11,
+        const T* const dy12, const T* const dy13, const T* const dy14, const T* const dy15,
         T* residuals
     ) const {
-        const T* dx[16] = {
-            dx00, dx01, dx02, dx03, dx04, dx05, dx06, dx07,
-            dx08, dx09, dx10, dx11, dx12, dx13, dx14, dx15
-        };
-        const T* dy[16] = {
-            dy00, dy01, dy02, dy03, dy04, dy05, dy06, dy07,
-            dy08, dy09, dy10, dy11, dy12, dy13, dy14, dy15
-        };
+        const T* dx[16] = {dx00, dx01, dx02, dx03, dx04, dx05, dx06, dx07,
+                           dx08, dx09, dx10, dx11, dx12, dx13, dx14, dx15};
+        const T* dy[16] = {dy00, dy01, dy02, dy03, dy04, dy05, dy06, dy07,
+                           dy08, dy09, dy10, dy11, dy12, dy13, dy14, dy15};
+        // clang-format on
 
         Vec3<T> pw_warped;
         if (has_warp) {
-            pw_warped = apply_warp_to_target_point(Vec3<T>(pw.cast<T>()), warp_coords, kxy);
+            pw_warped = apply_warp_to_target_point(
+                Vec3<T>(pw.cast<T>()),
+                warp_coords,
+                kxy
+            );
         } else {
             pw_warped = pw.cast<T>();
         }
@@ -242,8 +242,7 @@ static inline void BuildProblem(
     const std::vector<Vec6<double>>& cameras_from_target,
     const std::vector<Vec3<double>>& target_points,
     const std::vector<
-        std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>&
-        frames,
+        std::tuple<std::vector<int32_t>, std::vector<Vec2<double>>>>& frames,
     std::vector<double*>& dx_blocks,
     std::vector<double*>& dy_blocks,
     std::vector<ObservationRecord>& obs_records,
@@ -342,64 +341,32 @@ static inline void BuildProblem(
 
             // Create cost with fixed cell (ix,iy)
             const bool hw = warp_coordinates.has_value();
-            const WarpCoordinates wc = hw ? *warp_coordinates : WarpCoordinates{};
+            const WarpCoordinates wc =
+                hw ? *warp_coordinates : WarpCoordinates{};
+            // clang-format off
             auto* cost = new ceres::AutoDiffCostFunction<
-                ReprojectionErrorSplined,
-                2, 6, 2,
-                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(
-                new ReprojectionErrorSplined{map, k4p[0], k4p[1], k4p[2], k4p[3], pw, ix, iy, ox, oy, hw, wc}
-            );
+                ReprojectionErrorSplined, 2, 6, 2,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 16 dx knots
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1   // 16 dy knots
+            >(new ReprojectionErrorSplined{
+                map, k4p[0], k4p[1], k4p[2], k4p[3], pw, ix, iy, ox, oy, hw, wc
+            });
 
             // Build parameter list: cam + kxy + 16 dx + 16 dy
             std::array<double*, 34> blocks{};
             blocks[0] = const_cast<double*>(cam6.data());
             blocks[1] = warp_kxy;
-            for (int i = 0; i < 16; i++) {
-                blocks[2 + i] = dx_blocks[flat[i]];
-            }
-            for (int i = 0; i < 16; i++) {
-                blocks[18 + i] = dy_blocks[flat[i]];
-            }
+            for (int i = 0; i < 16; i++) { blocks[2 + i]  = dx_blocks[flat[i]]; }
+            for (int i = 0; i < 16; i++) { blocks[18 + i] = dy_blocks[flat[i]]; }
 
-            problem.AddResidualBlock(
-                cost,
-                nullptr,
-                blocks[0],
-                blocks[1],
-                blocks[2],
-                blocks[3],
-                blocks[4],
-                blocks[5],
-                blocks[6],
-                blocks[7],
-                blocks[8],
-                blocks[9],
-                blocks[10],
-                blocks[11],
-                blocks[12],
-                blocks[13],
-                blocks[14],
-                blocks[15],
-                blocks[16],
-                blocks[17],
-                blocks[18],
-                blocks[19],
-                blocks[20],
-                blocks[21],
-                blocks[22],
-                blocks[23],
-                blocks[24],
-                blocks[25],
-                blocks[26],
-                blocks[27],
-                blocks[28],
-                blocks[29],
-                blocks[30],
-                blocks[31],
-                blocks[32],
-                blocks[33]
+            problem.AddResidualBlock(cost, nullptr,
+                blocks[0],  blocks[1],
+                blocks[2],  blocks[3],  blocks[4],  blocks[5],  blocks[6],  blocks[7],  blocks[8],  blocks[9],
+                blocks[10], blocks[11], blocks[12], blocks[13], blocks[14], blocks[15], blocks[16], blocks[17],
+                blocks[18], blocks[19], blocks[20], blocks[21], blocks[22], blocks[23], blocks[24], blocks[25],
+                blocks[26], blocks[27], blocks[28], blocks[29], blocks[30], blocks[31], blocks[32], blocks[33]
             );
+            // clang-format on
 
             obs_records.push_back(
                 ObservationRecord{cam_idx, pt_idx, ox, oy, ix, iy}
