@@ -35,23 +35,22 @@ def main():
 
     img_height, img_width = imgs[0].shape[:2]
 
-    # Pack frames into arrays for storage
-    all_indices = [f.target_point_indices for f in frames]
-    all_detections = [f.detected_points_in_image for f in frames]
-    frame_lengths = np.array([len(f.target_point_indices) for f in frames])
+    frame_arrays = {}
+    for i, f in enumerate(frames):
+        frame_arrays[f"frame_{i}_indices"] = f.target_point_indices
+        frame_arrays[f"frame_{i}_detections"] = f.detected_points_in_image
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     np.savez(
         OUTPUT_PATH,
         target_points=target_points,
-        frame_indices=np.concatenate(all_indices),
-        frame_detections=np.concatenate(all_detections),
-        frame_lengths=frame_lengths,
+        num_frames=np.array(len(frames)),
         image_height=np.array(img_height),
         image_width=np.array(img_width),
+        **frame_arrays,
     )
     print(f"Saved test dataset to {OUTPUT_PATH}")
-    print(f"  {len(frames)} frames, {sum(frame_lengths)} total detections")
+    print(f"  {len(frames)} frames")
 
 
 if __name__ == "__main__":
