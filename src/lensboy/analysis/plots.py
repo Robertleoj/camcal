@@ -1100,12 +1100,12 @@ def plot_undistortion(
         ys = np.linspace(0, H_out, n_subdivide)
         xs = np.full_like(ys, float(x0))
         segs, colors = _diag_colored_segments(xs, ys, W_out, H_out)
-        axes[1, 1].add_collection(LineCollection(segs, colors=colors, linewidths=mpl_lw))
+        axes[1, 1].add_collection(LineCollection(segs, colors=colors, linewidths=mpl_lw))  # type: ignore[reportArgumentType]
     for y0 in y_lines_out:
         xs = np.linspace(0, W_out, n_subdivide)
         ys = np.full_like(xs, float(y0))
         segs, colors = _diag_colored_segments(xs, ys, W_out, H_out)
-        axes[1, 1].add_collection(LineCollection(segs, colors=colors, linewidths=mpl_lw))
+        axes[1, 1].add_collection(LineCollection(segs, colors=colors, linewidths=mpl_lw))  # type: ignore[reportArgumentType]
 
     # Row 2 right: corner markers in undistorted space
     px_to_pt = panel_w * 72 / W_out
@@ -1164,7 +1164,7 @@ def plot_undistortion(
             diag_vals = (x0 / W_out + mid_y / H_out) / 2.0
             colors = cmap(diag_vals)
             axes[1, 0].add_collection(
-                LineCollection(segs, colors=colors, linewidths=mpl_lw)
+                LineCollection(segs, colors=colors, linewidths=mpl_lw)  # type: ignore[reportArgumentType]
             )
     for y0 in y_lines_out:
         v = int(round(y0))
@@ -1178,7 +1178,7 @@ def plot_undistortion(
             diag_vals = (mid_x / W_out + y0 / H_out) / 2.0
             colors = cmap(diag_vals)
             axes[1, 0].add_collection(
-                LineCollection(segs, colors=colors, linewidths=mpl_lw)
+                LineCollection(segs, colors=colors, linewidths=mpl_lw)  # type: ignore[reportArgumentType]
             )
 
     # Row 2 left: corner markers traced through remap tables
