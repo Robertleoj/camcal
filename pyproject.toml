@@ -5,12 +5,17 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "lensboy"
-version = "1.0.4"
+version = "1.0.5"
 description = "lensboy for camera calibrations"
 authors = [{ name = "Robert Leo", email = "robert.leo.jonsson@gmail.com" }]
 
 readme = "README.md"
 requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
 
 dependencies = ["numpy>=1.26", "opencv-contrib-python>=4.8"]
 

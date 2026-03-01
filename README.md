@@ -2,6 +2,12 @@
   <img src="media/logo.png" alt="lensboy" width="100%">
 </p>
 
+<p align="center">
+  <a href="https://pypi.org/project/lensboy/"><img alt="PyPI" src="https://img.shields.io/pypi/v/lensboy"></a>
+  <a href="https://pypi.org/project/lensboy/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/lensboy"></a>
+  <a href="https://github.com/Robertleoj/camcal/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Robertleoj/camcal"></a>
+</p>
+
 Camera calibration for vision engineers. Maximally powerful, minimally complex.
 
 Supports OpenCV camera models and spline-based distortion models for lenses that OpenCV can't handle.
