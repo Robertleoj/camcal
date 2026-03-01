@@ -225,10 +225,7 @@ class CalibrationResult(Generic[T]):
         Returns:
             Total outlier count.
         """
-        return sum(
-            int(np.count_nonzero(~fi.inlier_mask))
-            for fi in self.frame_infos
-        )
+        return sum(int(np.count_nonzero(~fi.inlier_mask)) for fi in self.frame_infos)
 
     def num_detections(self) -> int:
         """Count the total number of detections across all frames.
