@@ -204,8 +204,6 @@ def plot_distortion_grid(
     y_min, y_max = -y_half, +y_half
 
     cmap = plt.colormaps[cmap_name]
-    norm_x = mcolors.Normalize(vmin=x_min, vmax=x_max)
-    norm_y = mcolors.Normalize(vmin=y_min, vmax=y_max)
 
     def nice_ticks(lo, hi, step):
         start = np.floor(lo / step) * step
@@ -220,31 +218,33 @@ def plot_distortion_grid(
         uv = model.project_points(pts)
         return np.asarray(uv, dtype=float)
 
-    def plot_segments(
-        ax,
-        uv: np.ndarray,
-        *,
-        lw: float = 1.0,
-        color=None,
-    ):
-        u = uv[:, 0]
-        v = uv[:, 1]
+    x_range = x_max - x_min
+    y_range = y_max - y_min
 
-        valid = np.isfinite(u) & np.isfinite(v)
-        valid &= (u >= 0) & (u <= W - 1)
-        valid &= (v >= 0) & (v <= H - 1)
+    def make_segments(
+        xs: np.ndarray,
+        ys: np.ndarray,
+        src_xs: np.ndarray,
+        src_ys: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Build LineCollection segments with diagonal-gradient colors.
 
-        if not np.any(valid):
-            return
+        Args:
+            xs: x coordinates to draw, shape (N,).
+            ys: y coordinates to draw, shape (N,).
+            src_xs: Source normalized x for coloring, shape (N,).
+            src_ys: Source normalized y for coloring, shape (N,).
 
-        idx = np.flatnonzero(valid)
-        splits = np.where(np.diff(idx) > 1)[0] + 1
-        runs = np.split(idx, splits)
-
-        for run in runs:
-            if run.size >= 2:
-                seg = uv[run]
-                ax.plot(seg[:, 0], seg[:, 1], linewidth=lw, color=color)
+        Returns:
+            Segments array of shape (N-1, 2, 2) and colors array of shape (N-1, 4).
+        """
+        pts = np.column_stack([xs, ys])
+        segs = np.stack([pts[:-1], pts[1:]], axis=1)
+        mid_sx = (src_xs[:-1] + src_xs[1:]) / 2.0
+        mid_sy = (src_ys[:-1] + src_ys[1:]) / 2.0
+        diag = ((mid_sx - x_min) / x_range + (mid_sy - y_min) / y_range) / 2.0
+        colors = cmap(diag)
+        return segs, colors
 
     panel_w = 10
     panel_h = panel_w * (H / W)
@@ -263,55 +263,132 @@ def plot_distortion_grid(
         for spine in ax.spines.values():
             spine.set_color("white")
 
-        for x0 in x_lines:
-            c = cmap(norm_x(x0))
-            ax0.plot([x0, x0], [y_min, y_max], linewidth=1, color=c)
-        for y0 in y_lines:
-            c = cmap(norm_y(y0))
-            ax0.plot([x_min, x_max], [y0, y0], linewidth=1, color=c)
-
-        ax0.scatter(
-            0.0,
-            0.0,
-            s=80,
-            color="white",
-            edgecolor="black",
-            linewidth=1.5,
-            zorder=10,
-        )
-        ax0.set_title("Grid in normalized space")
-        ax0.set_xlabel("x_n")
-        ax0.set_ylabel("y_n")
-        ax0.set_aspect("equal")
-        ax0.set_xlim(x_min, x_max)
-        ax0.set_ylim(y_max, y_min)
-
-    yn = np.linspace(y_min, y_max, 1000)
+    # --- Left panel: grid in normalized space ---
+    lw = 1.0
+    n_subdivide = 64
     for x0 in x_lines:
-        xn = np.full_like(yn, x0)
-        uv = project_polyline(xn, yn)
-
-        color = cmap(norm_x(x0))
-        plot_segments(ax1, uv, lw=1.0, color=color)
-
-    xn = np.linspace(x_min, x_max, 1000)
+        ys = np.linspace(y_min, y_max, n_subdivide)
+        xs = np.full_like(ys, x0)
+        segs, colors = make_segments(xs, ys, xs, ys)
+        ax0.add_collection(LineCollection(segs, colors=colors, linewidths=lw))  # type: ignore[reportArgumentType]
     for y0 in y_lines:
-        yn = np.full_like(xn, y0)
-        uv = project_polyline(xn, yn)
+        xs = np.linspace(x_min, x_max, n_subdivide)
+        ys = np.full_like(xs, y0)
+        segs, colors = make_segments(xs, ys, xs, ys)
+        ax0.add_collection(LineCollection(segs, colors=colors, linewidths=lw))  # type: ignore[reportArgumentType]
 
-        color = cmap(norm_y(y0))
-        plot_segments(ax1, uv, lw=1.0, color=color)
+    # Rectangle corner markers in normalized space
+    rect_step = grid_step_norm * 4
+    corner_len = grid_step_norm
+    norm_aspect = x_half / y_half
+    n_rects = max(1, int(min(x_half, y_half) / rect_step))
+    rect_lw = 1.5
+    rect_border_lw = rect_lw * 3
+    for i in range(1, n_rects + 1):
+        rh = i * rect_step
+        rw = round(rh * norm_aspect / grid_step_norm) * grid_step_norm
+        rx1, ry1 = -rw, -rh
+        rx2, ry2 = rw, rh
+        for rcx, rcy, sx, sy in [
+            (rx1, ry1, 1, 1),
+            (rx2, ry1, -1, 1),
+            (rx1, ry2, 1, -1),
+            (rx2, ry2, -1, -1),
+        ]:
+            for color, lw_r in [("black", rect_border_lw), ("white", rect_lw)]:
+                ax0.plot(
+                    [rcx, rcx + sx * corner_len],
+                    [rcy, rcy],
+                    color=color,
+                    linewidth=lw_r,
+                    solid_capstyle="butt",
+                )
+                ax0.plot(
+                    [rcx, rcx],
+                    [rcy, rcy + sy * corner_len],
+                    color=color,
+                    linewidth=lw_r,
+                    solid_capstyle="butt",
+                )
 
-    ax1.scatter(
-        cx,
-        cy,
-        s=80,
-        color="white",
-        edgecolor="black",
-        linewidth=1.5,
-        zorder=10,
+    ax0.scatter(
+        0.0, 0.0, s=80, color="white", edgecolor="black", linewidth=1.5, zorder=10
     )
+    ax0.set_title("Grid in normalized space")
+    ax0.set_xlabel("x_n")
+    ax0.set_ylabel("y_n")
+    ax0.set_aspect("equal")
+    ax0.set_xlim(x_min, x_max)
+    ax0.set_ylim(y_max, y_min)
 
+    # --- Right panel: projected grid in pixel space ---
+    yn_dense = np.linspace(y_min, y_max, 1000)
+    for x0 in x_lines:
+        xn = np.full_like(yn_dense, x0)
+        uv = project_polyline(xn, yn_dense)
+        u, v = uv[:, 0], uv[:, 1]
+        valid = np.isfinite(u) & np.isfinite(v)
+        valid &= (u >= 0) & (u <= W - 1) & (v >= 0) & (v <= H - 1)
+        if not np.any(valid):
+            continue
+        idx = np.flatnonzero(valid)
+        for run in np.split(idx, np.where(np.diff(idx) > 1)[0] + 1):
+            if run.size >= 2:
+                segs, colors = make_segments(u[run], v[run], xn[run], yn_dense[run])
+                ax1.add_collection(LineCollection(segs, colors=colors, linewidths=lw))  # type: ignore[reportArgumentType]
+
+    xn_dense = np.linspace(x_min, x_max, 1000)
+    for y0 in y_lines:
+        yn = np.full_like(xn_dense, y0)
+        uv = project_polyline(xn_dense, yn)
+        u, v = uv[:, 0], uv[:, 1]
+        valid = np.isfinite(u) & np.isfinite(v)
+        valid &= (u >= 0) & (u <= W - 1) & (v >= 0) & (v <= H - 1)
+        if not np.any(valid):
+            continue
+        idx = np.flatnonzero(valid)
+        for run in np.split(idx, np.where(np.diff(idx) > 1)[0] + 1):
+            if run.size >= 2:
+                segs, colors = make_segments(u[run], v[run], xn_dense[run], yn[run])
+                ax1.add_collection(LineCollection(segs, colors=colors, linewidths=lw))  # type: ignore[reportArgumentType]
+
+    # Rectangle corner markers projected to pixel space
+    n_marker_pts = 32
+    for i in range(1, n_rects + 1):
+        rh = i * rect_step
+        rw = round(rh * norm_aspect / grid_step_norm) * grid_step_norm
+        rx1, ry1 = -rw, -rh
+        rx2, ry2 = rw, rh
+        for rcx, rcy, sx, sy in [
+            (rx1, ry1, 1, 1),
+            (rx2, ry1, -1, 1),
+            (rx1, ry2, 1, -1),
+            (rx2, ry2, -1, -1),
+        ]:
+            ts = np.linspace(0, 1, n_marker_pts)
+            h_xn = rcx + ts * sx * corner_len
+            h_yn = np.full_like(ts, rcy)
+            h_uv = project_polyline(h_xn, h_yn)
+            v_yn = rcy + ts * sy * corner_len
+            v_xn = np.full_like(ts, rcx)
+            v_uv = project_polyline(v_xn, v_yn)
+            for color, lw_r in [("black", rect_border_lw), ("white", rect_lw)]:
+                ax1.plot(
+                    h_uv[:, 0],
+                    h_uv[:, 1],
+                    color=color,
+                    linewidth=lw_r,
+                    solid_capstyle="butt",
+                )
+                ax1.plot(
+                    v_uv[:, 0],
+                    v_uv[:, 1],
+                    color=color,
+                    linewidth=lw_r,
+                    solid_capstyle="butt",
+                )
+
+    ax1.scatter(cx, cy, s=80, color="white", edgecolor="black", linewidth=1.5, zorder=10)
     ax1.set_title("Grid in pixel space")
     ax1.set_xlabel("u (px)")
     ax1.set_ylabel("v (px)")

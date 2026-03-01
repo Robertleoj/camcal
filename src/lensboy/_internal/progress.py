@@ -28,7 +28,7 @@ def _fmt_int(n: int) -> str:
 class Progress:
     total: int
     desc: str = "doing thing"
-    file: TextIO = sys.stderr
+    file: TextIO = sys.stdout
 
     # update control
     min_interval_s: float = 0.08  # don't redraw faster than this
