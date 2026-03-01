@@ -446,6 +446,7 @@ def plot_residuals(
     *,
     bins: int = 100,
     n_sigma: float = 6.0,
+    axis_range: float | None = None,
     title: str = "Reprojection residuals",
 ) -> None:
     """Per-component histogram and 2D scatter of reprojection residuals.
@@ -459,6 +460,9 @@ def plot_residuals(
         frame_infos: Per-frame reprojection diagnostics.
         bins: Number of histogram bins.
         n_sigma: Number of fitted-Gaussian standard deviations for axis limits.
+        axis_range: Fixed symmetric axis limit (±value) for the histogram and
+            2D scatter plots. The full-range plot is unaffected. Auto-scaled
+            from n_sigma if None.
         title: Overall figure title.
     """
     inlier_2d: list[np.ndarray] = []
@@ -481,8 +485,9 @@ def plot_residuals(
     mad = float(np.median(np.abs(inlier_vals - mu_1d)))
     sigma_1d = 1.4826 * mad
 
-    lo = mu_1d - n_sigma * sigma_1d
-    hi = mu_1d + n_sigma * sigma_1d
+    half = axis_range if axis_range is not None else n_sigma * sigma_1d
+    lo = mu_1d - half
+    hi = mu_1d + half
     bin_edges = np.linspace(lo, hi, bins + 1)
 
     # --- 2D stats (robust fit on inliers only) ---
@@ -554,8 +559,9 @@ def plot_residuals(
 
     # --- Right: 2D scatter + Gaussian contours ---
     sigma_max = max(sigma_x, sigma_y)
-    gx = np.linspace(mu_2d[0] - n_sigma * sigma_max, mu_2d[0] + n_sigma * sigma_max, 400)
-    gy = np.linspace(mu_2d[1] - n_sigma * sigma_max, mu_2d[1] + n_sigma * sigma_max, 400)
+    grid_half = axis_range if axis_range is not None else n_sigma * sigma_max
+    gx = np.linspace(mu_2d[0] - grid_half, mu_2d[0] + grid_half, 400)
+    gy = np.linspace(mu_2d[1] - grid_half, mu_2d[1] + grid_half, 400)
     GX, GY = np.meshgrid(gx, gy)
     diff = np.stack([GX - mu_2d[0], GY - mu_2d[1]], axis=-1)  # (400, 400, 2)
     maha2 = np.einsum("...i,ij,...j", diff, cov_inv, diff)
@@ -584,7 +590,7 @@ def plot_residuals(
             edgecolors="none",
         )
 
-    lim = n_sigma * sigma_max
+    lim = axis_range if axis_range is not None else n_sigma * sigma_max
     ax_2d.set_xlim(mu_2d[0] - lim, mu_2d[0] + lim)
     ax_2d.set_ylim(mu_2d[1] - lim, mu_2d[1] + lim)
     ax_2d.set_aspect("equal", adjustable="box")
@@ -739,6 +745,7 @@ def plot_residual_grid(
     image_height: int,
     grid_cells: int = 50,
     arrow_scale: float = 100.0,
+    heatmap_max: float | None = None,
     title: str = "Residual grid",
 ) -> None:
     """Binned residual summary showing per-cell magnitude and mean direction.
@@ -754,6 +761,7 @@ def plot_residual_grid(
         image_height: Sensor height in pixels, sets the y-axis limit.
         grid_cells: Number of grid cells along the longer image axis.
         arrow_scale: Multiplier applied to the mean-residual arrows.
+        heatmap_max: Upper limit for the colour scale. Auto-scaled if None.
         title: Plot title.
     """
     positions: list[np.ndarray] = []
@@ -821,6 +829,7 @@ def plot_residual_grid(
         cmap="plasma",
         interpolation="nearest",
         aspect="auto",
+        vmax=heatmap_max,
     )
 
     cbar: Colorbar = fig.colorbar(im, ax=ax, shrink=0.6)
