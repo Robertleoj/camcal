@@ -23,7 +23,7 @@ Supports OpenCV camera models and spline-based distortion models for lenses that
 ```python
 import lensboy as lb
 
-# detect calibration target in images
+# detect calibration target in images (works with any target — charuco is just a built-in utility)
 target_points, frames = lb.extract_frames_from_charuco(board, imgs)
 
 # calibrate
