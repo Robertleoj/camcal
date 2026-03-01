@@ -161,6 +161,7 @@ def plot_distortion_grid(
     ux_max: float | None = None,
     uy_max: float | None = None,
     cmap_name: str = "jet",
+    show_spline_knots: bool = False,
 ) -> None:
     """Project a regular grid through a camera model to visualize distortion.
 
@@ -174,6 +175,8 @@ def plot_distortion_grid(
         ux_max: Upper bound in normalized x, mirrored to negative.
         uy_max: Upper bound in normalized y, mirrored to negative.
         cmap_name: Matplotlib colormap name.
+        show_spline_knots: When True and the model is a PinholeSplined,
+            overlay the spline control points on both panels.
     """
 
     W = int(model.image_width)
@@ -279,10 +282,10 @@ def plot_distortion_grid(
 
     # Rectangle corner markers in normalized space
     rect_step = grid_step_norm * 4
-    corner_len = grid_step_norm
+    corner_len = grid_step_norm * 2
     norm_aspect = x_half / y_half
     n_rects = max(1, int(min(x_half, y_half) / rect_step))
-    rect_lw = 1.5
+    rect_lw = 2.5
     rect_border_lw = rect_lw * 3
     for i in range(1, n_rects + 1):
         rh = i * rect_step
@@ -302,6 +305,7 @@ def plot_distortion_grid(
                     color=color,
                     linewidth=lw_r,
                     solid_capstyle="butt",
+                    zorder=10,
                 )
                 ax0.plot(
                     [rcx, rcx],
@@ -309,10 +313,11 @@ def plot_distortion_grid(
                     color=color,
                     linewidth=lw_r,
                     solid_capstyle="butt",
+                    zorder=10,
                 )
 
     ax0.scatter(
-        0.0, 0.0, s=80, color="white", edgecolor="black", linewidth=1.5, zorder=10
+        0.0, 0.0, s=80, color="white", edgecolor="black", linewidth=1.5, zorder=11
     )
     ax0.set_title("Grid in normalized space")
     ax0.set_xlabel("x_n")
@@ -379,6 +384,7 @@ def plot_distortion_grid(
                     color=color,
                     linewidth=lw_r,
                     solid_capstyle="butt",
+                    zorder=10,
                 )
                 ax1.plot(
                     v_uv[:, 0],
@@ -386,9 +392,45 @@ def plot_distortion_grid(
                     color=color,
                     linewidth=lw_r,
                     solid_capstyle="butt",
+                    zorder=10,
                 )
 
-    ax1.scatter(cx, cy, s=80, color="white", edgecolor="black", linewidth=1.5, zorder=10)
+    if show_spline_knots and isinstance(model, lb.PinholeSplined):
+        Nx = model.num_knots_x
+        Ny = model.num_knots_y
+        kx_indices = np.arange(Nx)
+        ky_indices = np.arange(Ny)
+        knot_xn = -fov_x_half + (kx_indices - 1) * 2 * fov_x_half / (Nx - 3)
+        knot_yn = -fov_y_half + (ky_indices - 1) * 2 * fov_y_half / (Ny - 3)
+        knot_xn_grid, knot_yn_grid = np.meshgrid(knot_xn, knot_yn)
+        knot_xn_flat = knot_xn_grid.ravel()
+        knot_yn_flat = knot_yn_grid.ravel()
+
+        ax0.scatter(
+            knot_xn_flat,
+            knot_yn_flat,
+            s=30,
+            color="deeppink",
+            edgecolor="black",
+            linewidth=0.5,
+            zorder=9,
+        )
+
+        knot_pts_3d = np.stack(
+            [knot_xn_flat, knot_yn_flat, np.ones_like(knot_xn_flat)], axis=1
+        )
+        knot_uv = model.project_points(knot_pts_3d)
+        ax1.scatter(
+            knot_uv[:, 0],
+            knot_uv[:, 1],
+            s=30,
+            color="deeppink",
+            edgecolor="black",
+            linewidth=0.5,
+            zorder=9,
+        )
+
+    ax1.scatter(cx, cy, s=80, color="white", edgecolor="black", linewidth=1.5, zorder=11)
     ax1.set_title("Grid in pixel space")
     ax1.set_xlabel("u (px)")
     ax1.set_ylabel("v (px)")
