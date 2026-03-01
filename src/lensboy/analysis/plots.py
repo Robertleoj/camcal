@@ -441,7 +441,7 @@ def plot_distortion_grid(
     plt.show()
 
 
-def plot_residual_histogram(
+def plot_residuals(
     frame_infos: list[lb.FrameInfo],
     *,
     bins: int = 100,
