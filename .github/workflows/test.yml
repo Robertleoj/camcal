@@ -19,7 +19,7 @@ jobs:
           restore-keys: vcpkg-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install package
-        run: uv sync --no-build-isolation
+        run: uv sync
 
       - name: Run tests
         run: uv run pytest tests/
