@@ -20,7 +20,7 @@ classifiers = [
 dependencies = ["numpy>=1.26", "opencv-contrib-python>=4.8"]
 
 [project.optional-dependencies]
-analysis = ["matplotlib>=3.8"]
+analysis = ["matplotlib>=3.8", "scipy>=1.11"]
 
 [project.scripts]
 
@@ -57,6 +57,8 @@ VCPKG_ROOT = "$HOME/vcpkg"
 
 [dependency-groups]
 dev = [
+    "matplotlib>=3.8",
+    "scipy>=1.11",
     "tqdm>=4.67.1",
     "fire>=0.7.1",
     "imageio>=2.37.2",
