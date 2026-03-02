@@ -1,4 +1,4 @@
-"""Round-trip tests: project then normalize and check we get back the original."""
+"""Round-trip tests: project then normalize, check we recover bearing vectors."""
 
 from pathlib import Path
 

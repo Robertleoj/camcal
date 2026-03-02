@@ -94,7 +94,8 @@ void distort_opencv(
 
 template <typename T>
 void project_opencv(
-    const T* const intrinsics,  // fx, fy, cx, cy, k1..k6, s1..s4
+    const T* const
+        intrinsics,  // fx, fy, cx, cy, k1, k2, p1, p2, k3..k6, s1..s4
     const Vec3<T>& point_in_camera,
     Vec2<T>& result
 ) {
@@ -157,7 +158,7 @@ static inline T clamp_T(
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-// Generic case: T is double
+// Overload for double: returns the value directly
 inline double scalar_value(
     const double& x
 ) {

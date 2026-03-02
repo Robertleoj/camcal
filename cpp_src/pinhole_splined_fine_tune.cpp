@@ -283,10 +283,9 @@ static inline void BuildProblem(
         problem.SetParameterBlockConstant(const_cast<double*>(pt.data()));
     }
 
-    // Determine which knots have an observation in an immediately adjacent cell
-    // (i.e. the observation's cell shares this knot as a corner).
-    // For cell (ix, iy) that means the 2x2 corner knots: (ix,iy), (ix+1,iy),
-    // (ix,iy+1), (ix+1,iy+1).
+    // Determine which knots are at the corners of a cell that contains at
+    // least one observation. For cell (ix, iy) that means the 2x2 corner
+    // knots: (ix, iy), (ix+1, iy), (ix, iy+1), (ix+1, iy+1).
     std::vector<bool> knot_has_obs(n_knots, false);
     for (size_t cam_idx = 0; cam_idx < frames.size(); cam_idx++) {
         auto& ids = std::get<0>(frames[cam_idx]);
@@ -352,7 +351,7 @@ static inline void BuildProblem(
                 map, k4p[0], k4p[1], k4p[2], k4p[3], pw, ix, iy, ox, oy, hw, wc
             });
 
-            // Build parameter list: cam + kxy + 16 dx + 16 dy
+            // Build parameter list: cam + warp_coeffs + 16 dx + 16 dy
             std::array<double*, 34> blocks{};
             blocks[0] = const_cast<double*>(cam6.data());
             blocks[1] = warp_coeffs;

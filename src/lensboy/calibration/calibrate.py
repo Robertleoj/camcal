@@ -808,6 +808,7 @@ def calibrate_camera(
     camera_model_config: PinholeSplinedConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
+    verbose: bool = True,
 ) -> CalibrationResult[PinholeSplined]: ...
 
 
@@ -818,6 +819,7 @@ def calibrate_camera(
     camera_model_config: OpenCVConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
+    verbose: bool = True,
 ) -> CalibrationResult[OpenCV]: ...
 
 
@@ -827,6 +829,7 @@ def calibrate_camera(
     camera_model_config: CameraModelConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
+    verbose: bool = True,
 ) -> CalibrationResult:
     """Calibrate a camera from a set of per-image frames.
 
@@ -837,14 +840,37 @@ def calibrate_camera(
         target_points: 3D target point coordinates, shape (N, 3).
         frames: Per-image frames, one per calibration image.
         camera_model_config: Specifies the camera model to fit.
-        estimate_target_warp: Whether to estimate a quadratic warp of the target
-            to account for slight non-planarity.
+        estimate_target_warp: Whether to estimate a Legendre-polynomial warp
+            of the target to account for slight non-planarity.
         outlier_threshold_stddevs: Sigma threshold for outlier rejection.
             Pass None to disable.
+        verbose: Whether to emit log messages during calibration.
 
     Returns:
         Calibration result containing the optimised model and per-image diagnostics.
     """
+    if not verbose:
+        LOG.disabled = True
+
+    try:
+        return _calibrate_camera_inner(
+            target_points,
+            frames,
+            camera_model_config,
+            estimate_target_warp,
+            outlier_threshold_stddevs,
+        )
+    finally:
+        LOG.disabled = False
+
+
+def _calibrate_camera_inner(
+    target_points: np.ndarray,
+    frames: list[Frame],
+    camera_model_config: CameraModelConfig,
+    estimate_target_warp: bool,
+    outlier_threshold_stddevs: float | None,
+) -> CalibrationResult:
     assert target_points.ndim == 2 and target_points.shape[1] == 3, (
         f"Expected (N, 3) target_points, got {target_points.shape}"
     )
