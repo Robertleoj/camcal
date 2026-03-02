@@ -28,10 +28,8 @@ Lensboy also offers strong **analysis tools** to verify your calibration is actu
 ```python
 import lensboy as lb
 
-# detect calibration target in images (works with any target — charuco is just a built-in utility)
 target_points, frames = lb.extract_frames_from_charuco(board, imgs)
 
-# calibrate
 result = lb.calibrate_camera(
     target_points, frames,
     camera_model_config=lb.OpenCVConfig(
@@ -39,7 +37,6 @@ result = lb.calibrate_camera(
     ),
 )
 
-# save
 result.optimized_camera_model.save("camera.json")
 ```
 
