@@ -1465,3 +1465,341 @@ def plot_worst_residual_frames(
 
     plt.tight_layout()
     plt.show()
+
+
+def _125_levels(vmax: float) -> list[float]:
+    """Generate contour levels following a 1-2-5 sequence up to vmax."""
+    base = [1, 2, 5]
+    levels = []
+    decade = 10 ** np.floor(np.log10(vmax) - 1)
+    while True:
+        for b in base:
+            v = b * decade
+            if v >= vmax:
+                return levels
+            levels.append(v)
+        decade *= 10
+
+
+def plot_projection_diff(
+    model_a: lb.CameraModel,
+    model_b: lb.CameraModel,
+    distance: float | None = None,
+    radius: float | None = None,
+    heatmap_max: float | None = None,
+    diff_scale: float | None = None,
+    grid_lines: int = 60,
+) -> None:
+    """Visualize projection differences between two camera models.
+
+    Finds the implied transformation between the two models, then shows
+    a heatmap of the pixel-space reprojection difference magnitude (left)
+    and an exaggerated deformation grid (right).
+
+    Args:
+        model_a: First camera model (A).
+        model_b: Second camera model (B). Must have the same image dimensions.
+        distance: Distance for unprojection passed to
+            ``compute_projection_diff``. If None, uses rotation-only alignment.
+        radius: Pixel radius for the transformation fit, passed to
+            ``compute_projection_diff``.
+        heatmap_max: Upper bound for the color scale in pixels.
+            If None, defaults to 4x the median difference.
+        diff_scale: Exaggeration factor for the deformation grid.
+            If None, computed so the max visible displacement is 1/25 of
+            image width, rounded to 1-2 significant digits.
+        grid_lines: Number of grid lines along the longer image axis
+            for the deformation grid.
+    """
+    from scipy.interpolate import griddata
+
+    from lensboy.analysis.differencing import compute_projection_diff
+
+    w = model_a.image_width
+    h = model_a.image_height
+
+    fit_radius: float = radius if radius is not None else min(w, h) * 0.6
+
+    pixels_a, _, diff, (ny_dense, nx_dense) = compute_projection_diff(
+        model_a, model_b, radius=fit_radius, distance=distance
+    )
+    diff_norm = np.linalg.norm(diff, axis=1)
+
+    if heatmap_max is None:
+        heatmap_max = float(4 * np.median(diff_norm))
+
+    # Interpolate onto a regular pixel grid for a smooth heatmap
+    grid_x, grid_y = np.meshgrid(np.arange(w, dtype=float), np.arange(h, dtype=float))
+    heatmap = griddata(pixels_a, diff_norm, (grid_x, grid_y), method="cubic")
+
+    bg = "#111111"
+    fg = "white"
+
+    panel_w = 10
+    aspect = h / w
+    fig = plt.figure(
+        figsize=(2 * panel_w, 2 * panel_w * aspect), constrained_layout=True
+    )
+    fig.patch.set_facecolor(bg)
+    subfigs = fig.subfigures(2, 1, hspace=0.04)
+    for sf in subfigs:
+        sf.patch.set_facecolor(bg)
+    ax_grid, ax_vec = subfigs[0].subplots(1, 2)
+    gs_bottom = subfigs[1].add_gridspec(1, 4)
+    ax_heat = subfigs[1].add_subplot(gs_bottom[0, 1:3])
+
+    for ax in [ax_heat, ax_grid, ax_vec]:
+        ax.set_facecolor(bg)
+        ax.tick_params(colors=fg)
+        ax.xaxis.label.set_color(fg)
+        ax.yaxis.label.set_color(fg)
+        ax.title.set_color(fg)
+        for spine in ax.spines.values():
+            spine.set_color(fg)
+
+    # --- Left panel: difference heatmap ---
+    im = ax_heat.imshow(
+        heatmap,
+        cmap="inferno",
+        vmin=0,
+        vmax=heatmap_max,
+        extent=[0, w, h, 0],  # type: ignore
+        aspect="auto",
+    )
+
+    contour_levels = _125_levels(heatmap_max)
+    if len(contour_levels) > 0:
+        cs = ax_heat.contour(
+            grid_x,
+            grid_y,
+            heatmap,
+            levels=contour_levels,
+            colors="white",
+            linewidths=0.6,
+            alpha=0.7,
+        )
+        ax_heat.clabel(cs, inline=True, fontsize=8, fmt="%g")  # type: ignore
+
+    circle = plt.Circle(
+        ((w - 1) / 2, (h - 1) / 2),
+        fit_radius,
+        edgecolor="lime",
+        facecolor="none",
+        linestyle="-",
+        linewidth=1.5,
+        label="fit circle",
+    )
+    ax_heat.add_patch(circle)
+    ax_heat.legend(loc="upper right", facecolor=bg, edgecolor=fg, labelcolor=fg)
+
+    cbar: Colorbar = fig.colorbar(im, ax=ax_heat, shrink=0.8, fraction=0.03, pad=0.01)
+    cbar.set_label("difference [px]", color=fg)
+    cbar.ax.tick_params(colors=fg)
+
+    ax_heat.set_xlim(0, w)
+    ax_heat.set_ylim(h, 0)
+    ax_heat.set_aspect("equal", adjustable="box")
+    ax_heat.set_xlabel("x [px]")
+    ax_heat.set_ylabel("y [px]")
+    ax_heat.set_title(
+        f"Projection difference  "
+        f"(mean={diff_norm.mean():.2f} px, max={diff_norm.max():.2f} px)"
+    )
+
+    # --- Right panel: exaggerated deformation grid ---
+    # Subsample the dense grid for the deformation visual
+    pixels_a_2d = pixels_a.reshape(ny_dense, nx_dense, 2)
+    diff_2d = diff.reshape(ny_dense, nx_dense, 2)
+    diff_norm_2d = diff_norm.reshape(ny_dense, nx_dense)
+
+    row_stride = max(1, ny_dense // grid_lines)
+    col_stride = max(1, nx_dense // grid_lines)
+    pixels_a_sub = pixels_a_2d[::row_stride, ::col_stride]
+    diff_sub = diff_2d[::row_stride, ::col_stride]
+    diff_norm_sub = diff_norm_2d[::row_stride, ::col_stride]
+    gny, gnx = pixels_a_sub.shape[:2]
+    pixels_a_grid = pixels_a_sub.reshape(-1, 2)
+    diff_grid = diff_sub.reshape(-1, 2)
+
+    # Compute exaggeration factor if not given
+    grid_diff_norms = diff_norm_sub.ravel()
+    if diff_scale is None:
+        # Use only points within heatmap_max
+        visible = grid_diff_norms[grid_diff_norms <= heatmap_max]
+        median_visible = float(np.median(visible)) if len(visible) > 0 else 1.0
+        target_displacement = min(w, h) / 40
+        raw_scale = target_displacement / median_visible
+        # Round to 1-2 significant digits
+        magnitude = 10 ** np.floor(np.log10(raw_scale))
+        diff_scale = float(round(raw_scale / magnitude) * magnitude)
+
+    # Exaggerate: start from A grid, add scaled diff
+    exaggerated = pixels_a_grid + diff_grid * diff_scale
+
+    # Reshape to (gny, gnx)
+    gx = exaggerated[:, 0].reshape(gny, gnx)
+    gy = exaggerated[:, 1].reshape(gny, gnx)
+
+    grid_diff_norm = diff_norm_sub
+
+    # Source positions for diagonal-gradient coloring
+    src_ax = pixels_a_grid[:, 0].reshape(gny, gnx)
+    src_ay = pixels_a_grid[:, 1].reshape(gny, gnx)
+
+    cmap = plt.colormaps["jet"]
+    lw = 1.0
+
+    def _add_masked_line(
+        xs: np.ndarray,
+        ys: np.ndarray,
+        sx: np.ndarray,
+        sy: np.ndarray,
+        norms: np.ndarray,
+    ) -> None:
+        pts = np.column_stack([xs, ys])
+        segs = np.stack([pts[:-1], pts[1:]], axis=1)
+        # Color by diagonal gradient
+        t = ((sx / max(w - 1, 1)) + (sy / max(h - 1, 1))) / 2.0
+        mid_t = (t[:-1] + t[1:]) / 2.0
+        colors = cmap(mid_t)
+        # Hide segments conservatively — cubic heatmap interpolation can
+        # overshoot ~30% above the raw sample values.
+        seg_norm = np.maximum(norms[:-1], norms[1:])
+        colors[seg_norm > heatmap_max * 0.7, 3] = 0.0
+        ax_grid.add_collection(LineCollection(segs, colors=colors, linewidths=lw))  # type: ignore
+
+    # Horizontal grid lines (rows)
+    for row in range(gny):
+        _add_masked_line(gx[row], gy[row], src_ax[row], src_ay[row], grid_diff_norm[row])
+
+    # Vertical grid lines (columns)
+    for col in range(gnx):
+        _add_masked_line(
+            gx[:, col],
+            gy[:, col],
+            src_ax[:, col],
+            src_ay[:, col],
+            grid_diff_norm[:, col],
+        )
+
+    # Rectangle corner markers (indexed into the deformed grid)
+    mask_threshold = heatmap_max * 0.7
+    rect_step_idx = 4
+    corner_len_idx = 2
+    mid_row, mid_col = gny // 2, gnx // 2
+    n_rects = max(1, min(mid_row, mid_col) // rect_step_idx)
+    rect_lw = 2.5
+    rect_border_lw = rect_lw * 3
+    for i in range(1, n_rects + 1):
+        dr = i * rect_step_idx
+        dc = min(round(dr * (gnx / gny)), mid_col)
+        for row_idx, col_idx, sr, sc in [
+            (mid_row - dr, mid_col - dc, 1, 1),
+            (mid_row - dr, mid_col + dc, 1, -1),
+            (mid_row + dr, mid_col - dc, -1, 1),
+            (mid_row + dr, mid_col + dc, -1, -1),
+        ]:
+            if not (0 <= row_idx < gny and 0 <= col_idx < gnx):
+                continue
+            # Skip corners in masked regions
+            if grid_diff_norm[row_idx, col_idx] > mask_threshold:
+                continue
+            # Horizontal arm
+            end_col = col_idx + sc * corner_len_idx
+            end_col = max(0, min(end_col, gnx - 1))
+            h_cols = list(range(col_idx, end_col + sc, sc))
+            # Trim arm at masked points
+            h_cols = [c for c in h_cols if grid_diff_norm[row_idx, c] <= mask_threshold]
+            hx = [float(gx[row_idx, c]) for c in h_cols]
+            hy = [float(gy[row_idx, c]) for c in h_cols]
+            # Vertical arm
+            end_row = row_idx + sr * corner_len_idx
+            end_row = max(0, min(end_row, gny - 1))
+            v_rows = list(range(row_idx, end_row + sr, sr))
+            v_rows = [r for r in v_rows if grid_diff_norm[r, col_idx] <= mask_threshold]
+            vx = [float(gx[r, col_idx]) for r in v_rows]
+            vy = [float(gy[r, col_idx]) for r in v_rows]
+            for color, lw_r in [
+                ("black", rect_border_lw),
+                ("white", rect_lw),
+            ]:
+                if len(hx) >= 2:
+                    ax_grid.plot(
+                        hx,
+                        hy,
+                        color=color,
+                        linewidth=lw_r,
+                        solid_capstyle="butt",
+                        zorder=10,
+                    )
+                if len(vx) >= 2:
+                    ax_grid.plot(
+                        vx,
+                        vy,
+                        color=color,
+                        linewidth=lw_r,
+                        solid_capstyle="butt",
+                        zorder=10,
+                    )
+
+    ax_grid.set_xlim(0, w)
+    ax_grid.set_ylim(h, 0)
+    ax_grid.set_aspect("equal", adjustable="box")
+    ax_grid.set_xlabel("x [px]")
+    ax_grid.set_ylabel("y [px]")
+    ax_grid.set_title(f"Deformation grid ({diff_scale:.0f}x exaggerated)")
+
+    # --- Third panel: vector field ---
+    vec_stride = max(1, min(ny_dense, nx_dense) // 25)
+    vec_pos = pixels_a.reshape(ny_dense, nx_dense, 2)[
+        ::vec_stride, ::vec_stride
+    ]
+    vec_diff = diff.reshape(ny_dense, nx_dense, 2)[
+        ::vec_stride, ::vec_stride
+    ]
+    vec_norms = diff_norm.reshape(ny_dense, nx_dense)[
+        ::vec_stride, ::vec_stride
+    ]
+    vx_pos = vec_pos[:, :, 0].ravel()
+    vy_pos = vec_pos[:, :, 1].ravel()
+    vdx = vec_diff[:, :, 0].ravel()
+    vdy = vec_diff[:, :, 1].ravel()
+    vnorms = vec_norms.ravel()
+
+    # Color by angle for a pleasing cyclic look
+    angles = np.arctan2(vdy, vdx)
+    angle_norm = mcolors.Normalize(vmin=-np.pi, vmax=np.pi)
+    angle_cmap = plt.colormaps["hsv"]
+
+    # Uniform arrow length, direction only — scaled for visibility
+    arrow_len = min(w, h) / 30
+    safe_norms = np.where(vnorms > 0, vnorms, 1.0)
+    udx = vdx / safe_norms * arrow_len
+    udy = vdy / safe_norms * arrow_len
+
+    # Fade out arrows in masked regions
+    arrow_colors = angle_cmap(angle_norm(angles))
+    arrow_colors[vnorms > heatmap_max * 0.7, 3] = 0.0
+    # Also fade tiny arrows near the center where direction is noise
+    arrow_colors[vnorms < np.median(vnorms) * 0.1, 3] = 0.15
+
+    ax_vec.quiver(
+        vx_pos, vy_pos, udx, udy,
+        color=arrow_colors,
+        angles="xy",
+        scale_units="xy",
+        scale=1.0,
+        width=0.002,
+        headwidth=3,
+        headlength=3,
+        headaxislength=2.5,
+    )
+
+    ax_vec.set_xlim(0, w)
+    ax_vec.set_ylim(h, 0)
+    ax_vec.set_aspect("equal", adjustable="box")
+    ax_vec.set_xlabel("x [px]")
+    ax_vec.set_ylabel("y [px]")
+    ax_vec.set_title("Difference direction")
+
+    plt.show()

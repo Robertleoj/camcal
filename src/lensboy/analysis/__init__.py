@@ -9,6 +9,7 @@ try:
         plot_target_and_poses,
         plot_target_warp,
         plot_undistortion,
+        plot_projection_diff,
         plot_worst_residual_frames,
     )
 except ImportError as e:
@@ -23,6 +24,7 @@ __all__ = [
     "plot_distortion_grid",
     "plot_residual_grid",
     "plot_residuals",
+    "plot_projection_diff",
     "plot_residual_vectors",
     "plot_target_and_poses",
     "plot_target_warp",
