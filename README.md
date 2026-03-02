@@ -10,13 +10,18 @@
 
 Camera calibration for vision engineers. Maximally powerful, minimally complex.
 
-Supports OpenCV camera models and spline-based distortion models for lenses that OpenCV can't handle.
+One job: fit camera models and verify the results. OpenCV models when they work, spline-based distortion when they don't.
 
-<p align="center">
-  <img src="media/showcase_3.png" width="700"><br>
-  <img src="media/showcase_4.png" width="345"> <img src="media/showcase_1.png" width="345"><br>
-  <img src="media/showcase_2.png" width="345"> <img src="media/showcase_5.png" width="345">
-</p>
+## Why lensboy
+
+Even for standard OpenCV models, lensboy gives you better calibrations than raw `cv2.calibrateCamera` (see [model comparison notebook](examples/model_comparison.ipynb)). This is achieved mainly by two means:
+
+- **Automatic outlier filtering** removes bad detections
+- **Target warp estimation** compensates for non-flat calibration boards
+
+For cheap or wide-angle lenses where OpenCV's polynomial distortion model isn't enough, lensboy offers spline-based distortion models that can capture arbitrary distortion patterns.
+
+Lensboy also offers strong **analysis tools** to verify your calibration is actually good.
 
 ## Quick example
 
@@ -49,16 +54,15 @@ result = lb.calibrate_camera(
 )
 ```
 
-## Why lensboy
+## Analysis tools
 
-Even for standard OpenCV models, lensboy gives you better calibrations than raw `cv2.calibrateCamera`, as clearly demonstrated in the [model comparison notebook](examples/model_comparison.ipynb). This is achieved mainly by two means:
+Plots for residuals, distortion, detection coverage, and more. See the [example notebooks](examples/).
 
-- **Automatic outlier filtering** removes bad detections
-- **Target warp estimation** compensates for non-flat calibration boards
-
-For cheap or wide-angle lenses where OpenCV's polynomial distortion model isn't enough, lensboy offers spline-based distortion models that can capture arbitrary distortion patterns. This approach is inspired by [mrcal](https://mrcal.secretsauce.net/), but lensboy is designed to be easier to use and trivial to install.
-
-Lensboy also offers strong **analysis tools** to verify your calibration is actually good. These are demonstrated in the example notebooks.
+<p align="center">
+  <img src="media/showcase_3.png" width="700"><br>
+  <img src="media/showcase_4.png" width="345"> <img src="media/showcase_1.png" width="345"><br>
+  <img src="media/showcase_2.png" width="345"> <img src="media/showcase_5.png" width="345">
+</p>
 
 ## Install
 
@@ -80,9 +84,9 @@ See the [quickstart notebook](examples/quickstart.ipynb) for a full walkthrough 
 
 ## Spline models
 
-When OpenCV's polynomial distortion model can't fully capture your lens, switch to a spline model. These use B-spline grids instead of polynomial coefficients, and can capture arbitrary distortion patterns.
+Spline models use B-spline grids instead of polynomial coefficients, so they can capture arbitrary distortion patterns. This approach is inspired by [mrcal](https://mrcal.secretsauce.net/), but lensboy is designed to be easier to use and trivial to install.
 
-The calibrated spline model can be converted to a pinhole model with undistortion maps, so you can use it anywhere:
+The calibrated model converts to a pinhole model with undistortion maps, so you can use it anywhere:
 
 ```python
 pinhole = spline_model.get_pinhole_model()
