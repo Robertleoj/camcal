@@ -81,7 +81,7 @@ See the [quickstart notebook](examples/quickstart.ipynb) for a full walkthrough 
 
 ## Spline models
 
-Spline models use B-spline grids instead of polynomial coefficients, so they can capture arbitrary distortion patterns. This approach is inspired by [mrcal](https://mrcal.secretsauce.net/), but lensboy is designed to be easier to use and trivial to install.
+Spline models use B-spline grids instead of polynomial coefficients, so they can capture arbitrary distortion patterns. This approach is inspired by [mrcal](https://mrcal.secretsauce.net/).
 
 The calibrated model converts to a pinhole model with undistortion maps, so you can use it anywhere:
 
