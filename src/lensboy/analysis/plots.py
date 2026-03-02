@@ -1537,18 +1537,12 @@ def plot_projection_diff(
 
     panel_w = 10
     aspect = h / w
-    fig = plt.figure(
-        figsize=(2 * panel_w, 2 * panel_w * aspect), constrained_layout=True
+    fig, (ax_heat, ax_grid) = plt.subplots(
+        1, 2, figsize=(2 * panel_w, panel_w * aspect), constrained_layout=True
     )
-    fig.patch.set_facecolor(bg)
-    subfigs = fig.subfigures(2, 1, hspace=0.04)
-    for sf in subfigs:
-        sf.patch.set_facecolor(bg)
-    ax_grid, ax_vec = subfigs[0].subplots(1, 2)
-    gs_bottom = subfigs[1].add_gridspec(1, 4)
-    ax_heat = subfigs[1].add_subplot(gs_bottom[0, 1:3])
 
-    for ax in [ax_heat, ax_grid, ax_vec]:
+    fig.patch.set_facecolor(bg)
+    for ax in [ax_heat, ax_grid]:
         ax.set_facecolor(bg)
         ax.tick_params(colors=fg)
         ax.xaxis.label.set_color(fg)
@@ -1583,7 +1577,7 @@ def plot_projection_diff(
     circle = plt.Circle(
         ((w - 1) / 2, (h - 1) / 2),
         fit_radius,
-        edgecolor="lime",
+        edgecolor="cyan",
         facecolor="none",
         linestyle="-",
         linewidth=1.5,
@@ -1748,58 +1742,5 @@ def plot_projection_diff(
     ax_grid.set_xlabel("x [px]")
     ax_grid.set_ylabel("y [px]")
     ax_grid.set_title(f"Deformation grid ({diff_scale:.0f}x exaggerated)")
-
-    # --- Third panel: vector field ---
-    vec_stride = max(1, min(ny_dense, nx_dense) // 25)
-    vec_pos = pixels_a.reshape(ny_dense, nx_dense, 2)[
-        ::vec_stride, ::vec_stride
-    ]
-    vec_diff = diff.reshape(ny_dense, nx_dense, 2)[
-        ::vec_stride, ::vec_stride
-    ]
-    vec_norms = diff_norm.reshape(ny_dense, nx_dense)[
-        ::vec_stride, ::vec_stride
-    ]
-    vx_pos = vec_pos[:, :, 0].ravel()
-    vy_pos = vec_pos[:, :, 1].ravel()
-    vdx = vec_diff[:, :, 0].ravel()
-    vdy = vec_diff[:, :, 1].ravel()
-    vnorms = vec_norms.ravel()
-
-    # Color by angle for a pleasing cyclic look
-    angles = np.arctan2(vdy, vdx)
-    angle_norm = mcolors.Normalize(vmin=-np.pi, vmax=np.pi)
-    angle_cmap = plt.colormaps["hsv"]
-
-    # Uniform arrow length, direction only — scaled for visibility
-    arrow_len = min(w, h) / 30
-    safe_norms = np.where(vnorms > 0, vnorms, 1.0)
-    udx = vdx / safe_norms * arrow_len
-    udy = vdy / safe_norms * arrow_len
-
-    # Fade out arrows in masked regions
-    arrow_colors = angle_cmap(angle_norm(angles))
-    arrow_colors[vnorms > heatmap_max * 0.7, 3] = 0.0
-    # Also fade tiny arrows near the center where direction is noise
-    arrow_colors[vnorms < np.median(vnorms) * 0.1, 3] = 0.15
-
-    ax_vec.quiver(
-        vx_pos, vy_pos, udx, udy,
-        color=arrow_colors,
-        angles="xy",
-        scale_units="xy",
-        scale=1.0,
-        width=0.002,
-        headwidth=3,
-        headlength=3,
-        headaxislength=2.5,
-    )
-
-    ax_vec.set_xlim(0, w)
-    ax_vec.set_ylim(h, 0)
-    ax_vec.set_aspect("equal", adjustable="box")
-    ax_vec.set_xlabel("x [px]")
-    ax_vec.set_ylabel("y [px]")
-    ax_vec.set_title("Difference direction")
 
     plt.show()
