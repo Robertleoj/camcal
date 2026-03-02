@@ -5,6 +5,7 @@ from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation
 
 from lensboy.camera_models.base_model import CameraModel
+from lensboy.geometry.pose import Pose
 
 
 def _sample_disk(center: np.ndarray, radius: float, num_rings: int = 20) -> np.ndarray:
@@ -63,10 +64,10 @@ def find_matching_implied_transformation(
     model_b: CameraModel,
     radius: float,
     distance: float | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> Pose:
     """Find the implied coordinate-frame transformation between two camera models.
 
-    Finds the pose R, t that best aligns the viewing directions of model_a
+    Finds the pose that best aligns the viewing directions of model_a
     with those of model_b by maximizing::
 
         sum_i  v_i^T  normalized(R @ p_i + t)
@@ -76,7 +77,7 @@ def find_matching_implied_transformation(
 
     When distance is None, translation is not optimized (equivalent to
     points at infinity where translation has no effect), and the returned
-    translation is zero.
+    pose has zero translation.
 
     Args:
         model_a: First camera model.
@@ -86,7 +87,7 @@ def find_matching_implied_transformation(
         radius: Pixel radius from image center within which to sample.
 
     Returns:
-        Rotation matrix (3, 3) and translation vector (3,).
+        The implied B_T_A pose.
     """
     assert (
         model_a.image_width == model_b.image_width
@@ -124,7 +125,7 @@ def find_matching_implied_transformation(
 
     R = Rotation.from_rotvec(result.x[:3]).as_matrix()
     t = result.x[3:6] if optimize_translation else np.zeros(3)
-    return R, t
+    return Pose.from_rotmat_trans(rotmat=R, trans=t)
 
 
 def compute_projection_diff(
@@ -133,7 +134,7 @@ def compute_projection_diff(
     radius: float,
     distance: float | None = None,
     grid_density: int = 200,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, tuple[int, int]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, tuple[int, int], Pose]:
     """Compute per-pixel projection differences between two camera models.
 
     Finds the implied transformation B_T_A, then for a dense grid over
@@ -153,8 +154,9 @@ def compute_projection_diff(
         pixels_b: Corresponding projected coordinates in image B, shape (N, 2).
         diff: Pixel differences (pixels_b - pixels_a), shape (N, 2).
         grid_shape: (ny, nx) shape of the sampling grid.
+        pose: The fitted B_T_A pose.
     """
-    R, t = find_matching_implied_transformation(
+    pose = find_matching_implied_transformation(
         model_a, model_b, distance=distance, radius=radius
     )
 
@@ -180,8 +182,8 @@ def compute_projection_diff(
     points_a = rays_a * (d / norms_a)
 
     # Transform to B frame and project
-    points_b = points_a @ R.T + t
+    points_b = pose.apply(points_a)
     pixels_b = model_b.project_points(points_b)
 
     diff = pixels_b - pixels_a
-    return pixels_a, pixels_b, diff, (ny, nx)
+    return pixels_a, pixels_b, diff, (ny, nx), pose

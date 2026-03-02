@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import logging
+
 import cv2
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colorbar import Colorbar
-
 import lensboy as lb
 from lensboy.analysis.image import to_color
+
+logger = logging.getLogger(__name__)
 
 
 class Color:
@@ -1490,47 +1493,49 @@ def plot_projection_diff(
     diff_scale: float | None = None,
     grid_lines: int = 60,
 ) -> None:
-    """Visualize projection differences between two camera models.
+    """Compare two camera models by aligning them and plotting the residual.
 
-    Finds the implied transformation between the two models, then shows
-    a heatmap of the pixel-space reprojection difference magnitude (left)
-    and an exaggerated deformation grid (right).
+    The two models are aligned by finding the rotation (and optionally
+    translation) that best matches their viewing directions. The plot
+    shows a per-pixel difference heatmap and an exaggerated deformation
+    grid side by side.
 
     Args:
-        model_a: First camera model (A).
-        model_b: Second camera model (B). Must have the same image dimensions.
-        distance: Distance for unprojection passed to
-            ``compute_projection_diff``. If None, uses rotation-only alignment.
-        radius: Pixel radius for the transformation fit, passed to
-            ``compute_projection_diff``.
-        heatmap_max: Upper bound for the color scale in pixels.
-            If None, defaults to 4x the median difference.
+        model_a: First camera model.
+        model_b: Second camera model. Must have the same image dimensions.
+        distance: Depth at which to compare. If None, compares viewing
+            directions only (rotation-only alignment, as if at infinity).
+        radius: Pixel radius from image center within which to fit the
+            alignment. If None, covers 60% of the shorter image side.
+        heatmap_max: Color scale ceiling in pixels. If None, set to
+            4x the median difference.
         diff_scale: Exaggeration factor for the deformation grid.
-            If None, computed so the max visible displacement is 1/25 of
-            image width, rounded to 1-2 significant digits.
-        grid_lines: Number of grid lines along the longer image axis
-            for the deformation grid.
+            If None, chosen automatically.
+        grid_lines: Approximate number of grid lines along the longer
+            image axis.
     """
-    from scipy.interpolate import griddata
-
     from lensboy.analysis.differencing import compute_projection_diff
 
     w = model_a.image_width
     h = model_a.image_height
 
-    fit_radius: float = radius if radius is not None else min(w, h) * 0.6
+    fit_radius: float = radius if radius is not None else min(w, h) * 0.4
 
-    pixels_a, _, diff, (ny_dense, nx_dense) = compute_projection_diff(
+    pixels_a, _, diff, (ny_dense, nx_dense), pose = compute_projection_diff(
         model_a, model_b, radius=fit_radius, distance=distance
     )
+
+    euler = pose.rot_euler()
+    logger.info(
+        f"Implied rotation: x={euler[0]:.4f} y={euler[1]:.4f} z={euler[2]:.4f} deg"
+    )
+    logger.info(f"Implied translation: {pose.translation}")
     diff_norm = np.linalg.norm(diff, axis=1)
 
     if heatmap_max is None:
-        heatmap_max = float(4 * np.median(diff_norm))
+        heatmap_max = float(3 * np.median(diff_norm))
 
-    # Interpolate onto a regular pixel grid for a smooth heatmap
-    grid_x, grid_y = np.meshgrid(np.arange(w, dtype=float), np.arange(h, dtype=float))
-    heatmap = griddata(pixels_a, diff_norm, (grid_x, grid_y), method="cubic")
+    heatmap = diff_norm.reshape(ny_dense, nx_dense)
 
     bg = "#111111"
     fg = "white"
@@ -1563,9 +1568,11 @@ def plot_projection_diff(
 
     contour_levels = _125_levels(heatmap_max)
     if len(contour_levels) > 0:
+        contour_x = np.linspace(0, w, nx_dense)
+        contour_y = np.linspace(0, h, ny_dense)
         cs = ax_heat.contour(
-            grid_x,
-            grid_y,
+            contour_x,
+            contour_y,
             heatmap,
             levels=contour_levels,
             colors="white",
@@ -1579,8 +1586,9 @@ def plot_projection_diff(
         fit_radius,
         edgecolor="cyan",
         facecolor="none",
-        linestyle="-",
-        linewidth=1.5,
+        linestyle="--",
+        linewidth=0.8,
+        alpha=0.5,
         label="fit circle",
     )
     ax_heat.add_patch(circle)
@@ -1595,10 +1603,8 @@ def plot_projection_diff(
     ax_heat.set_aspect("equal", adjustable="box")
     ax_heat.set_xlabel("x [px]")
     ax_heat.set_ylabel("y [px]")
-    ax_heat.set_title(
-        f"Projection difference  "
-        f"(mean={diff_norm.mean():.2f} px, max={diff_norm.max():.2f} px)"
-    )
+    dist_str = "at infinity" if distance is None else f"at distance {distance}"
+    ax_heat.set_title(f"Projection difference {dist_str}")
 
     # --- Right panel: exaggerated deformation grid ---
     # Subsample the dense grid for the deformation visual
