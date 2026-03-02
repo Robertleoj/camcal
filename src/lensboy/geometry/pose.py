@@ -122,20 +122,6 @@ class Pose:
         rvec, J = cv2.Rodrigues(self.rotmat)
         return rvec.squeeze()
 
-    def rot_euler(self, seq: str = "xyz", degrees: bool = True) -> np.ndarray:
-        """Euler angle decomposition of the rotation.
-
-        Args:
-            seq: Axis sequence, e.g. ``"xyz"``, ``"zyx"``.
-            degrees: If True, return angles in degrees.
-
-        Returns:
-            Euler angles, shape (3,).
-        """
-        from scipy.spatial.transform import Rotation
-
-        return Rotation.from_matrix(self.rotmat).as_euler(seq, degrees=degrees)
-
     @property
     def rotmat(self) -> np.ndarray:
         """Rotation matrix, shape (3, 3)."""

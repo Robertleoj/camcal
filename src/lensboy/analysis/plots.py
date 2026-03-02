@@ -8,8 +8,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colorbar import Colorbar
+from matplotlib.patches import Circle
+
 import lensboy as lb
 from lensboy.analysis.image import to_color
+from lensboy.analysis.utils import rot_euler
 
 logger = logging.getLogger(__name__)
 
@@ -1525,7 +1528,7 @@ def plot_projection_diff(
         model_a, model_b, radius=fit_radius, distance=distance
     )
 
-    euler = pose.rot_euler()
+    euler = rot_euler(pose)
     logger.info(
         f"Implied rotation: x={euler[0]:.4f} y={euler[1]:.4f} z={euler[2]:.4f} deg"
     )
@@ -1581,7 +1584,7 @@ def plot_projection_diff(
         )
         ax_heat.clabel(cs, inline=True, fontsize=8, fmt="%g")  # type: ignore
 
-    circle = plt.Circle(
+    circle = Circle(
         ((w - 1) / 2, (h - 1) / 2),
         fit_radius,
         edgecolor="cyan",
