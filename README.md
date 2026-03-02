@@ -53,7 +53,7 @@ result = lb.calibrate_camera(
 
 ## Analysis tools
 
-Plots for residuals, distortion, detection coverage, and more. See the [example notebooks](examples/).
+Plots for residuals, distortion, detection coverage, and [model differencing](examples/model_differencing.ipynb). See the [example notebooks](examples/).
 
 <p align="center">
   <img src="media/showcase_3.png" width="700"><br>

@@ -160,7 +160,8 @@ def progress(
             ...
     """
     iterable = list(iterable)
-    total = len(iterable)
+    if total is None:
+        total = len(iterable)
 
     with Progress(total=total, desc=desc, **kwargs) as p:
         for item in iterable:

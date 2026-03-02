@@ -563,7 +563,7 @@ def plot_residuals(
     ax_hist.legend(facecolor=bg, edgecolor=fg, labelcolor=fg, loc="upper right")
     ax_hist.grid(True, linewidth=0.5, alpha=0.15, color=fg)
 
-    # --- Right: 2D scatter + Gaussian contours ---
+    # --- Bottom-left: 2D scatter + Gaussian contours ---
     sigma_max = max(sigma_x, sigma_y)
     grid_half = axis_range if axis_range is not None else n_sigma * sigma_max
     gx = np.linspace(mu_2d[0] - grid_half, mu_2d[0] + grid_half, 400)
@@ -572,7 +572,7 @@ def plot_residuals(
     diff = np.stack([GX - mu_2d[0], GY - mu_2d[1]], axis=-1)  # (400, 400, 2)
     maha2 = np.einsum("...i,ij,...j", diff, cov_inv, diff)
 
-    # --- Bottom: scatter + contour lines ---
+    # --- Contour lines ---
     contour_levels = [1.0, 4.0, 9.0]
     cs = ax_2d.contour(
         GX, GY, maha2, levels=contour_levels, colors=accent, linewidths=1.2
@@ -629,7 +629,7 @@ def plot_residuals(
     ax_full.set_aspect("equal", adjustable="box")
     ax_full.set_xlabel("x residual [px]")
     ax_full.set_ylabel("y residual [px]")
-    n_outliers = outlier_pts.shape[0] // 2  # 2 components per point
+    n_outliers = outlier_pts.shape[0]
     ax_full.set_title(f"Full range ({n_outliers} outlier points)")
 
     plt.tight_layout()
@@ -1056,7 +1056,10 @@ def plot_target_warp(
 
 
 def _remap_point(model: lb.PinholeRemapped, x: float, y: float) -> tuple[float, float]:
-    """Look up undistorted pixel in the remap tables with bilinear interpolation."""
+    """Map an undistorted pixel to distorted coordinates.
+
+    Uses bilinear interpolation of the remap tables.
+    """
     ix, iy = int(x), int(y)
     ix = min(max(ix, 0), model.image_width - 2)
     iy = min(max(iy, 0), model.image_height - 2)
@@ -1509,9 +1512,9 @@ def plot_projection_diff(
         distance: Depth at which to compare. If None, compares viewing
             directions only (rotation-only alignment, as if at infinity).
         radius: Pixel radius from image center within which to fit the
-            alignment. If None, covers 60% of the shorter image side.
+            alignment. If None, covers 40% of the shorter image side.
         heatmap_max: Color scale ceiling in pixels. If None, set to
-            4x the median difference.
+            3x the median difference.
         diff_scale: Exaggeration factor for the deformation grid.
             If None, chosen automatically.
         grid_lines: Approximate number of grid lines along the longer

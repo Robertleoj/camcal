@@ -840,8 +840,8 @@ def calibrate_camera(
         target_points: 3D target point coordinates, shape (N, 3).
         frames: Per-image frames, one per calibration image.
         camera_model_config: Specifies the camera model to fit.
-        estimate_target_warp: Whether to estimate a quadratic warp of the target
-            to account for slight non-planarity.
+        estimate_target_warp: Whether to estimate a Legendre-polynomial warp
+            of the target to account for slight non-planarity.
         outlier_threshold_stddevs: Sigma threshold for outlier rejection.
             Pass None to disable.
         verbose: Whether to emit log messages during calibration.
