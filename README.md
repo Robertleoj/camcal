@@ -14,14 +14,14 @@ One job: fit camera models and verify the results. OpenCV models when they work,
 
 ## Why lensboy
 
-Even for standard OpenCV models, lensboy gives you better calibrations than raw `cv2.calibrateCamera` (see [model comparison notebook](examples/model_comparison.ipynb)). This is achieved mainly by two means:
+Even for standard OpenCV models, lensboy gives you better calibrations than raw `cv2.calibrateCamera` (see [model comparison notebook](examples/model_comparison.ipynb)):
 
 - **Automatic outlier filtering** removes bad detections
 - **Target warp estimation** compensates for non-flat calibration boards
 
-For cheap or wide-angle lenses where OpenCV's polynomial distortion model isn't enough, lensboy offers spline-based distortion models that can capture arbitrary distortion patterns.
+For cheap or wide-angle lenses where OpenCV's distortion model isn't enough, lensboy offers spline-based models that can capture arbitrary distortion patterns.
 
-Lensboy also offers strong **analysis tools** to verify your calibration is actually good.
+Lensboy also offers **analysis tools** to verify your calibration is actually good.
 
 ## Quick example
 
@@ -40,7 +40,7 @@ result = lb.calibrate_camera(
 result.optimized_camera_model.save("camera.json")
 ```
 
-Need more accuracy? Just swap the config — same API, way more powerful:
+Swap the config for a spline model — same API, more flexible:
 
 ```python
 result = lb.calibrate_camera(
@@ -63,13 +63,13 @@ Plots for residuals, distortion, detection coverage, and more. See the [example 
 
 ## Install
 
-For calibration time, includes analysis and plotting tools:
+Full install, with analysis and plotting:
 
 ```bash
 pip install lensboy[analysis]
 ```
 
-For loading and using the camera models:
+Minimal install, for loading and using models:
 
 ```bash
 pip install lensboy
@@ -77,13 +77,13 @@ pip install lensboy
 
 ## Getting started
 
-See the [quickstart notebook](examples/quickstart.ipynb) for a full walkthrough covering both OpenCV and spline models.
+See the [quickstart notebook](examples/quickstart.ipynb).
 
 ## Spline models
 
-Spline models use B-spline grids instead of polynomial coefficients, so they can capture arbitrary distortion patterns. This approach is inspired by [mrcal](https://mrcal.secretsauce.net/).
+Spline models use B-spline grids instead of polynomial coefficients, so they can fit lenses that OpenCV's model can't. This approach is inspired by [mrcal](https://mrcal.secretsauce.net/).
 
-The calibrated model converts to a pinhole model with undistortion maps, so you can use it anywhere:
+The calibrated model converts to a pinhole model with undistortion maps, so you can use it with any standard pinhole pipeline:
 
 ```python
 pinhole = spline_model.get_pinhole_model()
