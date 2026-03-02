@@ -39,4 +39,10 @@ py::dict fine_tune_pinhole_splined(
     std::array<double, 5> warp_coeffs_initial = {0.0, 0.0, 0.0, 0.0, 0.0}
 );
 
+py::array_t<double> normalize_pinhole_splined_points(
+    PinholeSplinedConfig& config,
+    PinholeSplinedIntrinsicsParameters& intrinsics,
+    py::array_t<double, py::array::c_style | py::array::forcecast> pixel_coords
+);
+
 }  // namespace lensboy

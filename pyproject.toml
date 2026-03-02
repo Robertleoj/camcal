@@ -94,6 +94,7 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "src/lensboy/_internal/**" = ["D"]
 "src/lensboy/camera_models/base_model.py" = ["D"]
+"tests/**" = ["D"]
 
 [tool.pyright]
 useLibraryCodeForTypes = true

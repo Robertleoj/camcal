@@ -175,6 +175,23 @@ class PinholeRemapped(CameraModel):
             borderValue=border_value,
         )
 
+    def normalize_points(self, pixel_coords: np.ndarray) -> np.ndarray:
+        """Convert pixel coordinates to normalized camera-frame points with z=1.
+
+        Args:
+            pixel_coords: Shape (N, 2).
+
+        Returns:
+            Normalized points in camera frame, shape (N, 3) with z=1.
+        """
+        pts = np.asarray(pixel_coords, dtype=np.float64)
+        assert pts.ndim == 2 and pts.shape[1] == 2, (
+            f"Expected (N, 2) array, got {pts.shape}"
+        )
+        x = (pts[:, 0] - self.cx) / self.fx
+        y = (pts[:, 1] - self.cy) / self.fy
+        return np.stack([x, y, np.ones_like(x)], axis=1)
+
     def project_points(self, points_in_cam: np.ndarray) -> np.ndarray:
         """Project 3D camera-frame points into the undistorted image.
 

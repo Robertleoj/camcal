@@ -43,6 +43,7 @@ pybind11_add_module(
     cpp_src/calibrate_opencv.cpp
     cpp_src/matching_spline_model.cpp
     cpp_src/pinhole_splined_fine_tune.cpp
+    cpp_src/normalize_pinhole_splined.cpp
 )
 
 target_compile_definitions(lensboy_bindings

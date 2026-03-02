@@ -129,6 +129,32 @@ class OpenCV(CameraModel):
             self, fx=fx, fy=fy, cx=cx, cy=cy, distortion_coeffs=distortion_coeffs
         )
 
+    def normalize_points(self, pixel_coords: np.ndarray) -> np.ndarray:
+        """Convert pixel coordinates to normalized camera-frame points with z=1.
+
+        Uses cv2.undistortPoints to invert the full OpenCV distortion model.
+
+        Args:
+            pixel_coords: Shape (N, 2).
+
+        Returns:
+            Normalized points in camera frame, shape (N, 3) with z=1.
+        """
+        pts = np.asarray(pixel_coords, dtype=np.float64)
+        assert pts.ndim == 2 and pts.shape[1] == 2, (
+            f"Expected (N, 2) array, got {pts.shape}"
+        )
+        criteria = (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 100, 1e-14)
+        undistorted = cv2.undistortPointsIter(
+            pts.reshape(-1, 1, 2),
+            self.K(),
+            self.distortion_coeffs,
+            R=None,  # type: ignore
+            P=None,  # type: ignore
+            criteria=criteria,
+        ).reshape(-1, 2)
+        return np.column_stack([undistorted, np.ones(len(undistorted))])
+
     def project_points(
         self,
         points_in_cam: np.ndarray,
