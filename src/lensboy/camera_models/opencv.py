@@ -149,8 +149,8 @@ class OpenCV(CameraModel):
             pts.reshape(-1, 1, 2),
             self.K(),
             self.distortion_coeffs,
-            R=None,
-            P=None,
+            R=None,  # type: ignore
+            P=None,  # type: ignore
             criteria=criteria,
         ).reshape(-1, 2)
         return np.column_stack([undistorted, np.ones(len(undistorted))])

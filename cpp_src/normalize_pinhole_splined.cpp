@@ -39,10 +39,12 @@ static Vec2<double> normalize_single_point(
     for (int rebuild = 0; rebuild < max_rebuilds; rebuild++) {
         // Compute cell index for current (nx, ny)
         double gx = std::max(
-            0.0, std::min(1.0 + (nx + half_x) * x_scale, Nx - 1.0 - eps)
+            0.0,
+            std::min(1.0 + (nx + half_x) * x_scale, Nx - 1.0 - eps)
         );
         double gy = std::max(
-            0.0, std::min(1.0 + (ny + half_y) * y_scale, Ny - 1.0 - eps)
+            0.0,
+            std::min(1.0 + (ny + half_y) * y_scale, Ny - 1.0 - eps)
         );
         const int ix0 = (int)std::floor(gx);
         const int iy0 = (int)std::floor(gy);
@@ -123,10 +125,12 @@ static Vec2<double> normalize_single_point(
 
         // Check if the solution moved to a different cell
         gx = std::max(
-            0.0, std::min(1.0 + (nx + half_x) * x_scale, Nx - 1.0 - eps)
+            0.0,
+            std::min(1.0 + (nx + half_x) * x_scale, Nx - 1.0 - eps)
         );
         gy = std::max(
-            0.0, std::min(1.0 + (ny + half_y) * y_scale, Ny - 1.0 - eps)
+            0.0,
+            std::min(1.0 + (ny + half_y) * y_scale, Ny - 1.0 - eps)
         );
         const int new_ix = (int)std::floor(gx);
         const int new_iy = (int)std::floor(gy);
