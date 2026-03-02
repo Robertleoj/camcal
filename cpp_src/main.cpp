@@ -192,6 +192,14 @@ PYBIND11_MODULE(
     );
 
     m.def(
+        "normalize_pinhole_splined_points",
+        &lensboy::normalize_pinhole_splined_points,
+        py::arg("model_config"),
+        py::arg("intrinsics"),
+        py::arg("pixel_coords")
+    );
+
+    m.def(
         "make_undistortion_maps_pinhole_splined",
         &lensboy::make_undistortion_maps_pinhole_splined,
         py::arg("model_config"),

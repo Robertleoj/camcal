@@ -186,6 +186,29 @@ class PinholeSplined(CameraModel):
             self._k4(), self.dx_grid, self.dy_grid
         )
 
+    def normalize_points(self, pixel_coords: np.ndarray) -> np.ndarray:
+        """Convert pixel coordinates to normalized camera-frame points with z=1.
+
+        Iteratively inverts the spline projection using Newton's method with
+        Ceres autodiff Jacobians. Rebuilds per-point when the solution crosses
+        a spline cell boundary.
+
+        Args:
+            pixel_coords: Shape (N, 2).
+
+        Returns:
+            Normalized points in camera frame, shape (N, 3) with z=1.
+        """
+        pts = np.asarray(pixel_coords, dtype=np.float64)
+        assert pts.ndim == 2 and pts.shape[1] == 2, (
+            f"Expected (N, 2) array, got {pts.shape}"
+        )
+        return lbb.normalize_pinhole_splined_points(
+            self._cpp_config(),
+            self._cpp_params(),
+            pixel_coords=pts,
+        )
+
     def project_points(
         self,
         points_in_cam: np.ndarray,
