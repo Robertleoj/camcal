@@ -31,7 +31,7 @@ def main():
         30,
         cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100),
     )
-    target_points, frames = lb.extract_frames_from_charuco(board, imgs)
+    target_points, frames, _image_indices = lb.extract_frames_from_charuco(board, imgs)
 
     img_height, img_width = imgs[0].shape[:2]
 

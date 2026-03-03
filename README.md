@@ -28,7 +28,7 @@ Lensboy also offers **analysis tools** to verify your calibration is actually go
 ```python
 import lensboy as lb
 
-target_points, frames = lb.extract_frames_from_charuco(board, imgs)
+target_points, frames, image_indices = lb.extract_frames_from_charuco(board, imgs)
 
 result = lb.calibrate_camera(
     target_points, frames,
