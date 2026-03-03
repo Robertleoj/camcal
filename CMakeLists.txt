@@ -61,4 +61,18 @@ target_link_libraries(
     spdlog::spdlog
 )
 
+if(APPLE)
+    file(WRITE "${CMAKE_BINARY_DIR}/exported_symbols.txt" "_PyInit_lensboy_bindings\n")
+    target_link_options(lensboy_bindings PRIVATE
+        "-Wl,-exported_symbols_list,${CMAKE_BINARY_DIR}/exported_symbols.txt"
+    )
+elseif(UNIX)
+    file(WRITE "${CMAKE_BINARY_DIR}/version_script.map"
+        "{ global: PyInit_lensboy_bindings; local: *; };\n"
+    )
+    target_link_options(lensboy_bindings PRIVATE
+        "-Wl,--version-script,${CMAKE_BINARY_DIR}/version_script.map"
+    )
+endif()
+
 install(TARGETS lensboy_bindings DESTINATION lensboy)

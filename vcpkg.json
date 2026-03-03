@@ -1,6 +1,10 @@
 {
     "dependencies": [
-        "ceres",
+        {
+            "name": "ceres",
+            "features": [],
+            "default-features": false
+        },
         "fmt",
         "spdlog"
     ]
