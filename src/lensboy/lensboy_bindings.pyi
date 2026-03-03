@@ -6,7 +6,7 @@ import collections.abc
 import numpy
 import numpy.typing
 import typing
-__all__: list[str] = ['PinholeSplinedConfig', 'PinholeSplinedIntrinsicsParameters', 'WarpCoordinates', 'add', 'calibrate_opencv', 'fine_tune_pinhole_splined', 'get_matching_spline_distortion_model', 'make_undistortion_maps_pinhole_splined', 'normalize_pinhole_splined_points', 'project_pinhole_splined_points']
+__all__: list[str] = ['PinholeSplinedConfig', 'PinholeSplinedIntrinsicsParameters', 'WarpCoordinates', 'add', 'calibrate_opencv', 'fine_tune_pinhole_splined', 'get_matching_spline_distortion_model', 'make_undistortion_maps_pinhole_splined', 'normalize_pinhole_splined_points', 'project_pinhole_splined_points', 'warp_target_points']
 class PinholeSplinedConfig:
     def __init__(self, image_width: typing.SupportsInt, image_height: typing.SupportsInt, fov_deg_x: typing.SupportsFloat, fov_deg_y: typing.SupportsFloat, num_knots_x: typing.SupportsInt, num_knots_y: typing.SupportsInt) -> None:
         ...
@@ -109,4 +109,6 @@ def make_undistortion_maps_pinhole_splined(model_config: PinholeSplinedConfig, i
 def normalize_pinhole_splined_points(model_config: PinholeSplinedConfig, intrinsics: PinholeSplinedIntrinsicsParameters, pixel_coords: typing.Annotated[numpy.typing.ArrayLike, numpy.float64]) -> numpy.typing.NDArray[numpy.float64]:
     ...
 def project_pinhole_splined_points(model_config: PinholeSplinedConfig, intrinsics: PinholeSplinedIntrinsicsParameters, points_in_camera: typing.Annotated[numpy.typing.ArrayLike, numpy.float64]) -> numpy.typing.NDArray[numpy.float64]:
+    ...
+def warp_target_points(warp_coordinates: WarpCoordinates, warp_coeffs: typing.Annotated[numpy.typing.ArrayLike, numpy.float64], target_points: typing.Annotated[numpy.typing.ArrayLike, numpy.float64]) -> numpy.typing.NDArray[numpy.float64]:
     ...

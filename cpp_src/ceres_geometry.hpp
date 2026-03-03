@@ -49,6 +49,7 @@ Vec3<T> apply_warp_to_target_point(
 
     const T wx = T(x_hat[0]) * d[0] + T(x_hat[1]) * d[1] + T(x_hat[2]) * d[2];
     const T wy = T(y_hat[0]) * d[0] + T(y_hat[1]) * d[1] + T(y_hat[2]) * d[2];
+    const T wz = T(z_hat[0]) * d[0] + T(z_hat[1]) * d[1] + T(z_hat[2]) * d[2];
 
     const T xs = wx / T(warp.x_scale);
     const T ys = wy / T(warp.y_scale);
@@ -65,9 +66,12 @@ Vec3<T> apply_warp_to_target_point(
                      coeffs[3] * p4x + coeffs[4] * p4y;
 
     Vec3<T> result = center.cast<T>();
-    result[0] += T(x_hat[0]) * wx + T(y_hat[0]) * wy + T(z_hat[0]) * z_warp;
-    result[1] += T(x_hat[1]) * wx + T(y_hat[1]) * wy + T(z_hat[1]) * z_warp;
-    result[2] += T(x_hat[2]) * wx + T(y_hat[2]) * wy + T(z_hat[2]) * z_warp;
+    result[0] +=
+        T(x_hat[0]) * wx + T(y_hat[0]) * wy + T(z_hat[0]) * (wz + z_warp);
+    result[1] +=
+        T(x_hat[1]) * wx + T(y_hat[1]) * wy + T(z_hat[1]) * (wz + z_warp);
+    result[2] +=
+        T(x_hat[2]) * wx + T(y_hat[2]) * wy + T(z_hat[2]) * (wz + z_warp);
     return result;
 }
 
