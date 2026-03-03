@@ -415,7 +415,35 @@ def _run_with_outlier_filtering(
     state = initial_state
 
     for i in range(MAX_OUTLIER_FILTER_PASSES + 1):
-        state = optimize_fn(state)
+        non_empty_mask = [len(f) > 0 for f in state.frames]
+        if not any(non_empty_mask):
+            raise ValueError(
+                "All points in all frames were marked as outliers; "
+                "calibration cannot continue."
+            )
+
+        if all(non_empty_mask):
+            state = optimize_fn(state)
+        else:
+            n_empty = sum(not m for m in non_empty_mask)
+            LOG.info(f"Skipping {n_empty} frame(s) with no inlier points")
+            active_frames = [f for f, m in zip(state.frames, non_empty_mask) if m]
+            active_poses = [
+                p for p, m in zip(state.cameras_from_target, non_empty_mask) if m
+            ]
+            optimized = optimize_fn(
+                replace(state, frames=active_frames, cameras_from_target=active_poses)
+            )
+            # Merge optimized poses back, keeping old poses for empty frames
+            full_poses = list(state.cameras_from_target)
+            j = 0
+            for idx, m in enumerate(non_empty_mask):
+                if m:
+                    full_poses[idx] = optimized.cameras_from_target[j]
+                    j += 1
+            state = replace(
+                optimized, frames=state.frames, cameras_from_target=full_poses
+            )
 
         if outlier_threshold_stddevs is None or i == MAX_OUTLIER_FILTER_PASSES:
             break

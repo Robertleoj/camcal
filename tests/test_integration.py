@@ -78,6 +78,45 @@ def test_spline_30x20() -> None:
     _check_first_frame_projection(result, target_points, frames[0])
 
 
+def test_opencv_all_outliers_in_one_frame() -> None:
+    """Calibration succeeds when one frame has all its points corrupted."""
+    target_points, frames, img_h, img_w = load_test_dataset()
+
+    # Corrupt frame 0 by shifting every detection by a large random offset
+    rng = np.random.default_rng(42)
+    n_corrupted = len(frames[0])
+    r = rng.uniform(25, 40, size=n_corrupted)
+    theta = rng.uniform(0, 2 * np.pi, size=n_corrupted)
+    offsets = np.column_stack([r * np.cos(theta), r * np.sin(theta)])
+    corrupted_frame = lb.Frame(
+        target_point_indices=frames[0].target_point_indices,
+        detected_points_in_image=frames[0].detected_points_in_image + offsets,
+    )
+    frames_with_corruption = [corrupted_frame] + frames[1:]
+
+    config = lb.OpenCVConfig(
+        image_height=img_h,
+        image_width=img_w,
+        initial_focal_length=1000,
+        included_distoriton_coefficients=lb.OpenCVConfig.FULL_14,
+    )
+    result = lb.calibrate_camera(
+        target_points, frames_with_corruption, camera_model_config=config
+    )
+
+    # The corrupted frame should have all points marked as outliers
+    assert not result.frame_infos[0].inlier_mask.any(), (
+        "Expected all points in corrupted frame to be outliers"
+    )
+
+    sigma = result.residual_sigma_map()
+    outlier_pct = result.num_outliers() / result.num_detections() * 100
+    extra_outlier_pct = n_corrupted / result.num_detections() * 100
+
+    assert sigma < 0.11, f"Residual sigma too high: {sigma:.3f}px"
+    assert outlier_pct < 0.4 + extra_outlier_pct, f"Too many outliers: {outlier_pct:.1f}%"
+
+
 def _check_first_frame_projection(
     result: lb.CalibrationResult,
     target_points: np.ndarray,
