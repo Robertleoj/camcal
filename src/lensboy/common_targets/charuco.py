@@ -42,6 +42,8 @@ def extract_frames_from_charuco(
     Args:
         board: The ChArUco board definition.
         images: Calibration images, each of shape (H, W) or (H, W, C).
+        used_image_indices: image indices corresponding to the frames.If charuco
+            detection fails in an image, it will be left out.
 
     Returns:
         target_points: 3D corner coordinates from the board definition, shape (N, 3).
