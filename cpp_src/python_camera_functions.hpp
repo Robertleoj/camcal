@@ -1,6 +1,7 @@
 #include <spdlog/spdlog.h>
 #include "./pybind_utils.hpp"
 #include "cameramodels.hpp"
+#include "ceres_geometry.hpp"
 
 #include <cstdint>
 
@@ -147,6 +148,43 @@ static py::tuple make_undistortion_maps_pinhole_splined(
     }
 
     return py::make_tuple(map_x, map_y);
+}
+
+static py::array_t<double> warp_target_points(
+    const lensboy::WarpCoordinates& warp,
+    py::array_t<double, py::array::c_style | py::array::forcecast> coeffs_arr,
+    py::array_t<double, py::array::c_style | py::array::forcecast> target_points
+) {
+    auto cb = coeffs_arr.request();
+    require(cb.ndim == 1 && cb.shape[0] == 5, "coeffs must have shape (5,)");
+    const double* coeffs = static_cast<const double*>(cb.ptr);
+
+    auto pb = target_points.request();
+    require(pb.ndim == 2, "target_points must be a 2D numpy array");
+    require(pb.shape[1] == 3, "target_points must have shape (N, 3)");
+
+    const ssize_t N = pb.shape[0];
+    const double* P = static_cast<const double*>(pb.ptr);
+
+    py::array_t<double> out({N, (ssize_t)3});
+    auto ob = out.request();
+    auto* O = static_cast<double*>(ob.ptr);
+
+    for (ssize_t i = 0; i < N; ++i) {
+        Vec3<double> p;
+        p[0] = P[i * 3 + 0];
+        p[1] = P[i * 3 + 1];
+        p[2] = P[i * 3 + 2];
+
+        Vec3<double> warped =
+            apply_warp_to_target_point<double>(p, warp, coeffs);
+
+        O[i * 3 + 0] = warped[0];
+        O[i * 3 + 1] = warped[1];
+        O[i * 3 + 2] = warped[2];
+    }
+
+    return out;
 }
 
 }  // namespace lensboy

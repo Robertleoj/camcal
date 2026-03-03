@@ -200,6 +200,14 @@ PYBIND11_MODULE(
     );
 
     m.def(
+        "warp_target_points",
+        &lensboy::warp_target_points,
+        py::arg("warp_coordinates"),
+        py::arg("warp_coeffs"),
+        py::arg("target_points")
+    );
+
+    m.def(
         "make_undistortion_maps_pinhole_splined",
         &lensboy::make_undistortion_maps_pinhole_splined,
         py::arg("model_config"),

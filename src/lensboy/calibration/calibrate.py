@@ -158,33 +158,11 @@ class TargetWarp:
         Returns:
             Warped points in the target frame, shape (N, 3).
         """
-        points_in_warp = self.warp_coordinates.target_from_warp_frame.inverse().apply(
-            target_points
+        return lbb.warp_target_points(
+            self.warp_coordinates._to_cpp(),
+            np.array(self.object_warp),
+            target_points,
         )
-        x_in_warp = points_in_warp[:, 0]
-        y_in_warp = points_in_warp[:, 1]
-
-        sx = x_in_warp / self.warp_coordinates.x_scale
-        sy = y_in_warp / self.warp_coordinates.y_scale
-
-        a, b, c, d, e = self.object_warp
-
-        # P2(t) = 0.5*(3t²-1), P4(t) = 0.125*(35t⁴-30t²+3)
-        p2x = 0.5 * (3 * sx**2 - 1)
-        p2y = 0.5 * (3 * sy**2 - 1)
-        p4x = 0.125 * (35 * sx**4 - 30 * sx**2 + 3)
-        p4y = 0.125 * (35 * sy**4 - 30 * sy**2 + 3)
-
-        z = a * p2x + b * p2y + c * p2x * p2y + d * p4x + e * p4y
-
-        warped_points_in_warp = points_in_warp.copy()
-        warped_points_in_warp[:, 2] = z
-
-        warped_points_in_target = self.warp_coordinates.target_from_warp_frame.apply(
-            warped_points_in_warp
-        )
-
-        return warped_points_in_target
 
 
 @dataclass
