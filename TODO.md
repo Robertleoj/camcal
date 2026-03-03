@@ -1,1 +1,2 @@
 - Write a blog post on how to properly calibrate a camera with `lensboy`
+- Find better names for Frame and FrameInfo
