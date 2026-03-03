@@ -1385,6 +1385,7 @@ def plot_worst_residual_frames(
     n: int = 5,
     scale: float = 10.0,
     title: str = "Worst residual frames",
+    include_outliers: bool = True,
 ) -> None:
     """Show the frames with the largest residuals, with residual vectors overlaid.
 
@@ -1400,9 +1401,20 @@ def plot_worst_residual_frames(
         n: Number of worst frames to display.
         scale: Multiplier applied to arrow lengths for visibility.
         title: Overall figure title.
+        include_outliers: Whether to include outlier points. When False, only
+            inlier points (per ``FrameInfo.inlier_mask``) are shown and used
+            for ranking.
     """
-    max_mags = [float(np.max(np.linalg.norm(fi.residuals, axis=1))) for fi in frame_infos]
-    ranked = sorted(range(len(max_mags)), key=lambda i: max_mags[i], reverse=True)
+    per_frame_mags = []
+    for fi in frame_infos:
+        mags = np.linalg.norm(fi.residuals, axis=1)
+        if not include_outliers:
+            mags = mags[fi.inlier_mask]
+        per_frame_mags.append(float(np.max(mags)) if len(mags) > 0 else 0.0)
+
+    ranked = sorted(
+        range(len(per_frame_mags)), key=lambda i: per_frame_mags[i], reverse=True
+    )
     selected = ranked[:n]
 
     bg = "#111111"
@@ -1429,6 +1441,10 @@ def plot_worst_residual_frames(
 
         pos = frame.detected_points_in_image
         res = fi.residuals
+        if not include_outliers:
+            mask = fi.inlier_mask
+            pos = pos[mask]
+            res = res[mask]
         mags = np.linalg.norm(res, axis=1)
         frame_norm = mcolors.Normalize(vmin=0, vmax=float(np.max(mags)))
 
@@ -1459,7 +1475,7 @@ def plot_worst_residual_frames(
         for spine in ax.spines.values():
             spine.set_color(fg)
 
-        worst = float(max_mags[idx])
+        worst = float(per_frame_mags[idx])
         mean = float(np.mean(mags))
         ax.set_title(f"Frame {idx}  (max={worst:.2f} px, mean={mean:.2f} px)")
         ax.set_aspect("equal", adjustable="box")
