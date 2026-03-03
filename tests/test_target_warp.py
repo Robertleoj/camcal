@@ -30,22 +30,18 @@ def _make_synthetic_warp_dataset(
         target_points: Unwarped (almost-planar) target grid, shape (N, 3).
         frames: Synthetic detection frames.
     """
-    target_points = target_warp.warp_coordinates.target_from_warp_frame.apply(
-        _make_grid(rng)
-    )
+    target_points = _make_grid(rng)
     warped_target = target_warp.warp_target(target_points)
 
     all_indices = np.arange(len(target_points))
 
     frames: list[lb.Frame] = []
-    for _ in range(15):
+    for _ in range(30):
         rotvec = rng.normal(scale=0.15, size=3)
         tz = rng.uniform(400, 800)
         tx = rng.normal(scale=30)
         ty = rng.normal(scale=30)
-        pose = lb.Pose.from_rotvec_trans(
-            rotvec=rotvec, trans=np.array([tx, ty, tz])
-        )
+        pose = lb.Pose.from_rotvec_trans(rotvec=rotvec, trans=np.array([tx, ty, tz]))
 
         points_in_cam = pose.apply(warped_target)
         projected = model.project_points(points_in_cam)
@@ -85,7 +81,7 @@ def _make_grid(rng: np.random.Generator) -> np.ndarray:
     xs = np.arange(cols) * spacing - (cols - 1) * spacing / 2
     ys = np.arange(rows) * spacing - (rows - 1) * spacing / 2
     gx, gy = np.meshgrid(xs, ys)
-    gz = rng.normal(scale=0.1, size=gx.shape)
+    gz = rng.normal(scale=5.0, size=gx.shape)
     return np.column_stack([gx.ravel(), gy.ravel(), gz.ravel()])
 
 
@@ -97,14 +93,12 @@ def test_warp_recovery_opencv() -> None:
     grid = _make_grid(np.random.default_rng(42))
     warp_coords = _make_warp_coordinates(grid)
     assert warp_coords is not None
-    ground_truth_coeffs = (0.3, -0.2, 0.05, 0.02, -0.01)
+    ground_truth_coeffs = (3.0, -1.3, 0.1, 0.15, -0.2)
     ground_truth_warp = lb.TargetWarp(
         warp_coordinates=warp_coords, object_warp=ground_truth_coeffs
     )
 
-    target_points, frames = _make_synthetic_warp_dataset(
-        rng, model, ground_truth_warp
-    )
+    target_points, frames = _make_synthetic_warp_dataset(rng, model, ground_truth_warp)
 
     config = lb.OpenCVConfig(
         image_height=model.image_height,
