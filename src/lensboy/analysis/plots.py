@@ -1539,7 +1539,7 @@ def plot_projection_diff(
     diff_norm = np.linalg.norm(diff, axis=1)
 
     if heatmap_max is None:
-        heatmap_max = float(3 * np.median(diff_norm))
+        heatmap_max = float(3 * np.median(diff_norm[~np.isnan(diff_norm)]))
 
     heatmap = diff_norm.reshape(ny_dense, nx_dense)
 
