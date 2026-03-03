@@ -688,7 +688,7 @@ def _calibrate_pinhole_splined(
         image_height=config.image_height,
         image_width=config.image_width,
         initial_focal_length=config.initial_focal_length,
-        included_distoriton_coefficients=OpenCVConfig.FULL_12,
+        included_distoriton_coefficients=OpenCVConfig.FULL_14,
     )
 
     LOG.info("Calibrating seed opencv model...")

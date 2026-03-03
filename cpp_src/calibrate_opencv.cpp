@@ -11,7 +11,7 @@
 
 namespace lensboy {
 
-constexpr size_t opencv_num_params = 4 + 12;
+constexpr size_t opencv_num_params = 4 + 14;
 
 struct ReprojectionError {
     ReprojectionError(
@@ -66,7 +66,7 @@ struct ReprojectionError {
         const WarpCoordinates& warp_coords
     ) {
         return new ceres::
-            AutoDiffCostFunction<ReprojectionError, 2, 16, 6, 3, 5>(
+            AutoDiffCostFunction<ReprojectionError, 2, 18, 6, 3, 5>(
                 new ReprojectionError(
                     observed_x,
                     observed_y,

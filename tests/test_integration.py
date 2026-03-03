@@ -35,15 +35,15 @@ def load_test_dataset() -> tuple[np.ndarray, list[lb.Frame], int, int]:
     return target_points, frames, image_height, image_width
 
 
-def test_opencv_full12() -> None:
-    """Calibrate an OpenCV model with all 12 distortion coefficients."""
+def test_opencv_full14() -> None:
+    """Calibrate an OpenCV model with all 14 distortion coefficients."""
     target_points, frames, img_h, img_w = load_test_dataset()
 
     config = lb.OpenCVConfig(
         image_height=img_h,
         image_width=img_w,
         initial_focal_length=1000,
-        included_distoriton_coefficients=lb.OpenCVConfig.FULL_12,
+        included_distoriton_coefficients=lb.OpenCVConfig.FULL_14,
     )
     result = lb.calibrate_camera(target_points, frames, camera_model_config=config)
 

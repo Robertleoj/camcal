@@ -9,11 +9,11 @@ import numpy as np
 
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
 
-K1, K2, P1, P2, K3, K4, K5, K6, S1, S2, S3, S4 = range(12)
+K1, K2, P1, P2, K3, K4, K5, K6, S1, S2, S3, S4, TX, TY = range(14)
 
 
 def _mask(*idx: int) -> np.ndarray:
-    m = np.zeros(12, dtype=bool)
+    m = np.zeros(14, dtype=bool)
     if len(idx) > 0:
         m[list(idx)] = True
     return m
@@ -24,14 +24,14 @@ class OpenCVConfig(CameraModelConfig):
     """Configuration for fitting an OpenCV pinhole + distortion model.
 
     Preset boolean masks for common distortion subsets are available as class
-    attributes: NONE, STANDARD, RADIAL_6, TANGENTIAL, THIN_PRISM, FULL_12.
+    attributes: NONE, STANDARD, RADIAL_6, TANGENTIAL, THIN_PRISM, TILT, FULL_14.
 
     Attributes:
         image_height: Image height in pixels.
         image_width: Image width in pixels.
         initial_focal_length: Initial focal length guess in pixels.
-        included_distoriton_coefficients: Boolean mask selecting which of the 12
-            OpenCV distortion coefficients to optimise, shape (12,).
+        included_distoriton_coefficients: Boolean mask selecting which of the 14
+            OpenCV distortion coefficients to optimise, shape (14,).
     """
 
     image_height: int
@@ -47,11 +47,12 @@ class OpenCVConfig(CameraModelConfig):
     RADIAL_6 = _mask(K1, K2, K3, K4, K5, K6)
     TANGENTIAL = _mask(P1, P2)
     THIN_PRISM = _mask(S1, S2, S3, S4)
-    FULL_12 = _mask(*range(12))
+    TILT = _mask(TX, TY)
+    FULL_14 = _mask(*range(14))
 
     def __post_init__(self):
-        assert self.included_distoriton_coefficients.shape == (12,), (
-            f"Expected (12,) mask, got {self.included_distoriton_coefficients.shape}"
+        assert self.included_distoriton_coefficients.shape == (14,), (
+            f"Expected (14,) mask, got {self.included_distoriton_coefficients.shape}"
         )
         assert self.included_distoriton_coefficients.dtype == np.bool_, (
             f"Expected bool dtype, got {self.included_distoriton_coefficients.dtype}"
@@ -61,10 +62,10 @@ class OpenCVConfig(CameraModelConfig):
         """Return the optimization parameter mask over [fx, fy, cx, cy, *distortion].
 
         Returns:
-            Boolean mask of shape (16,); the first 4 entries (intrinsics) are
+            Boolean mask of shape (18,); the first 4 entries (intrinsics) are
             always True.
         """
-        mask = np.zeros(16, dtype=bool)
+        mask = np.zeros(18, dtype=bool)
 
         mask[:4] = True
         mask[4:] = self.included_distoriton_coefficients
@@ -79,7 +80,7 @@ class OpenCVConfig(CameraModelConfig):
             fy=self.initial_focal_length,
             cx=self.image_width / 2,
             cy=self.image_height / 2,
-            distortion_coeffs=np.zeros(12, dtype=np.float64),
+            distortion_coeffs=np.zeros(14, dtype=np.float64),
         )
 
 
@@ -94,7 +95,7 @@ class OpenCV(CameraModel):
         fy: Focal length along y in pixels.
         cx: Principal point x in pixels.
         cy: Principal point y in pixels.
-        distortion_coeffs: Full 12-parameter OpenCV distortion vector, shape (12,).
+        distortion_coeffs: Full 14-parameter OpenCV distortion vector, shape (14,).
     """
 
     image_width: int
@@ -108,8 +109,8 @@ class OpenCV(CameraModel):
     distortion_coeffs: np.ndarray
 
     def __post_init__(self):
-        assert self.distortion_coeffs.shape == (12,), (
-            f"Expected (12,) distortion_coeffs, got {self.distortion_coeffs.shape}"
+        assert self.distortion_coeffs.shape == (14,), (
+            f"Expected (14,) distortion_coeffs, got {self.distortion_coeffs.shape}"
         )
         assert np.issubdtype(self.distortion_coeffs.dtype, np.floating), (
             f"Expected floating dtype, got {self.distortion_coeffs.dtype}"
@@ -119,7 +120,7 @@ class OpenCV(CameraModel):
         return [self.fx, self.fy, self.cx, self.cy, *self.distortion_coeffs]
 
     def _with_params(self, params: list[float]) -> OpenCV:
-        assert len(params) == 4 + 12
+        assert len(params) == 4 + 14
 
         fx, fy, cx, cy = params[:4]
 
@@ -228,7 +229,7 @@ class OpenCV(CameraModel):
 
         Returns:
             Dict with all model parameters. Distortion coefficients are stored
-            as a list of length 12.
+            as a list of length 14.
         """
         return {
             "type": "opencv",

@@ -48,7 +48,7 @@ void distort_opencv(
     Vec2<T>& result
 ) {
     // Distortion coeffs in OpenCV order:
-    // (k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4)
+    // (k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, tx, ty)
     const T k1 = distortion_parameters[0];
     const T k2 = distortion_parameters[1];
     const T p1 = distortion_parameters[2];
@@ -61,6 +61,8 @@ void distort_opencv(
     const T s2 = distortion_parameters[9];
     const T s3 = distortion_parameters[10];
     const T s4 = distortion_parameters[11];
+    const T tau_x = distortion_parameters[12];
+    const T tau_y = distortion_parameters[13];
 
     const T x = normalized_point[0];
     const T y = normalized_point[1];
@@ -86,8 +88,42 @@ void distort_opencv(
     const T x_prism = s1 * r2 + s2 * r4;
     const T y_prism = s3 * r2 + s4 * r4;
 
-    const T x_distorted = x_radial + x_tan + x_prism;
-    const T y_distorted = y_radial + y_tan + y_prism;
+    const T xd = x_radial + x_tan + x_prism;
+    const T yd = y_radial + y_tan + y_prism;
+
+    // Tilt distortion (OpenCV tilted sensor model)
+    // R = Rx(tau_x) * Ry(tau_y), then matTilt = matProjZ * R
+    // matProjZ normalises so that z maps to 1.
+    const T cTx = cos(tau_x);
+    const T sTx = sin(tau_x);
+    const T cTy = cos(tau_y);
+    const T sTy = sin(tau_y);
+
+    // R = Rx * Ry  (3x3 rotation)
+    const T r00 = cTy;
+    const T r01 = sTx * sTy;
+    const T r02 = -cTx * sTy;
+    const T r10 = T(0);
+    const T r11 = cTx;
+    const T r12 = sTx;
+    const T r20 = sTy;
+    const T r21 = -sTx * cTy;
+    const T r22 = cTx * cTy;
+
+    // matProjZ * R  (projects so that z-row of R becomes denominator)
+    // row0: r22*r00 - r02*r20,  r22*r01 - r02*r21,  r22*r02 - r02*r22
+    // row1: r22*r10 - r12*r20,  r22*r11 - r12*r21,  r22*r12 - r12*r22
+    // row2:                 0,                   0,                  1
+    const T t00 = r22 * r00 - r02 * r20;
+    const T t01 = r22 * r01 - r02 * r21;
+    const T t02 = r22 * r02 - r02 * r22;  // = 0 analytically
+    const T t10 = r22 * r10 - r12 * r20;
+    const T t11 = r22 * r11 - r12 * r21;
+    const T t12 = r22 * r12 - r12 * r22;  // = 0 analytically
+
+    const T w = r20 * xd + r21 * yd + r22;
+    const T x_distorted = (t00 * xd + t01 * yd + t02) / w;
+    const T y_distorted = (t10 * xd + t11 * yd + t12) / w;
 
     result << x_distorted, y_distorted;
 }
@@ -95,7 +131,7 @@ void distort_opencv(
 template <typename T>
 void project_opencv(
     const T* const
-        intrinsics,  // fx, fy, cx, cy, k1, k2, p1, p2, k3..k6, s1..s4
+        intrinsics,  // fx, fy, cx, cy, k1, k2, p1, p2, k3..k6, s1..s4, tx, ty
     const Vec3<T>& point_in_camera,
     Vec2<T>& result
 ) {
