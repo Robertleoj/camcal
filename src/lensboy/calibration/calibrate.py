@@ -410,7 +410,8 @@ def _run_with_outlier_filtering(
     outlier_threshold_stddevs: float | None,
     warp_coordinates: WarpCoordinates | None = None,
 ) -> _OptimizationState[_IntrinsicsT]:
-    total_observations = sum(len(f) for f in initial_state.frames)
+    original_frames = initial_state.frames
+    total_observations = sum(len(f) for f in original_frames)
     state = initial_state
 
     for i in range(MAX_OUTLIER_FILTER_PASSES + 1):
@@ -424,28 +425,31 @@ def _run_with_outlier_filtering(
             if warp_coordinates is not None and state.warp_coeffs is not None
             else None
         )
+        # Compute residuals on the original (unfiltered) frames so that
+        # previously-rejected points can be recovered if they now fit.
         curr_residuals = [
             _project_and_calculate_residuals(
                 target_points, cam, frame, state.intrinsics, curr_target_warp
             )[1]
-            for cam, frame in zip(state.cameras_from_target, state.frames)
+            for cam, frame in zip(state.cameras_from_target, original_frames)
         ]
 
         new_frames = _filter_outliers(
-            state.frames, curr_residuals, outlier_threshold_stddevs
+            original_frames, curr_residuals, outlier_threshold_stddevs
         )
 
         if all(
-            len(new_frame) == len(old_frame)
+            np.array_equal(new_frame.target_point_indices, old_frame.target_point_indices)
             for new_frame, old_frame in zip(new_frames, state.frames)
         ):
             break
 
         total_remaining = sum(len(f) for f in new_frames)
         total_outliers = total_observations - total_remaining
+        pct = total_outliers / total_observations * 100
         LOG.info(
-            f"Threw out some outliers, now have {total_outliers}/{total_observations}"
-            f" ({total_outliers / total_observations * 100:.1f}%) - going again..."
+            f"Outlier filtering: {total_outliers}/{total_observations}"
+            f" ({pct:.1f}%) outliers - going again..."
         )
 
         state = replace(state, frames=new_frames)
