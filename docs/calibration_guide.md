@@ -91,6 +91,14 @@ Here is a visualization of the detected corners on a couple of the images
 
 [insert visualization of detected corners]
 
+Let's see how well I did in terms of coverage:
+
+[insert visualization of coverage]
+
+Looks like I did pretty well - I'm missing the very edges of the sensor, but it's very hard to capture data there on such a wide-angle lens, and I won't be using the data from there anyway.
+
+If you see that you don't have much data in an area of the image you will be using, you need to take more samples to make sure to cover them.
+
 ## 6. First Calibration Run
 
 You'll want to choose the distortion model according to your camera and application. I would say there are two main variables that control how you should choose your lens model:
@@ -100,18 +108,21 @@ You'll want to choose the distortion model according to your camera and applicat
 
 Some lenses have extreme amounts of distortion like the one I'm using now. This requires a distortion model capable of modeling this amount of distortion. Each group of distortion parameters in OpenCV models is intended to model a specific type of distortion, and you can choose your distortion parameters according to the characteristics of your lens+sensor setup. See [this page](https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html) for a detailed explanation of OpenCV-type distortion. However, in my experience, including more distortion parameters doesn't really adversely affect your calibration quality, the solver will just set them to zero if they are not applicable.
 
-All lenses deviate by some amount from the ideal lenses described by the OpenCV distortion model. By how much and in what way depends on your specific lens. If you want your distortion model to model these imperfections well, the OpenCV models are not sufficient, and you'll need to use a spline-based distortion model, which you can do with lensboy. These use B-splie grids to model the distortion, and are extremely flexible.
+All lenses deviate by some amount from the ideal lenses described by the OpenCV distortion model. By how much and in what way depends on your specific lens. If you want your distortion model to model these imperfections well, the OpenCV models are not sufficient, and you'll need to use a spline-based distortion model, which you can do with lensboy. These use B-spline grids to model the distortion, and are extremely flexible.
 
 I have a wide-angle lens with extreme distortion. I have high accuracy needs, so I suspect I will need to use a spline-based model. However, let's start by fitting an OpenCV-style lens model to my lens to see how well it works.
 
-I'll use the 6 radial parameters `k1..k6`, as well as the tangential parameters `p1,p2`. We can fit this model with `lensboy` as follows:
+For my first experiment, I'll use the 6 radial parameters `k1..k6`, as well as the tangential parameters `p1,p2`. We can fit this model with `lensboy` as follows:
 
 ```python
 config = lb.OpenCVConfig(
     image_height=image_height,
     image_width=image_width,
     initial_focal_length=focal_length_guess,
-    included_distoriton_coefficients=lb.OpenCVConfig.STANDARD,
+    included_distoriton_coefficients=(
+        lb.OpenCVConfig.RADIAL_6
+        | lb.OpenCVConfig.TANGENTIAL
+    ),
 )
 
 result = lb.calibrate_camera(target_points, frames, config)
@@ -120,4 +131,18 @@ result = lb.calibrate_camera(target_points, frames, config)
 For `initial_focal_length`, a rough estimate is fine - the optimizer will refine it. If you know your sensor width and lens focal length in mm, you can compute it as `focal_length_mm * image_width / sensor_width_mm`.
 
 The logs of the solver were
+
 [insert logs]
+
+You might notice two things:
+**Outlier filtering:** lensboy automatically filters outliers when fitting the lens model. The reason for this is that you often have erroneous or noisy data in your dataset, and including them will corrupt your fit. You can control the aggressiveness of the outlier filtering by tweaking `outlier_threshold_stddevs`, and turn it off entirely by passing `None`. However, the default value of `3` provides a good balance and works well for me. I see that about 0.3% of my data was filtered out, which is normal. You should start to worry if it's more than a few percent.
+
+**Target warp estimation:** No matter how precisely manufactured, your target will never be perfectly flat - it will have some kind of warping. Because of this, lensboy automatically estimates the warping of your target, which usually results in better fits. This feature is not available for very non-planar targets.
+
+We also see the mean reprojection error of the inliers. This is the average norm of the difference between your measurements and the reprojected target points, given the warping of the target, the optimized camera poses, and the intrinsics model. The magnitudes depends on many things, but most importantly **the quality of your data** and the **quality of the lens model fit**. The residuals grow if your data is noisy, and if your lensmodel underfits (is not powerful enough to capture your lens distortion).
+
+Let's use `plot_residuals()` to see the distribution of residuals:
+
+[insert residual plot]
+
+[discuss residual plot when you have it]
