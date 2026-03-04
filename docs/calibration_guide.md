@@ -112,7 +112,7 @@ All lenses deviate by some amount from the ideal lenses described by the OpenCV 
 
 I have a wide-angle lens with extreme distortion. I have high accuracy needs, so I suspect I will need to use a spline-based model. However, let's start by fitting an OpenCV-style lens model to my lens to see how well it works.
 
-For my first experiment, I'll use the 6 radial parameters `k1..k6`, as well as the tangential parameters `p1,p2`. We can fit this model with `lensboy` as follows:
+For my first experiment, I'll use the 6 radial parameters `k1..k6`. We can fit this model with `lensboy` as follows:
 
 ```python
 config = lb.OpenCVConfig(
@@ -121,7 +121,6 @@ config = lb.OpenCVConfig(
     initial_focal_length=focal_length_guess,
     included_distoriton_coefficients=(
         lb.OpenCVConfig.RADIAL_6
-        | lb.OpenCVConfig.TANGENTIAL
     ),
 )
 
@@ -137,12 +136,91 @@ The logs of the solver were
 You might notice two things:
 **Outlier filtering:** lensboy automatically filters outliers when fitting the lens model. The reason for this is that you often have erroneous or noisy data in your dataset, and including them will corrupt your fit. You can control the aggressiveness of the outlier filtering by tweaking `outlier_threshold_stddevs`, and turn it off entirely by passing `None`. However, the default value of `3` provides a good balance and works well for me. I see that about 0.3% of my data was filtered out, which is normal. You should start to worry if it's more than a few percent.
 
-**Target warp estimation:** No matter how precisely manufactured, your target will never be perfectly flat - it will have some kind of warping. Because of this, lensboy automatically estimates the warping of your target, which usually results in better fits. This feature is not available for very non-planar targets.
+**Target warp estimation:** No matter how precisely manufactured, your target will never be perfectly flat - it will have some kind of warping. Because of this, lensboy automatically estimates the warping of your target, which usually results in better fits. This feature is not available for very non-planar targets. You can disable this feature by setting `estimate_target_warp` to `False`.
 
 We also see the mean reprojection error of the inliers. This is the average norm of the difference between your measurements and the reprojected target points, given the warping of the target, the optimized camera poses, and the intrinsics model. The magnitudes depends on many things, but most importantly **the quality of your data** and the **quality of the lens model fit**. The residuals grow if your data is noisy, and if your lensmodel underfits (is not powerful enough to capture your lens distortion).
 
-Let's use `plot_residuals()` to see the distribution of residuals:
+## 7. Analyzing Calibration Quality
 
-[insert residual plot]
+Let's analyze the calibration a bit to see if we actually have a good fit.
 
-[discuss residual plot when you have it]
+There are two main things you should think about when analyzing the quality of your calibration
+
+- **Underfitting:** does your intrinsics model adequately capture your real camera projection? This happens if you choose a model that cannot capture your camera projection to your desired degree of accuracy. In this case, no matter how good your data is, your intrinsics will have systematic errors.
+
+- **Overfitting:** This is when the lens model starts fitting to noise in your data, and you will again get systematic errors in the intrinsics model. This happens when you choose a powerful model, but do not have enough high-quality data to constrain it properly. Two things will happen: first, the model will have too much freedom in between data points, and will behave unpredictably in those areas. The second is that the model will optimize itself to exactly match individual noisy observations.
+
+### The residual plot
+
+Your first step after fitting an intrinsics model should almost always be to look at the residual distribution for which you can use `plot_residuals()`. Let's take a look at the residuals from the calibration we fit earlier:
+
+<img src="./media/calibration_docs/radial_6_residuals.png" width="700">
+
+This looks about as I'd expect. What you should look out for:
+
+- **Histogram should be roughly normal.** If your histogram does not look like a normal distribution, something is going systematically wrong, and you need to debug it.
+- **2D residuals should be isotropic.** The 2D residual distribution in the bottom left should be radially symmetric - you should not be able to see much of a pattern. Again, if this is not the case, you need to figure out what's causing the irregularity.
+- **Not too many outliers.** The plot on the right should not be full of outliers. You should expect a sparse set of points lying outside the inlier region.
+
+The gaussian MAD $\sigma$ is a robust estimate of the standard deviation of the data - it represents the distribution better than a raw standard deviation. When it comes to this number, lower is better until we start overfitting.
+
+To show you an example of a plot where something is going wrong here is a residual plot from where I attempted to calibrate a camera using april tags instead of a charuco board:
+
+<img src="./media/calibration_docs/april_tags_residuals.png" width="700">
+
+Looking at this plot, you should see that the 2D distribution is not radially symmetric - it has these four "arms" reaching out. It turned out that this is because april tags are individual squares that are detected using quad detection:
+
+<img src="./media/calibration_docs/april_tag.png" width="200">
+
+However, different brightnesses can lead to it being detected slightly smaller or bigger, explaining to the "arms" in the residual plot. This is a good reason you should opt for a checkerboard pattern instead of tags like this - they don't have this kind of variance.
+
+### The residual grid
+
+The residual plot is a great sanity check, but it deletes all spatial information - do the residuals behave differently in different regions of the image?
+
+To analyze this, lensboy provides `plot_residual_grid()`. It bins the residuals in a grid over the image. Each grid cell is then colored according to the **mean norm of the residuals** in that bin, and shows the **mean residual** as a vector emanating from the center of the cell.
+
+This gives you information about two things:
+
+- **Are the residuals larger in some places than others?** If the residuals are systematically larger in some areas, this indicates underfitting or increased detection noise in those areas. Most commonly, it's the former, and you need to choose a more powerful model.
+- **Do the residuals have directional biases anywhere in the image?** If this is the case, it is again very likely your model underfits the lens, and you need to choose a more powerful model.
+
+When looking at the residual grid, it is important to only focus on the areas where you have plenty of data, and expect the lens model to be well constrained. It will usually look particularly messy towards the edges where data is sparse, and this is usually expected - your data doesn't constrain the model well there, so it will not fit well there.
+
+Let's look at the residual grid for the model we fit earlier:
+
+<img src="./media/calibration_docs/radial_6_residual_grid.png" width="700">
+
+It is pretty clear that
+
+- The residuals get increasingly larger going away from the center, and
+- There are clear directional biases in parts of the image we expect good intrinsics.
+
+The model is underfitting, and I will need a more powerful model for my lens. Section ? covers that process in detail.
+
+### Target warp
+
+As mentioned earlier, lensboy estimates the warp of near-planar targets by default. I went for a 5-parameter model that should work well for most targets, and has worked well for me. It can be useful to visualize the estimated warp with `plot_target_warp()`.
+
+Let's take a look at the estimated warp for the model we fit earlier:
+
+<img src="./media/calibration_docs/radial_6_target_warp.png" width="700">
+
+The warp estimation has a bowl shape that I see often for charuco boards. The spread is small (about 0.5mm), but still enough to matter.
+
+If we fit a model without enabling the target warp, and plot the residuals, we see that we get a wider residual distribution:
+
+<img src="./media/calibration_docs/radial_6_no_warp_residuals.png" width="700">
+
+We have a higher MAD $\sigma$, and more outliers. Most of the time, you should enable target warp estimation.
+
+### The distortion pattern
+lensboy provides the plot `plot_distortion_grid()` to visualize the projection function that your intrinsics define. This doesn't provide much concrete information about the quality of the fit, but is useful for your intuitional understanding of how the distortion model of your camera works.
+
+Let's look at this plot for our camera model:
+
+<img src="./media/calibration_docs/radial_6_distortion_grid.png" width="700">
+
+The left side shows a grid at the $z=1$ in camera frame, and the right shows how that grid is transformed into image space. We can clearly see that my wide-angle lens introduces a large amount of distortion. 
+
+
