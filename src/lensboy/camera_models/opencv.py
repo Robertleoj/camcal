@@ -95,7 +95,8 @@ class OpenCV(CameraModel):
         fy: Focal length along y in pixels.
         cx: Principal point x in pixels.
         cy: Principal point y in pixels.
-        distortion_coeffs: Full 14-parameter OpenCV distortion vector, shape (14,).
+        distortion_coeffs: OpenCV distortion vector, shape (N,) with N <= 14.
+            Padded with zeros to length 14 if shorter.
     """
 
     image_width: int
@@ -109,12 +110,14 @@ class OpenCV(CameraModel):
     distortion_coeffs: np.ndarray
 
     def __post_init__(self):
-        assert self.distortion_coeffs.shape == (14,), (
-            f"Expected (14,) distortion_coeffs, got {self.distortion_coeffs.shape}"
+        dc = np.asarray(self.distortion_coeffs, dtype=np.float64)
+        assert dc.ndim == 1 and len(dc) <= 14, (
+            "Expected 1-D distortion_coeffs with at most 14 elements, "
+            f"got shape {dc.shape}"
         )
-        assert np.issubdtype(self.distortion_coeffs.dtype, np.floating), (
-            f"Expected floating dtype, got {self.distortion_coeffs.dtype}"
-        )
+        if len(dc) < 14:
+            dc = np.pad(dc, (0, 14 - len(dc)))
+        self.distortion_coeffs = dc
 
     def _params(self):
         return [self.fx, self.fy, self.cx, self.cy, *self.distortion_coeffs]
