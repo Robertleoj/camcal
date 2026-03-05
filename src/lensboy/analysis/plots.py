@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colorbar import Colorbar
+from matplotlib.figure import Figure
 from matplotlib.patches import Circle
 
 import lensboy as lb
@@ -82,7 +83,8 @@ def plot_detection_coverage(
     title: str = "Coverage",
     s: float = 6.0,
     grid_cells: int = 30,
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Scatter-plot all detected points with a smoothed coverage heatmap.
 
     Shows a density heatmap behind the scatter points so that regions with
@@ -95,6 +97,10 @@ def plot_detection_coverage(
         title: Plot title.
         s: Marker size passed to ``ax.scatter``.
         grid_cells: Number of grid cells along the longer image axis for the heatmap.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     pts_list = []
     for d in detections:
@@ -156,7 +162,10 @@ def plot_detection_coverage(
     ax.set_ylim(image_height, 0)
 
     ax.set_aspect("equal", adjustable="box")
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_distortion_grid(
@@ -168,7 +177,8 @@ def plot_distortion_grid(
     uy_max: float | None = None,
     cmap_name: str = "jet",
     show_spline_knots: bool = False,
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Project a regular grid through a camera model to visualize distortion.
 
     Builds a grid in normalized (tan-angle) space from the model's FOV, projects
@@ -444,7 +454,10 @@ def plot_distortion_grid(
     ax1.set_ylim(H - 1, 0)
     ax1.set_aspect("equal")
 
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_residuals(
@@ -454,7 +467,8 @@ def plot_residuals(
     n_sigma: float = 6.0,
     axis_range: float | None = None,
     title: str = "Reprojection residuals",
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Per-component histogram and 2D scatter of reprojection residuals.
 
     Left panel: stacked histogram (inliers blue, outliers red) with a 1D
@@ -633,7 +647,10 @@ def plot_residuals(
     ax_full.set_title(f"Full range ({n_outliers} outlier points)")
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_residual_vectors(
@@ -646,7 +663,8 @@ def plot_residual_vectors(
     scale: float = 10.0,
     scale_by_magnitude: bool = True,
     color_by: str = "magnitude",
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Quiver plot of reprojection residual vectors over the image plane.
 
     Each arrow is placed at the detected point location with direction and
@@ -740,7 +758,10 @@ def plot_residual_vectors(
     ax.set_aspect("equal", adjustable="box")
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_residual_grid(
@@ -753,7 +774,8 @@ def plot_residual_grid(
     arrow_scale: float = 100.0,
     heatmap_max: float | None = None,
     title: str = "Residual grid",
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Binned residual summary showing per-cell magnitude and mean direction.
 
     The image plane is divided into a grid. Each cell is coloured by the mean
@@ -870,7 +892,10 @@ def plot_residual_grid(
     ax.set_aspect("equal", adjustable="box")
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_target_and_poses(
@@ -879,7 +904,8 @@ def plot_target_and_poses(
     *,
     triad_scale: float = 20.0,
     title: str = "Target and camera poses",
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """3D scatter of the calibration target with camera poses shown as triads.
 
     Each camera is drawn as a coordinate-frame triad (X=red, Y=green, Z=blue)
@@ -957,7 +983,10 @@ def plot_target_and_poses(
     ax.set_title(title, color=fg)
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_target_warp(
@@ -967,7 +996,8 @@ def plot_target_warp(
     grid_res: int = 300,
     contour_levels: int = 15,
     title: str = "Target warp",
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Contour plot of the target warp z-displacement viewed from above.
 
     Evaluates the warp function over a dense grid in the warp frame's xy plane
@@ -1052,7 +1082,10 @@ def plot_target_warp(
     ax.set_aspect("equal", adjustable="box")
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def _remap_point(model: lb.PinholeRemapped, x: float, y: float) -> tuple[float, float]:
@@ -1091,7 +1124,8 @@ def plot_undistortion(
     image: np.ndarray | None = None,
     grid_step_px: int = 50,
     line_thickness: int | None = None,
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Visualize distortion and undistortion with grid warping.
 
     Row 1: regular grid in distorted pixel space (left) remapped to
@@ -1374,7 +1408,10 @@ def plot_undistortion(
         axes[2, 1].set_ylabel("v (px)")
         axes[2, 1].set_aspect("equal")
 
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_worst_residual_frames(
@@ -1386,7 +1423,8 @@ def plot_worst_residual_frames(
     scale: float = 10.0,
     title: str = "Worst residual frames",
     include_outliers: bool = True,
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Show the frames with the largest residuals, with residual vectors overlaid.
 
     Frames are ranked by their single worst (max-magnitude) residual and the
@@ -1489,7 +1527,10 @@ def plot_worst_residual_frames(
         cbar.ax.tick_params(colors=fg)
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def _125_levels(vmax: float) -> list[float]:
@@ -1514,7 +1555,8 @@ def plot_projection_diff(
     heatmap_max: float | None = None,
     diff_scale: float | None = None,
     grid_lines: int = 60,
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Compare two camera models by aligning them and plotting the residual.
 
     The two models are aligned by finding the rotation (and optionally
@@ -1771,4 +1813,7 @@ def plot_projection_diff(
     ax_grid.set_ylabel("y [px]")
     ax_grid.set_title(f"Deformation grid ({diff_scale:.0f}x exaggerated)")
 
+    if return_figure:
+        return fig
     plt.show()
+    return None

@@ -427,6 +427,7 @@ py::dict fine_tune_pinhole_splined(
 
     ceres::Solver::Options options;
 
+    options.num_threads = static_cast<int>(std::thread::hardware_concurrency());
     options.linear_solver_type = ceres::ITERATIVE_SCHUR;
 
     options.preconditioner_type = ceres::SCHUR_JACOBI;

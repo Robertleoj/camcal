@@ -1,6 +1,4 @@
-# Camera Calibration Done Right
-
-### A practical guide using lensboy
+# A Practical Guide to Camera Calibration
 
 This is a practical guide on how to calibrate a camera using lensboy. I'll walk though all the steps you need to get a quality calibration. Throughout the guide, I'll be calibrating this camera as an example:
 
@@ -112,13 +110,13 @@ All lenses deviate by some amount from the ideal lenses described by the OpenCV 
 
 I have a wide-angle lens with extreme distortion. I have high accuracy needs, so I suspect I will need to use a spline-based model. However, let's start by fitting an OpenCV-style lens model to my lens to see how well it works.
 
-For my first experiment, I'll use the 6 radial parameters `k1..k6`. We can fit this model with `lensboy` as follows:
+For my first experiment, I'll use the 6 radial parameters $k_1,\ldots,k_6$. We can fit this model with `lensboy` as follows:
 
 ```python
 config = lb.OpenCVConfig(
     image_height=image_height,
     image_width=image_width,
-    initial_focal_length=focal_length_guess,
+    initial_focal_length=1000,
     included_distoriton_coefficients=(
         lb.OpenCVConfig.RADIAL_6
     ),
@@ -134,6 +132,7 @@ The logs of the solver were
 [insert logs]
 
 You might notice two things:
+
 **Outlier filtering:** lensboy automatically filters outliers when fitting the lens model. The reason for this is that you often have erroneous or noisy data in your dataset, and including them will corrupt your fit. You can control the aggressiveness of the outlier filtering by tweaking `outlier_threshold_stddevs`, and turn it off entirely by passing `None`. However, the default value of `3` provides a good balance and works well for me. I see that about 0.3% of my data was filtered out, which is normal. You should start to worry if it's more than a few percent.
 
 **Target warp estimation:** No matter how precisely manufactured, your target will never be perfectly flat - it will have some kind of warping. Because of this, lensboy automatically estimates the warping of your target, which usually results in better fits. This feature is not available for very non-planar targets. You can disable this feature by setting `estimate_target_warp` to `False`.
@@ -154,7 +153,7 @@ There are two main things you should think about when analyzing the quality of y
 
 Your first step after fitting an intrinsics model should almost always be to look at the residual distribution for which you can use `plot_residuals()`. Let's take a look at the residuals from the calibration we fit earlier:
 
-<img src="./media/calibration_docs/radial_6_residuals.png" width="700">
+<img src="./media/calibration_docs/radial_6_residuals.png" width="1000">
 
 This looks about as I'd expect. What you should look out for:
 
@@ -164,15 +163,15 @@ This looks about as I'd expect. What you should look out for:
 
 The gaussian MAD $\sigma$ is a robust estimate of the standard deviation of the data - it represents the distribution better than a raw standard deviation. When it comes to this number, lower is better until we start overfitting.
 
-To show you an example of a plot where something is going wrong here is a residual plot from where I attempted to calibrate a camera using april tags instead of a charuco board:
+To show you an example of a plot where something is going wrong, here is a residual plot from where I attempted to calibrate a camera using april tags instead of a charuco board:
 
-<img src="./media/calibration_docs/april_tags_residuals.png" width="700">
+<img src="./media/calibration_docs/april_tags_residuals.png" width="1000">
 
 Looking at this plot, you should see that the 2D distribution is not radially symmetric - it has these four "arms" reaching out. It turned out that this is because april tags are individual squares that are detected using quad detection:
 
 <img src="./media/calibration_docs/april_tag.png" width="200">
 
-However, different brightnesses can lead to it being detected slightly smaller or bigger, explaining to the "arms" in the residual plot. This is a good reason you should opt for a checkerboard pattern instead of tags like this - they don't have this kind of variance.
+However, different brightnesses can lead to it being detected slightly smaller or bigger, explaining the "arms" in the residual plot. This is a good reason you should opt for a checkerboard pattern instead of tags like this - they don't have this kind of variance.
 
 ### The residual grid
 
@@ -196,7 +195,7 @@ It is pretty clear that
 - The residuals get increasingly larger going away from the center, and
 - There are clear directional biases in parts of the image we expect good intrinsics.
 
-The model is underfitting, and I will need a more powerful model for my lens. Section ? covers that process in detail.
+The model is underfitting, and I will need a more powerful model for my lens. Section 8 covers that process in detail.
 
 ### Target warp
 
@@ -210,17 +209,258 @@ The warp estimation has a bowl shape that I see often for charuco boards. The sp
 
 If we fit a model without enabling the target warp, and plot the residuals, we see that we get a wider residual distribution:
 
-<img src="./media/calibration_docs/radial_6_no_warp_residuals.png" width="700">
+<img src="./media/calibration_docs/radial_6_no_warp_residuals.png" width="1000">
 
 We have a higher MAD $\sigma$, and more outliers. Most of the time, you should enable target warp estimation.
 
 ### The distortion pattern
+
 lensboy provides the plot `plot_distortion_grid()` to visualize the projection function that your intrinsics define. This doesn't provide much concrete information about the quality of the fit, but is useful for your intuitional understanding of how the distortion model of your camera works.
 
 Let's look at this plot for our camera model:
 
-<img src="./media/calibration_docs/radial_6_distortion_grid.png" width="700">
+<img src="./media/calibration_docs/radial_6_distortion_grid.png" width="1000">
 
-The left side shows a grid at the $z=1$ in camera frame, and the right shows how that grid is transformed into image space. We can clearly see that my wide-angle lens introduces a large amount of distortion. 
+The left side shows a grid at the $z=1$ in camera frame, and the right shows how that grid is transformed into image space. We can clearly see that my wide-angle lens introduces a large amount of distortion.
 
+## 8. Refining Your Model
+
+In section 7, we saw that the RADIAL_6 model underfits my wide-angle lens - the residual grid showed clear spatial patterns. The next step is to try a more powerful model.
+
+We want to obtain a good fit that doesn't underfit, but doesn't overfit either.
+
+### Adding more OpenCV parameters
+
+The first thing we can try is to make the distortion model more powerful by using more distortion parameters. I'll make the solver estimate the tangential parameters $p_1,p_2$ and thin prism parameters $s_1,\ldots,s_4$:
+
+```python
+config = lb.OpenCVConfig(
+    image_height=image_height,
+    image_width=image_width,
+    initial_focal_length=1000,
+    included_distoriton_coefficients=(
+        lb.OpenCVConfig.RADIAL_6
+        | lb.OpenCVConfig.TANGENTIAL
+        | lb.OpenCVConfig.THIN_PRISM
+    ),
+)
+```
+
+Let's take a look at `plot_residuals()` and `plot_residual_grid()`:
+
+<img src="./media/calibration_docs/strong_opencv_residuals.png" width="1000">
+
+<img src="./media/calibration_docs/strong_opencv_residual_grid.png" width="700">
+
+This seems to fit much better than the pure RADIAL_6 model.
+
+- There are fewer outliers, and we get a smaller MAD $\sigma$.
+- Across the image, the magnitudes of the residuals is smaller and more uniform than what we had before, and there are less directional biases.
+
+It is clear that this model underfits considerably less than the pure RADIAL_6 model.
+
+### Splined model
+
+Let's see what happens if we use an even more powerful distortion model: spline-based models. These use B-spline grids to model distortion, and so can model more arbitrary distortion patterns. However, as we will see later, they are also more prone to overfitting due to their flexibility, and thus require more data to constrain properly.
+
+We can configure a spline model in lensboy with `PinholeSplinedConfig`. You control how flexible the model is by tuning the spline grid density.
+
+I'll start by training a splined model, using 30x20 grid as my starting point:
+
+```python
+config = lb.PinholeSplinedConfig(
+    image_height=image_height,
+    image_width=image_width,
+    initial_focal_length=1000,
+    num_knots_x=30,
+    num_knots_y=20,
+)
+
+result = lb.calibrate_camera(target_points, frames, config)
+```
+
+Again, let's take a look at `plot_residuals()` and `plot_residual_grid()`:
+
+<img src="./media/calibration_docs/spline_30x20_residuals.png" width="1000">
+
+<img src="./media/calibration_docs/spline_30x20_residual_grid.png" width="700">
+
+As expected with such a flexible model, it fits our data even better. Our MAD $\sigma$ is even lower, and the residual grid looks even tighter.
+
+Let's take a look at how this spline model's projection function looks like with `plot_distortion_grid()`. I'll show the spline knots by setting `show_spline_knots` to `True`:
+
+<img src="./media/calibration_docs/spline_30x20_distortion_grid.png" width="1000">
+
+The distortion looks very similar to the opencv models, except at the edges, where it behaves a bit erratically - this is standard for a spline-based model, as it is very flexible and relatively underconstrained at the edges.
+
+However, with such a flexible model, the worry is now not whether the model is able to fit the data, but whether it is overfitting.
+
+### Cross-validation via model differencing
+
+How can we know whether our camera model is overfitting to the data?
+
+In principle, overfitting is defined by two things:
+
+- The model behaves erratically between data points, where it is less constrained
+- The model flexes to exactly match noisy data. This means it will make incorrect predictions on data that has no error.
+
+A key insight is that because the model behaves erratically between data points, and it bends to noise in the data, you should get different projection models based on the specific dataset you fit them on, even if they are from the same distribution.
+
+This means we can diagnose overfitting by splitting our dataset into two parts, fit a model on each part, and compare the models. If they differ a lot, we are likely overfitting.
+
+To compare two different lens models, we can sample a grid on the image of the first model, and unproject it. We then project it into the second lens model, and look at the difference in the pixel values.
+
+A small complexity in this approach is that different camera models, even of the same camera, imply a different camera frame relative to the physical camera. We need to find the difference between these two camera frames to be able to fairly compare the models. This is explained in detail in [this mrcal article](https://mrcal.secretsauce.net/differencing.html), so I won't go into the details here. One result of this is that you need to choose a (possibly infinite) distance at which to compare the models.
+
+This model comparison is easily done with lensboy using the `plot_projection_diff()` plot. I'll start by splitting my dataset into two sets:
+
+```python
+frames_a = frames[0::2]
+frames_b = frames[1::2]
+```
+
+Now let's fit a 30x20 spline model on the two sets:
+
+```python
+config = lb.PinholeSplinedConfig(
+    num_knots_x=30,
+    num_knots_y=20,
+    ...
+)
+model_a = lb.calibrate_camera(target_points, frames_a, config)
+model_b = lb.calibrate_camera(target_points, frames_b, config)
+```
+
+Now that we have the two models, let's take a look at `plot_projection_diff()`:
+
+<img src="./media/calibration_docs/spline_30x20_projection_diff.png" width="1200">
+
+The left side shows the magnitude of the projection difference between the models. This looks pretty reasonable! The models differ by less than 0.2 pixels in most of the image, so I don't suspect heavy overfitting.
+
+The right side shows the pattern of the projection difference. In reality the differences are usually imperceptibly small, so they are exaggerated.
+
+One thing to look out for is the "fit circle". Its interior is the area of the image we use to find the difference between the implied camera frames of the models. This should only cover areas of the image where you expect good intrinsics. If it goes out of that area, this plot will not be realistic, and you need to adjust the `radius` argument to `plot_projection_diff()`.
+
+### Final model selection
+
+To choose my final model, I will try a few models with increasing complexity. For each model, I'll look at
+
+- **The residual plot** to understand the distribution of the residuals and outliers.
+- **The projection grid** to see whether there are systematic patterns in the errors to spot underfitting fast.
+- **The cross-validation model difference** to spot whether my model is overfitting.
+
+When I know that my data is good, these plots tell me everything I need to know.
+
+I'll look at two OpenCV model configurations, and three spline model configurations. For each, I'll show the residual plot, residual grid, and cross-validation model difference.
+
+#### OpenCV RADIAL_6
+
+Let's start with the RADIAL_6 model - we already know this one underfits.
+
+```python
+config = lb.OpenCVConfig(
+    ...,
+    included_distoriton_coefficients=lb.OpenCVConfig.RADIAL_6,
+)
+```
+
+<img src="./media/calibration_docs/opencv_radial_6/residuals.png" width="700">
+<img src="./media/calibration_docs/opencv_radial_6/residual_grid.png" width="700">
+<img src="./media/calibration_docs/opencv_radial_6/projection_diff.png" width="1200">
+
+As before, we see the underfitting clearly in the residuals.
+
+Notice how closely the match is between the two cross-validation models. This means that the model is well defined by the data, and we are not overfitting. We already knew this, but it's interesting to see.
+
+We definitely won't be using this one.
+
+#### OpenCV RADIAL_6 + TANGENTIAL + THIN_PRISM
+
+This is the more powerful OpenCV model we tried.
+
+```python
+config = lb.OpenCVConfig(
+    ...,
+    included_distoriton_coefficients=(
+        lb.OpenCVConfig.RADIAL_6
+        | lb.OpenCVConfig.TANGENTIAL
+        | lb.OpenCVConfig.THIN_PRISM
+    ),
+)
+```
+
+<img src="./media/calibration_docs/opencv_radial_6_tangential_thin_prism/residuals.png" width="700">
+<img src="./media/calibration_docs/opencv_radial_6_tangential_thin_prism/residual_grid.png" width="700">
+<img src="./media/calibration_docs/opencv_radial_6_tangential_thin_prism/projection_diff.png" width="1200">
+
+Like we saw before, this model fits our lens relatively well, and looking at the cross-validation plot, we are also clearly not overfitting - the model differences are extremely small.
+
+If my application did not require extreme accuracy, this model would do just fine.
+
+#### Spline 20x15
+
+Now for a pretty lean spline model with only a 20x15 grid:
+
+```python
+config = lb.PinholeSplinedConfig(
+    ...,
+    num_knots_x=20,
+    num_knots_y=15,
+)
+```
+
+<img src="./media/calibration_docs/spline_20x15/residuals.png" width="700">
+<img src="./media/calibration_docs/spline_20x15/residual_grid.png" width="700">
+<img src="./media/calibration_docs/spline_20x15/projection_diff.png" width="1200">
+
+This one is interesting: the fit is worse than the previous OpenCV model, but the cross-validation difference is still relatively high.
+
+The reason for this is likely that the model is underpowered, but doesn't contain the inductive biases that the opencv models have. So the underfitting does not save it from having higher variance - it can underfit in different ways depending on the data. I won't be using this one.
+
+#### Spline 40x30
+
+Let's look at a larger spline model with a 40x30 grid:
+
+```python
+config = lb.PinholeSplinedConfig(
+    ...,
+    num_knots_x=40,
+    num_knots_y=30,
+)
+```
+
+<img src="./media/calibration_docs/spline_40x30/residuals.png" width="800">
+<img src="./media/calibration_docs/spline_40x30/residual_grid.png" width="700">
+<img src="./media/calibration_docs/spline_40x30/projection_diff.png" width="1200">
+
+This is the first model that outperforms both OpenCV models in how well it fits the data. The projection difference plot shows that the cross-validation models match pretty well, indicating that the model is not overfitting.
+
+#### Spline 50x35
+
+Let's try an even larger spline grid, 50x35:
+
+```python
+config = lb.PinholeSplinedConfig(
+    ...,
+    num_knots_x=50,
+    num_knots_y=35,
+)
+```
+
+<img src="./media/calibration_docs/spline_50x35/residuals.png" width="1000">
+<img src="./media/calibration_docs/spline_50x35/residual_grid.png" width="700">
+<img src="./media/calibration_docs/spline_50x35/projection_diff.png" width="1200">
+
+The model does not fit the data any better than the 40x30 spline model, but the projection difference is starting to increase slightly, indicating that we are moving towards overfitting.
+
+#### Final choice
+
+The choice is between the `OpenCV RADIAL_6 + TANGENTIAL + THIN_PRISM` model and the `Spline 40x30` model.
+
+For my application I want to bias towards precision, so I'll choose the `Spline 40x30` model.
+
+Another application that I use the same lens+sensor combination is localization from detections of a known world map. There, the precision requirements are slightly more lenient, so for that application I choose the OpenCV model for its simplicity of use.
+
+
+## 9. 
 

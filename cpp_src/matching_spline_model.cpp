@@ -281,6 +281,7 @@ py::dict get_matching_spline_distortion_model(
 
     SPDLOG_DEBUG("Created problem");
     ceres::Solver::Options options;
+    options.num_threads = static_cast<int>(std::thread::hardware_concurrency());
     options.linear_solver_type = ceres::ITERATIVE_SCHUR;
     options.preconditioner_type = ceres::SCHUR_JACOBI;
     options.use_nonmonotonic_steps = true;

@@ -221,6 +221,7 @@ py::dict calibrate_opencv(
     SPDLOG_DEBUG("Added residual blocks");
 
     ceres::Solver::Options options;
+    options.num_threads = static_cast<int>(std::thread::hardware_concurrency());
     options.linear_solver_type = ceres::ITERATIVE_SCHUR;
     options.preconditioner_type = ceres::SCHUR_JACOBI;
 
