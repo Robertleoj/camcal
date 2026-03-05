@@ -244,7 +244,7 @@ def _project_and_calculate_residuals(
 
     projected_points_in_image = model.project_points(points_in_camera)
 
-    residuals = frame.detected_points_in_image - projected_points_in_image
+    residuals = projected_points_in_image - frame.detected_points_in_image
 
     return projected_points_in_image, residuals
 
