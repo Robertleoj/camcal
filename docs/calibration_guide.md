@@ -1,16 +1,22 @@
 # A Practical Guide to Camera Calibration
 
-This is a practical guide on how to calibrate a camera using lensboy. I'll walk though all the steps you need to get a quality calibration. Throughout the guide, I'll be calibrating this camera as an example:
+This is a practical guide on how to calibrate a camera using lensboy. I'll walk through all the steps you need to get a quality calibration.
 
-[insert picture of camera]
+Throughout the guide, I'll be calibrating this camera as an example:
+
+<img src="./media/calibration_docs/setup/lucid_1.png" width="300"> <img src="./media/calibration_docs/setup/lucid_2.png" width="300"> <img src="./media/calibration_docs/setup/lucid_3.png" width="300">
+
+In my use case, I mount two of these next to each other to perform close-range stereo vision that requires sub-millimeter accuracy. They will be placed on the end-effector of the masonry robots we make at [Monumental](https://www.monumental.co/), and are used to scan the bricks the robot places. It's a crucial part of the robot, and needs to be as precise and reliable as possible.
+
+I'm using an ultra wide angle lens, which makes for a good example, as they can be tricky to calibrate.
 
 ## 1. What is Camera Calibration?
 
 A camera is a sensor that captures a detailed projection of the 3D world onto a 2D plane. To make the most of this tremendously useful sensor, we often require a precise mathematical model of the projection.
 
-Each camera is unique, and the exact mapping depends on the physical properties of your specific lens and sensor assembly. All camera lenses introduce some level of nonlinear distortion which must be modeled.
+Each camera is unique - the exact mapping depends on the physical properties of your specific lens and sensor assembly. All camera lenses introduce some level of nonlinear distortion, which must be modeled.
 
-[Insert visual]
+<img src="./media/calibration_docs/projection_diagram.png">
 
 **Camera intrinsics calibration** is the process of finding the parameters of a mathematical function that describes this 3D-to-2D mapping. Once you have this function, you can:
 
@@ -25,13 +31,19 @@ The calibration function is typically a simple linear **pinhole model** (focal l
 
 Before you calibrate, your lens needs to be in its final mechanical state. Calibration captures the exact geometry of the optics at the moment you collect data - if anything moves afterward, the calibration is invalid.
 
-1. **Focus and tune** - set your focus distance, aperture, and zoom to match your application. If you have a lens with variable focus, get the image looking exactly how you need it at your working distance.
+**Focus and tune** - set your focus distance, aperture, and zoom to match your application. If you have a lens with variable focus, get the image looking exactly how you need it at your working distance.
 
-2. **Lock everything down** - once the lens is tuned, make sure nothing can shift. Use set screws if your lens has them. For critical applications, apply a small amount of loctite to the focus and zoom rings. Even a tiny rotation of the focus ring changes the calibration.
+To focus my camera, I will point it at a high-contrast image, and position it at my working distance, a bit over 165mm. I will then use the variance of the Laplacian to measure how sharp my image is, and tune it to get the highest value.
 
-This may seem overly cautious, but a lens that drifts between calibration and deployment will silently degrade your results. It can be hard to detect when the camera is out in the field, so prevention is your best option, and first line of defence.
+<img src="./media/calibration_docs/setup/focus_board.png" width=400> <img src="./media/calibration_docs/setup/focus_distance.png" width=400>
 
-My lens has adjustable focus, but also two threads for a mount converter. I'll first lock the mount threads with locktite. Then I'll focus the camera, and use three set-screws with locktite to fix the focus in place.
+**Lock everything down** - once the lens is tuned, make sure nothing can shift. Use set screws if your lens has them. For critical applications, apply a small amount of Loctite to the focus and zoom rings. Even a tiny rotation of the focus ring changes the calibration.
+
+My camera will be experiencing vibrations, and the end effector experiences the occasional impact, which will propagate to my camera. I need to be extra careful that my lens does not move under these conditions. I use Loctite to lock down all the threads, and a set screw with Loctite for the focusing thread:
+
+<img src="./media/calibration_docs/setup/set_screw.png" width=700>
+
+A lens that drifts between calibration and deployment will silently degrade your results. It can be hard to detect when the camera is out in the field, so prevention is your best option, and first line of defense.
 
 ## 3. Choosing a Calibration Target
 
