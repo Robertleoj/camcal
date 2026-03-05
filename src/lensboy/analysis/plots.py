@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 
 import cv2
 import matplotlib.colors as mcolors
@@ -12,10 +11,9 @@ from matplotlib.figure import Figure
 from matplotlib.patches import Circle
 
 import lensboy as lb
+from lensboy._logging import log
 from lensboy.analysis.image import to_color
 from lensboy.analysis.utils import rot_euler
-
-logger = logging.getLogger(__name__)
 
 
 class Color:
@@ -38,7 +36,7 @@ def _draw_points(
     return img
 
 
-def draw_points_in_image(
+def draw_points(
     points_in_image: np.ndarray,
     *,
     image: np.ndarray | None = None,
@@ -1094,8 +1092,8 @@ def plot_target_warp(
     ax.set_xlim(gx.min() - margin * x_extent, gx.max() + margin * x_extent)
     ax.set_ylim(gy.min() - margin * y_extent, gy.max() + margin * y_extent)
 
-    coeff_str = ", ".join(f"{v:.5f}" for v in (a, b, c, d, e))
-    ax.set_title(f"{title}  ({coeff_str})")
+    deflection = target_warp.max_deflection(target_points)
+    ax.set_title(f"{title}  (max deflection: {deflection:.4f})")
     ax.set_xlabel("warp x [target units]")
     ax.set_ylabel("warp y [target units]")
     ax.set_aspect("equal", adjustable="box")
@@ -1609,10 +1607,8 @@ def plot_projection_diff(
     )
 
     euler = rot_euler(pose)
-    logger.info(
-        f"Implied rotation: x={euler[0]:.4f} y={euler[1]:.4f} z={euler[2]:.4f} deg"
-    )
-    logger.info(f"Implied translation: {pose.translation}")
+    log(f"Implied rotation: x={euler[0]:.4f} y={euler[1]:.4f} z={euler[2]:.4f} deg")
+    log(f"Implied translation: {pose.translation}")
     diff_norm = np.linalg.norm(diff, axis=1)
 
     if heatmap_max is None:

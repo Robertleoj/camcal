@@ -1,13 +1,11 @@
-import logging
 
 import cv2
 import numpy as np
 
-from lensboy._internal.progress import progress
+from lensboy._logging import log, progress
 from lensboy.analysis.image import to_gray
 from lensboy.calibration.calibrate import Frame
 
-logger = logging.getLogger(__name__)
 
 
 def _detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Frame | None:
@@ -59,7 +57,7 @@ def extract_frames_from_charuco(
             frames.append(frame)
             image_indices.append(i)
 
-    logger.info(f"Detected charuco in {len(frames)}/{len(images)} images")
+    log(f"Detected charuco in {len(frames)}/{len(images)} images")
 
     target_points = np.array(board.getChessboardCorners())
 

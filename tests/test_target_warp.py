@@ -113,10 +113,10 @@ def test_warp_recovery_opencv() -> None:
         estimate_target_warp=True,
     )
 
-    assert result.warp_info is not None, "Warp should have been estimated"
+    assert result.target_warp is not None, "Warp should have been estimated"
 
     gt_warped = ground_truth_warp.warp_target(target_points)
-    recovered_warped = result.warp_info.warp_target(target_points)
+    recovered_warped = result.target_warp.warp_target(target_points)
     np.testing.assert_allclose(
         recovered_warped,
         gt_warped,

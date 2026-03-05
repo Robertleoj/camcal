@@ -8,6 +8,32 @@ from typing import TextIO, TypeVar
 
 _T = TypeVar("_T")
 
+_enabled = True
+
+
+def log(msg: str) -> None:
+    """Print an info message if logging is enabled."""
+    if _enabled:
+        print(msg)
+
+
+def warn(msg: str) -> None:
+    """Print a warning message if logging is enabled."""
+    if _enabled:
+        print(f"Warning: {msg}")
+
+
+def disable_logs() -> None:
+    """Suppress all lensboy log output."""
+    global _enabled
+    _enabled = False
+
+
+def enable_logs() -> None:
+    """Re-enable lensboy log output."""
+    global _enabled
+    _enabled = True
+
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return lo if v < lo else hi if v > hi else v
@@ -84,7 +110,7 @@ class Progress:
         self.draw(force=True)
 
     def draw(self, *, force: bool = False) -> None:
-        if self._closed:
+        if self._closed or not _enabled:
             return
 
         now = time.time()
@@ -108,7 +134,6 @@ class Progress:
             self.file.write("\r" + line + pad)
             self.file.flush()
         except Exception:
-            # If output stream is weird/closed, just stop trying.
             self._closed = True
             return
 
@@ -126,7 +151,6 @@ class Progress:
             pct_str = f"{pct:.{self.percent_decimals}f}%"
             return f"{self.desc}: {_fmt_int(completed)}/{_fmt_int(total)} ({pct_str})"
         else:
-            # unknown total: show "n" and optionally percent (off by default)
             if self.show_percent_when_unknown_total:
                 return f"{self.desc}: {_fmt_int(completed)}/? (?)"
             return f"{self.desc}: {_fmt_int(completed)}/?"
@@ -134,17 +158,16 @@ class Progress:
     def close(self) -> None:
         if self._closed:
             return
-        # final draw then newline so next prints don’t overwrite
         self.draw(force=True)
-        try:
-            self.file.write("\n")
-            self.file.flush()
-        except Exception:
-            pass
+        if _enabled:
+            try:
+                self.file.write("\n")
+                self.file.flush()
+            except Exception:
+                pass
         self._closed = True
 
 
-# Small helper for drop-in-ish usage:
 def progress(
     iterable: Iterable[_T],
     *,
@@ -152,12 +175,13 @@ def progress(
     desc: str = "doing thing",
     **kwargs,
 ) -> Iterator[_T]:
-    """
-    Wrap an iterable and yield items while updating progress.
+    """Wrap an iterable and yield items while updating progress.
 
-    Example:
-        for x in progress(xs, desc="doing thing"):
-            ...
+    Args:
+        iterable: Items to iterate over.
+        total: Total count (inferred from iterable length if None).
+        desc: Description shown in the progress line.
+        **kwargs: Extra arguments forwarded to Progress.
     """
     iterable = list(iterable)
     if total is None:

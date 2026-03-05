@@ -128,8 +128,8 @@ def _check_first_frame_projection(
     fi = result.frame_infos[0]
 
     points_in_target = target_points[frame.target_point_indices]
-    if result.warp_info is not None:
-        points_in_target = result.warp_info.warp_target(points_in_target)
+    if result.target_warp is not None:
+        points_in_target = result.target_warp.warp_target(points_in_target)
 
     points_in_cam = pose.apply(points_in_target)
     projected = model.project_points(points_in_cam)

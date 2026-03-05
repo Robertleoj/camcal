@@ -1,4 +1,3 @@
-import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -15,9 +14,8 @@ from lensboy.camera_models.pinhole_splined import (
     PinholeSplined,
     PinholeSplinedConfig,
 )
+from lensboy._logging import log, warn
 from lensboy.geometry.pose import Pose
-
-LOG = logging.getLogger(__name__)
 
 DEFAULT_OUTLIER_THRESHOLD = 3.0
 MAX_OUTLIER_FILTER_PASSES = 2
@@ -164,6 +162,22 @@ class TargetWarp:
             target_points,
         )
 
+    def max_deflection(self, target_points: np.ndarray) -> float:
+        """Peak-to-peak z-deflection caused by the warp, in target units.
+
+        Args:
+            target_points: Original 3D target coordinates, shape (N, 3).
+
+        Returns:
+            The spread (max minus min) of warp-induced z change.
+        """
+        warp_frame_from_target = self.warp_coordinates.target_from_warp_frame.inverse()
+        z_original = warp_frame_from_target.apply(target_points)[:, 2]
+        warped = self.warp_target(target_points)
+        z_warped = warp_frame_from_target.apply(warped)[:, 2]
+        dz = z_warped - z_original
+        return float(np.max(dz) - np.min(dz))
+
 
 @dataclass
 class CalibrationResult(Generic[T]):
@@ -173,13 +187,13 @@ class CalibrationResult(Generic[T]):
         optimized_camera_model: The calibrated camera model.
         optimized_cameras_T_target: One pose per image (camera-from-target).
         frame_infos: Per-image reprojection diagnostics, one per input image.
-        warp_info: Estimated target warp, or None if not estimated.
+        target_warp: Estimated target warp, or None if not estimated.
     """
 
     optimized_camera_model: T
     optimized_cameras_T_target: list[Pose]
     frame_infos: list[FrameInfo]
-    warp_info: TargetWarp | None = None
+    target_warp: TargetWarp | None = None
 
     def residual_sigma_map(self) -> float:
         """Robust MAP estimate of residual standard deviation over inliers.
@@ -298,7 +312,7 @@ def _opencv_calibrate_inner(
 
     cameras_from_target_in = [p._to_cpp() for p in curr_cameras_from_target]
 
-    LOG.info("Running full optimization...")
+    log("Running full optimization...")
     start_time = default_timer()
     result = lbb.calibrate_opencv(
         intrinsics_initial_value=params,
@@ -312,7 +326,7 @@ def _opencv_calibrate_inner(
         warp_coeffs_initial=list(warp_coeffs) if warp_coeffs is not None else [0.0] * 5,
     )
     end_time = default_timer()
-    LOG.info(f"Ran optimizer in {end_time - start_time:.2f}s")
+    log(f"Ran optimizer in {end_time - start_time:.2f}s")
 
     optimized_intrinsics = curr_intrinsics._with_params(result["intrinsics"])
 
@@ -373,7 +387,7 @@ def _log_residual_stats(frame_infos: list[FrameInfo]) -> None:
             if fi.inlier_mask.any()
         ]
     )
-    LOG.info(
+    log(
         f"Residuals (inliers): mean={np.mean(inlier_norms):.3f}px, "
         f"worst={np.max(inlier_norms):.3f}px"
     )
@@ -404,7 +418,7 @@ def _run_with_outlier_filtering(
             state = optimize_fn(state)
         else:
             n_empty = sum(not m for m in non_empty_mask)
-            LOG.info(f"Skipping {n_empty} frame(s) with no inlier points")
+            log(f"Skipping {n_empty} frame(s) with no inlier points")
             active_frames = [f for f, m in zip(state.frames, non_empty_mask) if m]
             active_poses = [
                 p for p, m in zip(state.cameras_from_target, non_empty_mask) if m
@@ -453,7 +467,7 @@ def _run_with_outlier_filtering(
         total_remaining = sum(len(f) for f in new_frames)
         total_outliers = total_observations - total_remaining
         pct = total_outliers / total_observations * 100
-        LOG.info(
+        log(
             f"Outlier filtering: {total_outliers}/{total_observations}"
             f" ({pct:.1f}%) outliers - going again..."
         )
@@ -484,7 +498,7 @@ def _initialize_poses_with_pnp(
                 )
                 continue
 
-        LOG.warning("PnP init failed for frame, using fallback pose")
+        warn("PnP init failed for frame, using fallback pose")
         poses.append(Pose.from_tz(100))
 
     return poses
@@ -501,7 +515,7 @@ def _make_warp_coordinates(target_points: np.ndarray) -> WarpCoordinates | None:
 
     planarity_ratio = s[2] / s[1] if s[1] > 1e-10 else np.inf
     if planarity_ratio > _PLANARITY_RATIO_THRESHOLD:
-        LOG.warning(
+        warn(
             "Target warp can only be estimated with a planar target "
             f"(planarity ratio {planarity_ratio:.3f} > {_PLANARITY_RATIO_THRESHOLD}). "
             "Skipping warp estimation."
@@ -530,7 +544,7 @@ def _make_warp_coordinates(target_points: np.ndarray) -> WarpCoordinates | None:
         x_scale = float(np.linalg.norm(e0) / 2.0)
         y_scale = float(np.linalg.norm(e1) / 2.0)
     else:
-        LOG.info("Target is not rectangular; falling back to PCA for warp frame axes.")
+        log("Target is not rectangular; falling back to PCA for warp frame axes.")
         eigvals, eigvecs = np.linalg.eigh(np.cov(points_2d.T))
         order = np.argsort(eigvals)[::-1]
         u = eigvecs[:, order[0]]
@@ -572,7 +586,7 @@ def _opencv_calibrate(
         f"Expected floating dtype for target_points, got {target_points.dtype}"
     )
     initial_intrinsics = config.get_initial_value()
-    LOG.info("Computing initial poses with PnP...")
+    log("Computing initial poses with PnP...")
     initial_cameras_from_target = _initialize_poses_with_pnp(
         initial_intrinsics, target_points, frames
     )
@@ -603,12 +617,13 @@ def _opencv_calibrate(
         warp_coordinates=warp_coordinates,
     )
 
-    warp_info = None
+    target_warp = None
     if warp_coordinates is not None and state.warp_coeffs is not None:
-        warp_info = TargetWarp(
+        target_warp = TargetWarp(
             warp_coordinates=warp_coordinates, object_warp=state.warp_coeffs
         )
-        LOG.info(f"Target warp coefficients: {state.warp_coeffs}")
+        deflection = target_warp.max_deflection(target_points)
+        log(f"Target warp max deflection: {deflection:.4f} (target units)")
 
     frame_infos = _compute_frame_infos(
         state.intrinsics,
@@ -616,7 +631,7 @@ def _opencv_calibrate(
         frames,
         state.frames if state.frames is not frames else None,
         target_points,
-        warp_info,
+        target_warp,
     )
 
     _log_residual_stats(frame_infos)
@@ -624,7 +639,7 @@ def _opencv_calibrate(
         optimized_camera_model=state.intrinsics,
         optimized_cameras_T_target=state.cameras_from_target,
         frame_infos=frame_infos,
-        warp_info=warp_info,
+        target_warp=target_warp,
     )
 
 
@@ -701,18 +716,18 @@ def _calibrate_pinhole_splined(
         included_distoriton_coefficients=OpenCVConfig.FULL_14,
     )
 
-    LOG.info("Calibrating seed opencv model...")
+    log("Calibrating seed opencv model...")
     start_time = default_timer()
     opencv_calibration_result = _opencv_calibrate(
         target_points, frames, opencv_config, None, estimate_target_warp=False
     )
     end_time = default_timer()
-    LOG.info(f"OpenCV seed model ready in {end_time - start_time:.1f}s")
+    log(f"OpenCV seed model ready in {end_time - start_time:.1f}s")
 
     opencv_model = opencv_calibration_result.optimized_camera_model
 
     fov_deg_x, fov_deg_y = _compute_fov_from_opencv(opencv_model)
-    LOG.info(f"Computed FOV from OpenCV model: {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
+    log(f"Computed FOV from OpenCV model: {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
 
     cpp_config = lbb.PinholeSplinedConfig(
         config.image_width,
@@ -723,13 +738,13 @@ def _calibrate_pinhole_splined(
         config.num_knots_y,
     )
 
-    LOG.info("Calculating matching spline model...")
+    log("Calculating matching spline model...")
     start_time = default_timer()
     out_dict = lbb.get_matching_spline_distortion_model(
         opencv_model.distortion_coeffs.tolist(), cpp_config
     )
     end_time = default_timer()
-    LOG.info(f"Matching spline model ready in {end_time - start_time:.1f}s")
+    log(f"Matching spline model ready in {end_time - start_time:.1f}s")
 
     x_knots = out_dict["x_knots"]
     y_knots = out_dict["y_knots"]
@@ -758,7 +773,7 @@ def _calibrate_pinhole_splined(
     def optimize_fn(
         state: _OptimizationState[PinholeSplined],
     ) -> _OptimizationState[PinholeSplined]:
-        LOG.info("Running full optimization...")
+        log("Running full optimization...")
         start = default_timer()
         intrinsics, cameras, kxy = _pinhole_splined_refine_inner(
             state.intrinsics,
@@ -768,7 +783,7 @@ def _calibrate_pinhole_splined(
             warp_coordinates,
             state.warp_coeffs,
         )
-        LOG.info(f"Performed full optimization in {default_timer() - start:.2f}s")
+        log(f"Performed full optimization in {default_timer() - start:.2f}s")
         return replace(
             state, intrinsics=intrinsics, cameras_from_target=cameras, warp_coeffs=kxy
         )
@@ -781,13 +796,13 @@ def _calibrate_pinhole_splined(
         warp_coordinates=warp_coordinates,
     )
 
-    warp_info = None
+    target_warp = None
     if warp_coordinates is not None and state.warp_coeffs is not None:
-        warp_info = TargetWarp(
+        target_warp = TargetWarp(
             warp_coordinates=warp_coordinates, object_warp=state.warp_coeffs
         )
-
-        LOG.info(f"Target warp coefficients: {state.warp_coeffs}")
+        deflection = target_warp.max_deflection(target_points)
+        log(f"Target warp max deflection: {deflection:.4f} (target units)")
 
     frame_infos = _compute_frame_infos(
         state.intrinsics,
@@ -795,7 +810,7 @@ def _calibrate_pinhole_splined(
         frames,
         state.frames if state.frames is not frames else None,
         target_points,
-        warp_info,
+        target_warp,
     )
 
     final_intrinsics = replace(
@@ -807,7 +822,7 @@ def _calibrate_pinhole_splined(
         optimized_camera_model=final_intrinsics,
         optimized_cameras_T_target=state.cameras_from_target,
         frame_infos=frame_infos,
-        warp_info=warp_info,
+        target_warp=target_warp,
     )
 
 
@@ -818,7 +833,6 @@ def calibrate_camera(
     camera_model_config: PinholeSplinedConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
-    verbose: bool = True,
 ) -> CalibrationResult[PinholeSplined]: ...
 
 
@@ -829,7 +843,6 @@ def calibrate_camera(
     camera_model_config: OpenCVConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
-    verbose: bool = True,
 ) -> CalibrationResult[OpenCV]: ...
 
 
@@ -839,7 +852,6 @@ def calibrate_camera(
     camera_model_config: CameraModelConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
-    verbose: bool = True,
 ) -> CalibrationResult:
     """Calibrate a camera from a set of per-image frames.
 
@@ -854,33 +866,10 @@ def calibrate_camera(
             of the target to account for slight non-planarity.
         outlier_threshold_stddevs: Sigma threshold for outlier rejection.
             Pass None to disable.
-        verbose: Whether to emit log messages during calibration.
 
     Returns:
         Calibration result containing the optimised model and per-image diagnostics.
     """
-    if not verbose:
-        LOG.disabled = True
-
-    try:
-        return _calibrate_camera_inner(
-            target_points,
-            frames,
-            camera_model_config,
-            estimate_target_warp,
-            outlier_threshold_stddevs,
-        )
-    finally:
-        LOG.disabled = False
-
-
-def _calibrate_camera_inner(
-    target_points: np.ndarray,
-    frames: list[Frame],
-    camera_model_config: CameraModelConfig,
-    estimate_target_warp: bool,
-    outlier_threshold_stddevs: float | None,
-) -> CalibrationResult:
     assert target_points.ndim == 2 and target_points.shape[1] == 3, (
         f"Expected (N, 3) target_points, got {target_points.shape}"
     )

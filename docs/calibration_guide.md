@@ -67,11 +67,7 @@ I will be using a 600mm x 400mm ChArUco board from calib.io with a 9 x 14 grid f
 
 Data collection is absolutely crucial for a good calibration. This is what the optimizer uses to compute the intrinsics parameters, and your calibration is only as good as your data. There are a few specific things you should aim for:
 
-**Cover the entire image plane.** Move the target around so that detections land in every region of the frame - center, edges, and especially corners. If you want your projection function to be accurate in an area of the image, it needs to be well covered by observations. You can use `plot_detection_coverage()` later to check how well you did.
-
-<img src="./media/calibration_docs/good_coverage.png" width=1000>
-
-<img src="./media/calibration_docs/bad_coverage.png" width=1000>
+**Cover the entire image plane.** Move the target around so that detections land in every region of the frame - center, edges, and especially corners. If you want your projection function to be accurate in an area of the image, it needs to be well covered by observations.
 
 **Take close-ups, and vary your angles.** Most of your images should be angled close-ups. Angled samples are essential for accurately solving the intrinsics - head-on views provide weak constraints on focal length and principal point. Close-ups dramatically decrease the projection uncertainty. [This great study](https://mrcal.secretsauce.net/docs-2.0/tour-choreography.html) demonstrates why you should take angled close-ups.
 
@@ -101,19 +97,29 @@ These are all angled close-ups with varying angles, and I end up with good cover
 
 With your images collected, the next step is to detect the features in the images. Each type of target requires a matching detector. I will be using lensboy's `extract_frames_from_charuco()` to detect my ChArUco board. It's just a simple wrapper for OpenCV's ChArUco detector.
 
-[insert code example]
+```python
+board = cv2.aruco.CharucoBoard(
+    size=(14, 9),
+    squareLength=40,  # mm
+    markerLength=30,  # mm
+    dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100),
+)
+
+target_points, frames, used_indices = lb.extract_frames_from_charuco(board, images)
+```
 
 The board definition must match the physical target you used - same number of squares, same dictionary, and correct square/marker sizes in whatever unit you want to work in (typically millimeters). The relevant details are usually printed on ChArUco boards.
 
-Here is a visualization of the detected corners on a couple of the images
+Here is a visualization of the detected corners on a couple of the images:
 
-[insert visualization of detected corners]
+<img src="./media/calibration_docs/detection_1.png" width=1000>
+<img src="./media/calibration_docs/detection_2.png" width=1000>
 
-Let's see how well I did in terms of coverage:
+Let's use `plot_detection_coverage()` to see how well I did in terms of coverage:
 
-[insert visualization of coverage]
+<img src="./media/calibration_docs/coverage.png" width=1000>
 
-Looks like I did pretty well - I'm missing the very edges of the sensor, but it's very hard to capture data there on such a wide-angle lens, and I won't be using the data from there anyway.
+Looks like I did pretty well - I'm only missing the corners of the image, but it's very hard to capture data there on such a wide-angle lens, and I won't be using the data from there anyway.
 
 If you see that you don't have much data in an area of the image you will be using, you need to take more samples to make sure to cover them.
 
@@ -151,11 +157,23 @@ For `initial_focal_length`, a rough estimate is fine - the optimizer will refine
 
 The logs of the solver were
 
-[insert logs]
+```
+Computing initial poses with PnP...
+Running full optimization...
+Ran optimizer in 0.24s
+Outlier filtering: 300/5955 (5.0%) outliers - going again...
+Running full optimization...
+Ran optimizer in 0.18s
+Outlier filtering: 310/5955 (5.2%) outliers - going again...
+Running full optimization...
+Ran optimizer in 0.16s
+Target warp max deflection: 0.3542 (target units)
+Residuals (inliers): mean=0.220px, worst=1.094px
+```
 
 You might notice two things:
 
-**Outlier filtering:** lensboy automatically filters outliers when fitting the lens model. The reason for this is that you often have erroneous or noisy data in your dataset, and including them will corrupt your fit. You can control the aggressiveness of the outlier filtering by tweaking `outlier_threshold_stddevs`, and turn it off entirely by passing `None`. However, the default value of `3` provides a good balance and works well for me. I see that about 0.3% of my data was filtered out, which is normal. You should start to worry if it's more than a few percent.
+**Outlier filtering:** lensboy automatically filters outliers when fitting the lens model. The reason for this is that you often have erroneous or noisy data in your dataset, and including them will corrupt your fit. You can control the aggressiveness of the outlier filtering by tweaking `outlier_threshold_stddevs`, and turn it off entirely by passing `None`. However, the default value of `3` provides a good balance and works well for me. I see that about 5% of my data was filtered out, which is normal. I'd start to worry if it goes over 10%.
 
 **Target warp estimation:** No matter how precisely manufactured, your target will never be perfectly flat - it will have some kind of warping. Because of this, lensboy automatically estimates the warping of your target, which usually results in better fits. This feature is not available for very non-planar targets. You can disable this feature by setting `estimate_target_warp` to `False`.
 
