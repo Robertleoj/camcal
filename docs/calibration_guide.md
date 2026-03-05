@@ -130,7 +130,7 @@ You'll want to choose the distortion model according to your camera and applicat
 - The distortion characteristics of the lens
 - Your accuracy needs
 
-Some lenses have extreme amounts of distortion like the one I'm using now. This requires a distortion model capable of modeling this amount of distortion. Each group of distortion parameters in OpenCV models is intended to model a specific type of distortion, and you can choose your distortion parameters according to the characteristics of your lens+sensor setup. See [this page](https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html) for a detailed explanation of OpenCV-type distortion. However, in my experience, including more distortion parameters doesn't really adversely affect your calibration quality, the solver will just set them to zero if they are not applicable.
+Some lenses have extreme amounts of distortion like the one I'm using now. This requires a distortion model capable of modeling this amount of distortion. Each group of distortion parameters in OpenCV models is intended to model a specific type of distortion, and you can choose your distortion parameters according to the characteristics of your lens+sensor setup. See [this page](https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html) for a detailed explanation of OpenCV-type distortion. However, in my experience, including more distortion parameters doesn't really adversely affect your calibration quality. The solver will just set them to zero if they are not applicable.
 
 All lenses deviate by some amount from the ideal lenses described by the OpenCV distortion model. By how much and in what way depends on your specific lens. If you want your distortion model to model these imperfections well, the OpenCV models are not sufficient, and you'll need to use a spline-based distortion model, which you can do with lensboy. These use B-spline grids to model the distortion, and are extremely flexible.
 
@@ -143,7 +143,7 @@ config = lb.OpenCVConfig(
     image_height=image_height,
     image_width=image_width,
     initial_focal_length=1000,
-    included_distoriton_coefficients=(
+    included_distortion_coefficients=(
         lb.OpenCVConfig.RADIAL_6
         | lb.OpenCVConfig.TANGENTIAL
         | lb.OpenCVConfig.THIN_PRISM
@@ -173,11 +173,11 @@ Residuals (inliers): mean=0.220px, worst=1.094px
 
 You might notice two things:
 
-**Outlier filtering:** lensboy automatically filters outliers when fitting the lens model. The reason for this is that you often have erroneous or noisy data in your dataset, and including them will corrupt your fit. You can control the aggressiveness of the outlier filtering by tweaking `outlier_threshold_stddevs`, and turn it off entirely by passing `None`. However, the default value of `3` provides a good balance and works well for me. I see that about 5% of my data was filtered out, which is normal - we'll see later that this is mostly due to the the ChArUco detector struggling under extreme distortion. I'd start to worry if it goes over 10%.
+**Outlier filtering:** lensboy automatically filters outliers when fitting the lens model. The reason for this is that you often have erroneous or noisy data in your dataset, and including them will corrupt your fit. You can control the aggressiveness of the outlier filtering by tweaking `outlier_threshold_stddevs`, and turn it off entirely by passing `None`. However, the default value of `3` provides a good balance and works well for me. I see that about 5% of my data was filtered out, which is normal - we'll see later that this is mostly due to the ChArUco detector struggling under extreme distortion. I'd start to worry if it goes over 10%.
 
 **Target warp estimation:** No matter how precisely manufactured, your target will never be perfectly flat - it will have some kind of warping. Because of this, lensboy automatically estimates the warping of your target, which usually results in better fits. This feature is not available for very non-planar targets. You can disable this feature by setting `estimate_target_warp` to `False`.
 
-We also see the mean reprojection error of the inliers. This is the average norm of the difference between your measurements and the reprojected target points, given the warping of the target, the optimized camera poses, and the intrinsics model. The magnitudes depends on many things, but most importantly **the quality of your data** and the **quality of the lens model fit**. The residuals grow if your data is noisy, and if your lensmodel underfits (is not powerful enough to capture your lens distortion).
+We also see the mean reprojection error of the inliers. This is the average norm of the difference between your measurements and the reprojected target points, given the warping of the target, the optimized camera poses, and the intrinsics model. The magnitude depends on many things, but most importantly **the quality of your data** and the **quality of the lens model fit**. The residuals grow if your data is noisy, and if your lens model underfits (is not powerful enough to capture your lens distortion).
 
 ## 7. Analyzing Calibration Quality
 
@@ -193,13 +193,12 @@ There are two main things you should think about when analyzing the quality of y
 
 Your first step after fitting an intrinsics model should almost always be to look at the residual distribution for which you can use `plot_residuals()`. Let's take a look at the residuals from the calibration we fit earlier:
 
-<img src="./media/calibration_docs/strong_opencv_residuals.png" width="1000">
+<img src="./media/calibration_docs/first_model_residuals.png" width="1000">
 
 This looks about as I'd expect. What you should look out for:
 
 - **Histogram should be roughly normal.** If your histogram does not look like a normal distribution, something is going systematically wrong, and you need to debug it.
 - **2D residuals should be isotropic.** The 2D residual distribution in the bottom left should be radially symmetric - you should not be able to see much of a pattern. Again, if this is not the case, you need to figure out what's causing the irregularity.
-- **Not too many outliers.** The plot on the right should not be full of outliers. You should expect a sparse set of points lying outside the inlier region.
 
 The gaussian MAD $\sigma$ is a robust estimate of the standard deviation of the data - it represents the distribution better than a raw standard deviation. When it comes to this number, lower is better until we start overfitting.
 
@@ -212,6 +211,14 @@ Looking at this plot, you should see that the 2D distribution is not radially sy
 <img src="./media/calibration_docs/april_tag.png" width="200">
 
 However, different brightnesses can lead to it being detected slightly smaller or bigger, explaining the "arms" in the residual plot. This is a good reason you should opt for a checkerboard pattern instead of tags like this - they don't have this kind of variance.
+
+### Worst frames
+
+It's useful to inspect the frames with the largest residuals to understand where your model struggles. lensboy provides `plot_worst_residual_frames()` for this. Let's look at the 3 worst frames:
+
+<img src="./media/calibration_docs/first_model_worst_3_residuals.png" width="800">
+
+Looking at these images, I see that the largest residuals are caused by the ChArUco detector struggling under the extreme distortion. I won't worry about this, as these samples are filtered out as outliers.
 
 ### The residual grid
 
@@ -228,7 +235,7 @@ When looking at the residual grid, it is important to only focus on the areas wh
 
 Let's look at the residual grid for the model we fit earlier:
 
-<img src="./media/calibration_docs/strong_opencv_residual_grid.png" width="700">
+<img src="./media/calibration_docs/first_model_residual_grid.png" width="1000">
 
 [insert analysis of the residual grid - this should look reasonable for the stronger OpenCV model]
 
@@ -346,7 +353,7 @@ Let's start with a simpler OpenCV model using only the 6 radial distortion param
 ```python
 config = lb.OpenCVConfig(
     ...,
-    included_distoriton_coefficients=lb.OpenCVConfig.RADIAL_6,
+    included_distortion_coefficients=lb.OpenCVConfig.RADIAL_6,
 )
 ```
 
@@ -363,7 +370,7 @@ This is the OpenCV model we fit in section 6.
 ```python
 config = lb.OpenCVConfig(
     ...,
-    included_distoriton_coefficients=(
+    included_distortion_coefficients=(
         lb.OpenCVConfig.RADIAL_6
         | lb.OpenCVConfig.TANGENTIAL
         | lb.OpenCVConfig.THIN_PRISM

@@ -43,7 +43,7 @@ def test_opencv_full14() -> None:
         image_height=img_h,
         image_width=img_w,
         initial_focal_length=1000,
-        included_distoriton_coefficients=lb.OpenCVConfig.FULL_14,
+        included_distortion_coefficients=lb.OpenCVConfig.FULL_14,
     )
     result = lb.calibrate_camera(target_points, frames, camera_model_config=config)
 
@@ -98,7 +98,7 @@ def test_opencv_all_outliers_in_one_frame() -> None:
         image_height=img_h,
         image_width=img_w,
         initial_focal_length=1000,
-        included_distoriton_coefficients=lb.OpenCVConfig.FULL_14,
+        included_distortion_coefficients=lb.OpenCVConfig.FULL_14,
     )
     result = lb.calibrate_camera(
         target_points, frames_with_corruption, camera_model_config=config
