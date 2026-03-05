@@ -110,7 +110,7 @@ All lenses deviate by some amount from the ideal lenses described by the OpenCV 
 
 I have a wide-angle lens with extreme distortion. I have high accuracy needs, so I suspect I will need to use a spline-based model. However, let's start by fitting an OpenCV-style lens model to my lens to see how well it works.
 
-For my first experiment, I'll use the 6 radial parameters $k_1,\ldots,k_6$. We can fit this model with `lensboy` as follows:
+For my first experiment, I'll use the 6 radial parameters $k_1,\ldots,k_6$, the tangential parameters $p_1,p_2$, and the thin prism parameters $s_1,\ldots,s_4$. We can fit this model with `lensboy` as follows:
 
 ```python
 config = lb.OpenCVConfig(
@@ -119,6 +119,8 @@ config = lb.OpenCVConfig(
     initial_focal_length=1000,
     included_distoriton_coefficients=(
         lb.OpenCVConfig.RADIAL_6
+        | lb.OpenCVConfig.TANGENTIAL
+        | lb.OpenCVConfig.THIN_PRISM
     ),
 )
 
@@ -153,7 +155,7 @@ There are two main things you should think about when analyzing the quality of y
 
 Your first step after fitting an intrinsics model should almost always be to look at the residual distribution for which you can use `plot_residuals()`. Let's take a look at the residuals from the calibration we fit earlier:
 
-<img src="./media/calibration_docs/radial_6_residuals.png" width="1000">
+<img src="./media/calibration_docs/strong_opencv_residuals.png" width="1000">
 
 This looks about as I'd expect. What you should look out for:
 
@@ -188,14 +190,9 @@ When looking at the residual grid, it is important to only focus on the areas wh
 
 Let's look at the residual grid for the model we fit earlier:
 
-<img src="./media/calibration_docs/radial_6_residual_grid.png" width="700">
+<img src="./media/calibration_docs/strong_opencv_residual_grid.png" width="700">
 
-It is pretty clear that
-
-- The residuals get increasingly larger going away from the center, and
-- There are clear directional biases in parts of the image we expect good intrinsics.
-
-The model is underfitting, and I will need a more powerful model for my lens. Section 8 covers that process in detail.
+[insert analysis of the residual grid - this should look reasonable for the stronger OpenCV model]
 
 ### Target warp
 
@@ -203,13 +200,13 @@ As mentioned earlier, lensboy estimates the warp of near-planar targets by defau
 
 Let's take a look at the estimated warp for the model we fit earlier:
 
-<img src="./media/calibration_docs/radial_6_target_warp.png" width="700">
+<img src="./media/calibration_docs/strong_opencv_target_warp.png" width="700">
 
 The warp estimation has a bowl shape that I see often for charuco boards. The spread is small (about 0.5mm), but still enough to matter.
 
 If we fit a model without enabling the target warp, and plot the residuals, we see that we get a wider residual distribution:
 
-<img src="./media/calibration_docs/radial_6_no_warp_residuals.png" width="1000">
+<img src="./media/calibration_docs/strong_opencv_no_warp_residuals.png" width="1000">
 
 We have a higher MAD $\sigma$, and more outliers. Most of the time, you should enable target warp estimation.
 
@@ -219,81 +216,9 @@ lensboy provides the plot `plot_distortion_grid()` to visualize the projection f
 
 Let's look at this plot for our camera model:
 
-<img src="./media/calibration_docs/radial_6_distortion_grid.png" width="1000">
+<img src="./media/calibration_docs/strong_opencv_distortion_grid.png" width="1000">
 
 The left side shows a grid at the $z=1$ in camera frame, and the right shows how that grid is transformed into image space. We can clearly see that my wide-angle lens introduces a large amount of distortion.
-
-## 8. Refining Your Model
-
-In section 7, we saw that the RADIAL_6 model underfits my wide-angle lens - the residual grid showed clear spatial patterns. The next step is to try a more powerful model.
-
-We want to obtain a good fit that doesn't underfit, but doesn't overfit either.
-
-### Adding more OpenCV parameters
-
-The first thing we can try is to make the distortion model more powerful by using more distortion parameters. I'll make the solver estimate the tangential parameters $p_1,p_2$ and thin prism parameters $s_1,\ldots,s_4$:
-
-```python
-config = lb.OpenCVConfig(
-    image_height=image_height,
-    image_width=image_width,
-    initial_focal_length=1000,
-    included_distoriton_coefficients=(
-        lb.OpenCVConfig.RADIAL_6
-        | lb.OpenCVConfig.TANGENTIAL
-        | lb.OpenCVConfig.THIN_PRISM
-    ),
-)
-```
-
-Let's take a look at `plot_residuals()` and `plot_residual_grid()`:
-
-<img src="./media/calibration_docs/strong_opencv_residuals.png" width="1000">
-
-<img src="./media/calibration_docs/strong_opencv_residual_grid.png" width="700">
-
-This seems to fit much better than the pure RADIAL_6 model.
-
-- There are fewer outliers, and we get a smaller MAD $\sigma$.
-- Across the image, the magnitudes of the residuals is smaller and more uniform than what we had before, and there are less directional biases.
-
-It is clear that this model underfits considerably less than the pure RADIAL_6 model.
-
-### Splined model
-
-Let's see what happens if we use an even more powerful distortion model: spline-based models. These use B-spline grids to model distortion, and so can model more arbitrary distortion patterns. However, as we will see later, they are also more prone to overfitting due to their flexibility, and thus require more data to constrain properly.
-
-We can configure a spline model in lensboy with `PinholeSplinedConfig`. You control how flexible the model is by tuning the spline grid density.
-
-I'll start by training a splined model, using 30x20 grid as my starting point:
-
-```python
-config = lb.PinholeSplinedConfig(
-    image_height=image_height,
-    image_width=image_width,
-    initial_focal_length=1000,
-    num_knots_x=30,
-    num_knots_y=20,
-)
-
-result = lb.calibrate_camera(target_points, frames, config)
-```
-
-Again, let's take a look at `plot_residuals()` and `plot_residual_grid()`:
-
-<img src="./media/calibration_docs/spline_30x20_residuals.png" width="1000">
-
-<img src="./media/calibration_docs/spline_30x20_residual_grid.png" width="700">
-
-As expected with such a flexible model, it fits our data even better. Our MAD $\sigma$ is even lower, and the residual grid looks even tighter.
-
-Let's take a look at how this spline model's projection function looks like with `plot_distortion_grid()`. I'll show the spline knots by setting `show_spline_knots` to `True`:
-
-<img src="./media/calibration_docs/spline_30x20_distortion_grid.png" width="1000">
-
-The distortion looks very similar to the opencv models, except at the edges, where it behaves a bit erratically - this is standard for a spline-based model, as it is very flexible and relatively underconstrained at the edges.
-
-However, with such a flexible model, the worry is now not whether the model is able to fit the data, but whether it is overfitting.
 
 ### Cross-validation via model differencing
 
@@ -319,14 +244,9 @@ frames_a = frames[0::2]
 frames_b = frames[1::2]
 ```
 
-Now let's fit a 30x20 spline model on the two sets:
+Now let's fit two instances of the same model on the two sets:
 
 ```python
-config = lb.PinholeSplinedConfig(
-    num_knots_x=30,
-    num_knots_y=20,
-    ...
-)
 model_a = lb.calibrate_camera(target_points, frames_a, config)
 model_b = lb.calibrate_camera(target_points, frames_b, config)
 ```
@@ -341,21 +261,49 @@ The right side shows the pattern of the projection difference. In reality the di
 
 One thing to look out for is the "fit circle". Its interior is the area of the image we use to find the difference between the implied camera frames of the models. This should only cover areas of the image where you expect good intrinsics. If it goes out of that area, this plot will not be realistic, and you need to adjust the `radius` argument to `plot_projection_diff()`.
 
-### Final model selection
+## 8. Splined Models
 
-To choose my final model, I will try a few models with increasing complexity. For each model, I'll look at
+The OpenCV model from section 7 fits my lens reasonably well, but can we do better? For my application I want to push for maximum precision, so let's see if a more flexible model can reduce the residuals further.
 
-- **The residual plot** to understand the distribution of the residuals and outliers.
-- **The projection grid** to see whether there are systematic patterns in the errors to spot underfitting fast.
-- **The cross-validation model difference** to spot whether my model is overfitting.
+Spline-based models use B-spline grids to model distortion, and so can model more arbitrary distortion patterns. However, they are also more prone to overfitting due to their flexibility, and thus require more data to constrain properly.
 
-When I know that my data is good, these plots tell me everything I need to know.
+We can configure a spline model in lensboy with `PinholeSplinedConfig`. You control how flexible the model is by tuning the spline grid density.
 
-I'll look at two OpenCV model configurations, and three spline model configurations. For each, I'll show the residual plot, residual grid, and cross-validation model difference.
+I'll train a splined model using a 30x20 grid as my starting point:
+
+```python
+config = lb.PinholeSplinedConfig(
+    image_height=image_height,
+    image_width=image_width,
+    initial_focal_length=1000,
+    num_knots_x=30,
+    num_knots_y=20,
+)
+
+result = lb.calibrate_camera(target_points, frames, config)
+```
+
+Let's take a look at `plot_residuals()` and `plot_residual_grid()`:
+
+<img src="./media/calibration_docs/spline_30x20_residuals.png" width="1000">
+
+<img src="./media/calibration_docs/spline_30x20_residual_grid.png" width="700">
+
+As expected with such a flexible model, it fits our data even better. Our MAD $\sigma$ is even lower, and the residual grid looks even tighter.
+
+Let's take a look at how this spline model's projection function looks like with `plot_distortion_grid()`. I'll show the spline knots by setting `show_spline_knots` to `True`:
+
+<img src="./media/calibration_docs/spline_30x20_distortion_grid.png" width="1000">
+
+The distortion looks very similar to the OpenCV models, except at the edges, where it behaves a bit erratically - this is standard for a spline-based model, as it is very flexible and relatively underconstrained at the edges.
+
+## 9. Putting It All Together
+
+Now let's use the diagnostic tools from section 7 to systematically compare models with increasing complexity. For each model, I'll show the residual plot, residual grid, and cross-validation model difference.
 
 #### OpenCV RADIAL_6
 
-Let's start with the RADIAL_6 model - we already know this one underfits.
+Let's start with a simpler OpenCV model using only the 6 radial distortion parameters, to see what underfitting looks like in practice.
 
 ```python
 config = lb.OpenCVConfig(
@@ -368,15 +316,11 @@ config = lb.OpenCVConfig(
 <img src="./media/calibration_docs/opencv_radial_6/residual_grid.png" width="700">
 <img src="./media/calibration_docs/opencv_radial_6/projection_diff.png" width="1200">
 
-As before, we see the underfitting clearly in the residuals.
-
-Notice how closely the match is between the two cross-validation models. This means that the model is well defined by the data, and we are not overfitting. We already knew this, but it's interesting to see.
-
-We definitely won't be using this one.
+The residual grid clearly shows the hallmarks of underfitting - the residuals grow systematically away from the center, and there are obvious directional biases across the image. The cross-validation models match very closely, which makes sense: a simple model doesn't have enough freedom to overfit.
 
 #### OpenCV RADIAL_6 + TANGENTIAL + THIN_PRISM
 
-This is the more powerful OpenCV model we tried.
+This is the OpenCV model we fit in section 6.
 
 ```python
 config = lb.OpenCVConfig(
@@ -413,9 +357,9 @@ config = lb.PinholeSplinedConfig(
 <img src="./media/calibration_docs/spline_20x15/residual_grid.png" width="700">
 <img src="./media/calibration_docs/spline_20x15/projection_diff.png" width="1200">
 
-This one is interesting: the fit is worse than the previous OpenCV model, but the cross-validation difference is still relatively high.
+This one is interesting: the fit is worse than the previous OpenCV model, but the cross-validation difference is still higher than for the OpenCV models.
 
-The reason for this is likely that the model is underpowered, but doesn't contain the inductive biases that the opencv models have. So the underfitting does not save it from having higher variance - it can underfit in different ways depending on the data. I won't be using this one.
+The reason for this is likely that the model is underpowered, but doesn't contain the inductive biases that the OpenCV models have. So the underfitting does not save it from having higher variance - with sparse knots, the spline surface has enough freedom to warp in different directions depending on which observations it happens to see, but not enough resolution to actually capture the true distortion. I won't be using this one.
 
 #### Spline 40x30
 
@@ -461,6 +405,4 @@ For my application I want to bias towards precision, so I'll choose the `Spline 
 
 Another application that I use the same lens+sensor combination is localization from detections of a known world map. There, the precision requirements are slightly more lenient, so for that application I choose the OpenCV model for its simplicity of use.
 
-
-## 9. 
-
+## 10.
