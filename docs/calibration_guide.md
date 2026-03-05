@@ -69,7 +69,9 @@ Data collection is absolutely crucial for a good calibration. This is what the o
 
 **Cover the entire image plane.** Move the target around so that detections land in every region of the frame - center, edges, and especially corners. If you want your projection function to be accurate in an area of the image, it needs to be well covered by observations. You can use `plot_detection_coverage()` later to check how well you did.
 
-[Insert visual: good vs bad coverage]
+<img src="./media/calibration_docs/good_coverage.png" width=1000> 
+
+<img src="./media/calibration_docs/bad_coverage.png" width=1000>
 
 **Take close-ups, and vary your angles.** Most of your images should be angled close-ups. Angled samples are essential for accurately solving the intrinsics - head-on views provide weak constraints on focal length and principal point. Close-ups dramatically decrease the projection uncertainty. [This great study](https://mrcal.secretsauce.net/docs-2.0/tour-choreography.html) demonstrates why you should take angled close-ups.
 
@@ -77,13 +79,21 @@ Data collection is absolutely crucial for a good calibration. This is what the o
 
 **Ensure quality images.** Avoid motion blur, and keep the lighting good. You want your features detected as precisely as possible. However, you should still opt for close-ups even if your image is slightly out of focus at the close range.
 
-I've converged on a pretty simple pattern that I'll use again for my camera. It looks like this:
+I've converged on a pretty simple pattern that I'll use again for my camera. I use 6 main positions for my camera, and take 10 images, rotating the camera up and down in that position. These are the positions
 
-[Insert visual of where I take my images]
+<img src="./media/calibration_docs/setup/upper_left.png" width=400> <img src="./media/calibration_docs/setup/upper_center.png" width=400> 
 
-Here are some examples of the images:
+<img src="./media/calibration_docs/setup/upper_right.png" width=400><img src="./media/calibration_docs/setup/bottom_left.png" width=400>
 
-[Insert sample images]
+ <img src="./media/calibration_docs/setup/bottom_center.png" width=400> <img src="./media/calibration_docs/setup/bottom_right.png" width=400>
+
+Here are some examples of the images from each position:
+
+<img src="./media/calibration_docs/setup/top_left_img.jpg" width=400> <img src="./media/calibration_docs/setup/top_img.jpg" width=400>
+
+<img src="./media/calibration_docs/setup/top_right_img.jpg" width=400><img src="./media/calibration_docs/setup/bottom_left_img.jpg" width=400>
+
+ <img src="./media/calibration_docs/setup/bottom_img.jpg" width=400> <img src="./media/calibration_docs/setup/bottom_right_img.jpg" width=400>
 
 Most of them are angled close-ups, they are varied, and are in good focus. This has worked well for me for a while.
 

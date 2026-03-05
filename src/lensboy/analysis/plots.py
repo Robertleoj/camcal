@@ -82,13 +82,13 @@ def plot_detection_coverage(
     image_height: int,
     title: str = "Coverage",
     s: float = 6.0,
-    grid_cells: int = 30,
+    grid_cells: int = 20,
     return_figure: bool = False,
 ) -> Figure | None:
-    """Scatter-plot all detected points with a smoothed coverage heatmap.
+    """Scatter-plot all detected points with empty grid cells highlighted.
 
-    Shows a density heatmap behind the scatter points so that regions with
-    poor coverage are immediately visible as dark patches.
+    Divides the image into a grid and shades cells with no detections,
+    making coverage gaps easy to spot.
 
     Args:
         detections: Frames containing detected calibration points.
@@ -96,7 +96,7 @@ def plot_detection_coverage(
         image_height: Sensor height in pixels, sets the y-axis limit.
         title: Plot title.
         s: Marker size passed to ``ax.scatter``.
-        grid_cells: Number of grid cells along the longer image axis for the heatmap.
+        grid_cells: Number of grid cells along the longer image axis.
         return_figure: If True, return the figure instead of calling ``plt.show()``.
 
     Returns:
@@ -118,16 +118,15 @@ def plot_detection_coverage(
     bg = "#111111"
     fg = "white"
     accent = "#00d4ff"
+    gap_color = "#3a0000"
 
     fig, ax = plt.subplots(figsize=(20, 15))
     fig.patch.set_facecolor(bg)
     ax.set_facecolor(bg)
-    ax.tick_params(colors=fg)
-    ax.xaxis.label.set_color(fg)
-    ax.yaxis.label.set_color(fg)
-    ax.title.set_color(fg)
+    ax.set_xticks([])
+    ax.set_yticks([])
     for spine in ax.spines.values():
-        spine.set_color(fg)
+        spine.set_visible(False)
 
     if pts.shape[0] > 0:
         aspect = image_width / image_height
@@ -138,28 +137,48 @@ def plot_detection_coverage(
             ny = grid_cells
             nx = max(1, int(round(grid_cells * aspect)))
 
+        cell_w = image_width / nx
+        cell_h = image_height / ny
+
         counts, _, _ = np.histogram2d(
             pts[:, 0],
             pts[:, 1],
             bins=[nx, ny],
             range=[[0, image_width], [0, image_height]],
         )
-        # counts is (nx, ny) with x along axis 0 — transpose so y is rows
-        ax.imshow(
-            counts.T,
-            extent=[0, image_width, image_height, 0],  # type: ignore
-            cmap="inferno",
-            interpolation="gaussian",
-            aspect="auto",
-        )
+
+        for ix in range(nx):
+            for iy in range(ny):
+                if counts[ix, iy] == 0:
+                    ax.add_patch(
+                        plt.Rectangle(  # type: ignore
+                            (ix * cell_w, iy * cell_h),
+                            cell_w,
+                            cell_h,
+                            facecolor=gap_color,
+                            edgecolor=None,
+                        )
+                    )
+
         ax.scatter(pts[:, 0], pts[:, 1], s=s, color=accent)
 
-    ax.set_title(f"{title}  (N={pts.shape[0]})")
-    ax.set_xlabel("x [px]")
-    ax.set_ylabel("y [px]")
+    # Draw image border as a data-space rectangle
+    ax.add_patch(
+        plt.Rectangle(  # type: ignore
+            (0, 0),
+            image_width,
+            image_height,
+            facecolor="none",
+            edgecolor=fg,
+            linewidth=1.5,
+        )
+    )
 
-    ax.set_xlim(0, image_width)
-    ax.set_ylim(image_height, 0)
+    ax.set_title(f"{title}  (N={pts.shape[0]})", color=fg, fontsize=18)
+
+    pad = max(image_width, image_height) * 0.03
+    ax.set_xlim(-pad, image_width + pad)
+    ax.set_ylim(image_height + pad, 0)
 
     ax.set_aspect("equal", adjustable="box")
     if return_figure:
