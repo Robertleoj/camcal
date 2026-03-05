@@ -51,19 +51,17 @@ The calibration target is a physical object with known geometry that you image f
 
 **ChArUco boards** are a good default choice. A ChArUco board combines a checkerboard pattern with ArUco markers. The ArUco markers let each corner be uniquely identified even when the board is partially occluded, while the checkerboard corners provide sub-pixel accurate detections. OpenCV has support for ChArUco board detection, which `lensboy` wraps in a convenient utility function.
 
-[Insert visual: ChArUco board example]
+<img src="./media/calibration_docs/charuco_example.png" width=800>
 
 **Why checkerboard corners?** Checkerboard corners are where four squares meet, forming a saddle point in image intensity. This saddle-point geometry is very stable for sub-pixel detection - the corner location is well-defined regardless of lighting angle, slight blur, or exposure variation. Other targets (like grids of circles or dots) rely on detecting quad or blob edges, which are more sensitive to light bleed and threshold effects.
 
-The target should be rigid, and be as precisely manufactured as possible.
-
-The target should be relatively dense, and large enough to cover a large portion of the camera's field of view while still roughly in focus.
+The target should be rigid, precisely manufactured, and dense enough to cover a large portion of the camera's field of view.
 
 A great default is to buy a ChArUco target from [calib.io](https://calib.io/) (not sponsored). This is what I use for almost all my intrinsics calibration needs.
 
-I will be using a XxY ChArUco board from calib.io with a AxB grid for my camera.
+I will be using a 600mm x 400mm ChArUco board from calib.io with a 9 x 14 grid for my camera.
 
-[Insert image of my target]
+<img src="./media/calibration_docs/setup/charuco.png" width=1000>
 
 ## 4. Collecting Calibration Data
 
