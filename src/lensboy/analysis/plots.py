@@ -787,7 +787,7 @@ def plot_residual_grid(
     *,
     image_width: int,
     image_height: int,
-    grid_cells: int = 50,
+    grid_cells: int = 40,
     arrow_scale: float = 100.0,
     heatmap_max: float | None = None,
     title: str = "Residual grid",

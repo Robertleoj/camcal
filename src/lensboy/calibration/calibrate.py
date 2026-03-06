@@ -1,4 +1,3 @@
-import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from timeit import default_timer
@@ -17,7 +16,7 @@ from lensboy.camera_models.pinhole_splined import (
 from lensboy._logging import log, warn
 from lensboy.geometry.pose import Pose
 
-DEFAULT_OUTLIER_THRESHOLD = 3.0
+DEFAULT_OUTLIER_THRESHOLD = 5.0
 MAX_OUTLIER_FILTER_PASSES = 2
 
 
@@ -265,25 +264,14 @@ def _robust_sigma_xy(residuals: list[np.ndarray]) -> float:
     return float(np.sqrt(0.5 * (sx * sx + sy * sy)))
 
 
-def _radius_threshold_from_k(k: float) -> float:
-    # If x,y ~ N(0, sigma^2), then r^2/sigma^2 ~ chi2(df=2).
-    # A 1D ±kσ "inlier probability" is p = 2*Phi(k)-1.
-    # For df=2: chi2 CDF is 1-exp(-x/2), so quantile is x = -2 ln(1-p).
-    # Threshold radius = sqrt(x) * sigma.
-    p1 = 0.5 * (1.0 + math.erf(k / math.sqrt(2.0)))
-    p = 2.0 * p1 - 1.0
-    x = -2.0 * np.log(1.0 - p)
-    return float(np.sqrt(x))
-
-
 def _filter_outliers(
     frames: list,
     residuals: list[np.ndarray],
     k: float = 3.5,
-    sigma_floor_px: float = 0.25,  # prevents collapse
+    sigma_floor_px: float = 0.05,  # prevents collapse
 ) -> list:
     sigma = max(_robust_sigma_xy(residuals), sigma_floor_px)
-    gate = _radius_threshold_from_k(k) * sigma  # radius in pixels
+    gate = k * sigma
 
     filtered = []
     for frame, r in zip(frames, residuals):

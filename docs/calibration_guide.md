@@ -75,7 +75,7 @@ Data collection is absolutely crucial for a good calibration. This is what the o
 
 **Ensure quality images.** Avoid motion blur, and keep the lighting good. You want your features detected as precisely as possible. However, you should still opt for close-ups even if your image is slightly out of focus at close range.
 
-I've converged on a pretty simple pattern that I'll use again for my camera. I use 6 main positions for my camera and take 10 images in each, rotating the camera up and down. These are the positions:
+I've converged on a pretty simple pattern that I'll use again for my camera. I use 6 main positions for my camera and take 10 images in each, rotating the camera up and down. In the centered positions, I take 5 images where the board covers the left edge of the image, 5 where it covers the right edge. These are the positions:
 
 <img src="./media/calibration_docs/setup/upper_left.png" width=400> <img src="./media/calibration_docs/setup/upper_center.png" width=400>
 
@@ -160,20 +160,20 @@ The logs of the solver were
 ```
 Computing initial poses with PnP...
 Running full optimization...
-Ran optimizer in 0.24s
-Outlier filtering: 300/5955 (5.0%) outliers - going again...
-Running full optimization...
-Ran optimizer in 0.18s
-Outlier filtering: 310/5955 (5.2%) outliers - going again...
+Ran optimizer in 0.34s
+Outlier filtering: 23/5708 (0.4%) outliers - going again...
 Running full optimization...
 Ran optimizer in 0.16s
-Target warp max deflection: 0.3542 (target units)
-Residuals (inliers): mean=0.220px, worst=1.094px
+Outlier filtering: 32/5708 (0.6%) outliers - going again...
+Running full optimization...
+Ran optimizer in 0.15s
+Target warp max deflection: 0.3662 (target units)
+Residuals (inliers): mean=0.170px, worst=0.712px
 ```
 
 You might notice two things:
 
-**Outlier filtering:** lensboy automatically filters outliers when fitting the lens model. The reason for this is that you often have erroneous or noisy data in your dataset, and including them will corrupt your fit. You can control the aggressiveness of the outlier filtering by tweaking `outlier_threshold_stddevs`, and turn it off entirely by passing `None`. However, the default value of `3` provides a good balance and works well for me. I see that about 5% of my data was filtered out, which is normal - we'll see later that this is mostly due to the ChArUco detector struggling under extreme distortion. I'd start to worry if it goes over 10%.
+**Outlier filtering:** lensboy automatically filters outliers when fitting the lens model. The reason for this is that you often have erroneous or noisy data in your dataset, and including them will corrupt your fit. You can control the aggressiveness of the outlier filtering by tweaking `outlier_threshold_stddevs`, and turn it off entirely by passing `None`. However, the default value of `5` provides a good balance and works well for me. I see that about 0.6% of my data was filtered out, which is normal. I'd start to worry if it goes over a few percent.
 
 **Target warp estimation:** No matter how precisely manufactured, your target will never be perfectly flat - it will have some kind of warping. Because of this, lensboy automatically estimates the warping of your target, which usually results in better fits. This feature is not available for very non-planar targets. You can disable this feature by setting `estimate_target_warp` to `False`.
 
@@ -199,8 +199,11 @@ This looks about as I'd expect. What you should look out for:
 
 - **Histogram should be roughly normal.** If your histogram does not look like a normal distribution, something is going systematically wrong, and you need to debug it.
 - **2D residuals should be isotropic.** The 2D residual distribution in the bottom left should be radially symmetric - you should not be able to see much of a pattern. Again, if this is not the case, you need to figure out what's causing the irregularity.
+- **Sparse outliers.** You should have a sparse set of outliers outside your main residual cloud. You should not see a dense mass of outliers on the edges of the cloud - this indicates issues with the target point detections, and should be mitigated.
 
 The gaussian MAD $\sigma$ is a robust estimate of the standard deviation of the data - it represents the distribution better than a raw standard deviation. When it comes to this number, lower is better until we start overfitting.
+
+#### Spotting issues
 
 To show you an example of a plot where something is going wrong, here is a residual plot from where I attempted to calibrate a camera using april tags instead of a charuco board:
 
@@ -212,13 +215,25 @@ Looking at this plot, you should see that the 2D distribution is not radially sy
 
 However, different brightnesses can lead to it being detected slightly smaller or bigger, explaining the "arms" in the residual plot. This is a good reason you should opt for a checkerboard pattern instead of tags like this - they don't have this kind of variance.
 
+Here is another residual plot from where I took my pictures too close to the board at angles that were too sharp.
+
+<img src="./media/calibration_docs/bad_detections_residuals.png" width="1000">
+
+The extreme distortion of the board in my images caused the detector to start failing, causing the dense mass of outliers. After fixing my image taking strategy, the plot looked normal.
+
 ### Worst frames
 
 It's useful to inspect the frames with the largest residuals to understand where your model struggles. lensboy provides `plot_worst_residual_frames()` for this. Let's look at the 3 worst frames:
 
 <img src="./media/calibration_docs/first_model_worst_3_residuals.png" width="800">
 
-Looking at these images, I see that the largest residuals are caused by the ChArUco detector struggling under the extreme distortion. I won't worry about this, as these samples are filtered out as outliers.
+Looking at these images, I see that the largest residuals are caused by the ChArUco detector struggling under the extreme distortion. I won't worry about this now, as it happens relatively sparsely in my dataset, and most of the detector errors are filtered out as outliers.
+
+Here are the worst 3 frames from the image set mentioned before, where I took my images too close at angles that were too sharp.
+
+<img src="./media/calibration_docs/bad_detections_worst_3.png" width="800">
+
+This plot is how I found the problem - the detector clearly is struggling in both the extremely distorted parts of the board. Most of my images looked like this, which made most of my samples too noisy.
 
 ### The residual grid
 
@@ -237,7 +252,7 @@ Let's look at the residual grid for the model we fit earlier:
 
 <img src="./media/calibration_docs/first_model_residual_grid.png" width="1000">
 
-[insert analysis of the residual grid - this should look reasonable for the stronger OpenCV model]
+This looks _reasonable_. However, I still see a bit too much growth in residual norm and directional bias on the right side. I'd want to see if I can do better.
 
 ### Target warp
 
@@ -245,15 +260,19 @@ As mentioned earlier, lensboy estimates the warp of near-planar targets by defau
 
 Let's take a look at the estimated warp for the model we fit earlier:
 
-<img src="./media/calibration_docs/strong_opencv_target_warp.png" width="700">
+<img src="./media/calibration_docs/first_model_target_warp.png" width="1000">
 
-The warp estimation has a bowl shape that I see often for charuco boards. The spread is small (about 0.5mm), but still enough to matter.
+The warp estimation has a bowl shape that I see often for charuco boards. The spread is small (about 0.5mm), but still enough to matter. I haven't found any issues in my calibration from looking at this plot, but I do find it interesting and informative. It would also be a red flag if the warp was estimated with an unreasonably large max deflection.
 
 If we fit a model without enabling the target warp, and plot the residuals, we see that we get a wider residual distribution:
 
-<img src="./media/calibration_docs/strong_opencv_no_warp_residuals.png" width="1000">
+<img src="./media/calibration_docs/first_model_no_warp_residuals.png" width="1000">
 
-We have a higher MAD $\sigma$, and more outliers. Most of the time, you should enable target warp estimation.
+We have a higher MAD $\sigma$ - 0.18px vs the 0.13px we saw earlier. The smaller number of outliers is explained by the distribution being wider overall, causing a larger outlier threshold. We can also see more systematic issues in the residual grid:
+
+<img src="./media/calibration_docs/first_model_no_warp_residual_grid.png" width="1000">
+
+Most of the time, you should enable target warp estimation.
 
 ### The distortion pattern
 
@@ -261,13 +280,13 @@ lensboy provides the plot `plot_distortion_grid()` to visualize the projection f
 
 Let's look at this plot for our camera model:
 
-<img src="./media/calibration_docs/strong_opencv_distortion_grid.png" width="1000">
+<img src="./media/calibration_docs/first_model_distortion_grid.png" width="1000">
 
 The left side shows a grid at the $z=1$ in camera frame, and the right shows how that grid is transformed into image space. We can clearly see that my wide-angle lens introduces a large amount of distortion.
 
 ### Cross-validation via model differencing
 
-How can we know whether our camera model is overfitting to the data?
+We've seen how we can figure out if our model is underfitting. But how can we know whether it is overfitting?
 
 In principle, overfitting is defined by two things:
 
@@ -298,17 +317,19 @@ model_b = lb.calibrate_camera(target_points, frames_b, config)
 
 Now that we have the two models, let's take a look at `plot_projection_diff()`:
 
-<img src="./media/calibration_docs/spline_30x20_projection_diff.png" width="1200">
+<img src="./media/calibration_docs/first_model_cross_validation.png" width="1200">
 
-The left side shows the magnitude of the projection difference between the models. This looks pretty reasonable! The models differ by less than 0.2 pixels in most of the image, so I don't suspect heavy overfitting.
+The left side shows the magnitude of the projection difference between the models. This looks pretty reasonable! The models differ by less than 0.1 pixel in most of the image, so the model is not overfitting. I would be concerned if there were widespread differences of more than 2x the MAD $\sigma$ from the residual plot.
 
 The right side shows the pattern of the projection difference. In reality the differences are usually imperceptibly small, so they are exaggerated.
 
 One thing to look out for is the "fit circle". Its interior is the area of the image we use to find the difference between the implied camera frames of the models. This should only cover areas of the image where you expect good intrinsics. If it goes out of that area, this plot will not be realistic, and you need to adjust the `radius` argument to `plot_projection_diff()`.
 
+Another very useful way to use this plot is when you're investigating whether your camera's intrinsics have drifted - that is, whether something changed mechanically in the camera. You can recalibrate the suspected camera, and look at the projection difference between the new and old calibration.
+
 ## 8. Splined Models
 
-The OpenCV model from section 7 fits my lens reasonably well, but can we do better? For my application I want to push for maximum precision, so let's see if a more flexible model can reduce the residuals further.
+The OpenCV model from section 7 fits my lens reasonably well, but looking at the residual grid, I think I can do better. For my application I want to push for maximum precision, so let's see if a more flexible model can reduce the residuals further.
 
 Spline-based models use B-spline grids to model distortion, and so can model more arbitrary distortion patterns. However, they are also more prone to overfitting due to their flexibility, and thus require more data to constrain properly.
 
@@ -328,19 +349,27 @@ config = lb.PinholeSplinedConfig(
 result = lb.calibrate_camera(target_points, frames, config)
 ```
 
-Let's take a look at `plot_residuals()` and `plot_residual_grid()`:
+Let's take a look at `plot_residuals()`:
 
 <img src="./media/calibration_docs/spline_30x20_residuals.png" width="1000">
 
-<img src="./media/calibration_docs/spline_30x20_residual_grid.png" width="700">
+The fit is tighter, the MAD sigma going from 0.13px to 0.09. There are a bit more ouutliers, owing to the tighter distribution. Let's take a look at `plot_residual_grid()`:
 
-As expected with such a flexible model, it fits our data even better. Our MAD $\sigma$ is even lower, and the residual grid looks even tighter.
+<img src="./media/calibration_docs/spline_30x20_residual_grid.png" width="1000">
+
+This looks much better than our previous model. There are less directional biases and there is less pattern in the residual magnitudes. Specifically, we've reduced the amount of error in the right side of the image.
 
 Let's take a look at how this spline model's projection function looks like with `plot_distortion_grid()`. I'll show the spline knots by setting `show_spline_knots` to `True`:
 
-<img src="./media/calibration_docs/spline_30x20_distortion_grid.png" width="1000">
+<img src="./media/calibration_docs/spline_30x20_distortion_grid.png" width="1500">
 
-The distortion looks very similar to the OpenCV models, except at the edges, where it behaves a bit erratically - this is standard for a spline-based model, as it is very flexible and relatively underconstrained at the edges.
+The distortion looks very similar to our previous model. One thing to note is that the spline-based models can look a bit strange where they are underconstrained, such as in the top right corner for our model. This is nothing to worry about unless you require good instrinsics in those areas. In those cases, you need to constrain the distortion model with more data in those areas.
+
+Let's do a quick cross-validation and look at the projection diff with `plot_projection_diff()`:
+
+<img src="./media/calibration_docs/spline_30x20_cross_validation.png" width="1500">
+
+Interesting - the differences are a bit larger than what we saw for the previous model. It indicates that we might be approaching overfittin. However, I'll follow my rule of thumb - most of the difference in the image is smaller than ~0.2px, so I would happily use this model.
 
 ## 9. Putting It All Together
 
