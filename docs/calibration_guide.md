@@ -353,7 +353,7 @@ Let's take a look at `plot_residuals()`:
 
 <img src="./media/calibration_docs/spline_30x20_residuals.png" width="1000">
 
-The fit is tighter, the MAD sigma going from 0.13px to 0.09. There are a bit more ouutliers, owing to the tighter distribution. Let's take a look at `plot_residual_grid()`:
+The fit is tighter, the MAD sigma going from 0.13px to 0.09. There are a bit more outliers, owing to the tighter distribution. Let's take a look at `plot_residual_grid()`:
 
 <img src="./media/calibration_docs/spline_30x20_residual_grid.png" width="1000">
 
@@ -363,120 +363,85 @@ Let's take a look at how this spline model's projection function looks like with
 
 <img src="./media/calibration_docs/spline_30x20_distortion_grid.png" width="1500">
 
-The distortion looks very similar to our previous model. One thing to note is that the spline-based models can look a bit strange where they are underconstrained, such as in the top right corner for our model. This is nothing to worry about unless you require good instrinsics in those areas. In those cases, you need to constrain the distortion model with more data in those areas.
+The distortion looks very similar to our previous model. One thing to note is that the spline-based models can look a bit strange where they are underconstrained, such as in the top right corner for our model. This is nothing to worry about unless you require good intrinsics in those areas. In those cases, you need to constrain the distortion model with more data in those areas.
 
 Let's do a quick cross-validation and look at the projection diff with `plot_projection_diff()`:
 
 <img src="./media/calibration_docs/spline_30x20_cross_validation.png" width="1500">
 
-Interesting - the differences are a bit larger than what we saw for the previous model. It indicates that we might be approaching overfittin. However, I'll follow my rule of thumb - most of the difference in the image is smaller than ~0.2px, so I would happily use this model.
+Interesting - the differences are a bit larger than what we saw for the previous model. It indicates that we might be approaching overfitting. However, I'll follow my rule of thumb - most of the difference in the image is smaller than ~0.2px, so I would happily use this model.
 
-## 9. Putting It All Together
+## 9. Using your model
 
-Now let's use the diagnostic tools from section 7 to systematically compare models with increasing complexity. For each model, I'll show the residual plot, residual grid, and cross-validation model difference.
+After calibrating a good lens model, you'll obviously want to save, load, and use it. lensboy is intended mainly for calibration-time use, so it makes it extremely convenient to convert the models to standards formats you can use with OpenCV.
 
-#### OpenCV RADIAL_6
+### OpenCV models
 
-Let's start with a simpler OpenCV model using only the 6 radial distortion parameters, to see what underfitting looks like in practice.
+OpenCV-style models are particularly convenient because the parameters are widely supported across languages and frameworks. All models can be saved and loaded with `model.save(path)` and `OpenCV.load(path)` as json files.
 
-```python
-config = lb.OpenCVConfig(
-    ...,
-    included_distortion_coefficients=lb.OpenCVConfig.RADIAL_6,
-)
-```
-
-<img src="./media/calibration_docs/opencv_radial_6/residuals.png" width="700">
-<img src="./media/calibration_docs/opencv_radial_6/residual_grid.png" width="700">
-<img src="./media/calibration_docs/opencv_radial_6/projection_diff.png" width="1200">
-
-The residual grid clearly shows the hallmarks of underfitting - the residuals grow systematically away from the center, and there are obvious directional biases across the image. The cross-validation models match very closely, which makes sense: a simple model doesn't have enough freedom to overfit.
-
-#### OpenCV RADIAL_6 + TANGENTIAL + THIN_PRISM
-
-This is the OpenCV model we fit in section 6.
+You can then extract the standard OpenCV parameters and use them anywhere:
 
 ```python
-config = lb.OpenCVConfig(
-    ...,
-    included_distortion_coefficients=(
-        lb.OpenCVConfig.RADIAL_6
-        | lb.OpenCVConfig.TANGENTIAL
-        | lb.OpenCVConfig.THIN_PRISM
-    ),
-)
+K = model.K()
+dist_coeffs = model.distortion_coeffs
+image_width = model.image_width
+image_height = model.image_height
 ```
 
-<img src="./media/calibration_docs/opencv_radial_6_tangential_thin_prism/residuals.png" width="700">
-<img src="./media/calibration_docs/opencv_radial_6_tangential_thin_prism/residual_grid.png" width="700">
-<img src="./media/calibration_docs/opencv_radial_6_tangential_thin_prism/projection_diff.png" width="1200">
+These are standard OpenCV parameters that work with `cv2.projectPoints`, `cv2.undistortPoints`, `cv2.solvePnP`, etc.
 
-Like we saw before, this model fits our lens relatively well, and looking at the cross-validation plot, we are also clearly not overfitting - the model differences are extremely small.
+In my work I use this same lens+sensor combination for localization from detections of a known world map. The precision requirements are slightly more lenient there, so I choose the OpenCV model for its simplicity of use.
 
-If my application did not require extreme accuracy, this model would do just fine.
+### Spline models
 
-#### Spline 20x15
+You can save and load a spline-based model in the same as for OpenCV models with `model.save(path)` and `PinholeSplined.load(path)`.
 
-Now for a pretty lean spline model with only a 20x15 grid:
+However, since standard tools do not support lensboy spline models, you'll need to use them slightly differently.
+
+Of course, you can use lensboy directly to project/unproject:
 
 ```python
-config = lb.PinholeSplinedConfig(
-    ...,
-    num_knots_x=20,
-    num_knots_y=15,
-)
+model = lb.PinholeSplined.load("my_spline_model.json")
+
+# Project 3D points in camera frame to pixel coordinates
+pixels = model.project_points(points_in_cam)
+
+# Normalize pixel coordinates to camera-frame rays (z=1)
+rays = model.normalize_points(pixel_coords)
 ```
 
-<img src="./media/calibration_docs/spline_20x15/residuals.png" width="700">
-<img src="./media/calibration_docs/spline_20x15/residual_grid.png" width="700">
-<img src="./media/calibration_docs/spline_20x15/projection_diff.png" width="1200">
+If you always just immediately normalize to rays in your application, this should work just fine.
 
-This one is interesting: the fit is worse than the previous OpenCV model, but the cross-validation difference is still higher than for the OpenCV models.
+In applications where this does not work, you'll need to undistort your images to use the calibration. For these applications, you need to convert your `PinholeSplined` model into a `PinholeRemapped` model. A `PinholeRemapped` model consists of a vanilla pinhole model along with undistortion maps that undistort your image to match the pinhole model.
 
-The reason for this is likely that the model is underpowered, but doesn't contain the inductive biases that the OpenCV models have. So the underfitting does not save it from having higher variance - with sparse knots, the spline surface has enough freedom to warp in different directions depending on which observations it happens to see, but not enough resolution to actually capture the true distortion. I won't be using this one.
+To do this, you can use `get_pinhole_nodel()`, `get_pinhole_model_fov()` and `get_pinhole_model_alpha()`, which all return a matching `PinholeRemapped` model with different ways to specify it.
 
-#### Spline 40x30
+To understand how the undistortion maps map the image into the pinhole model, use the `plot_undistortion()` plot.
 
-Let's look at a larger spline model with a 40x30 grid:
+<img src="./media/calibration_docs/undistortion_default.png" width="1500">
+
+In the case of a wide-angle lens, there is a tradeoff in what information you keep and what you throw away when choosing the pinhole model. The above plot shows an undistortion model where we opt for throwing away the edges of the distorted image in order to keep all of the information in the interior.
+
+Here is an example of an undistortion map that makes the opposite tradeoff, compressing the information in the interior to keep all the information of the distorted image:
+
+<img src="./media/calibration_docs/undistortion_all.png" width="1500">
+
+Notice how the center of the distorted image is dramatically compressed in the undistorted image.
+
+Since I will be doing stereo vision, I'll go for this route. Since the undistortion maps are pretty large, I'll save the spline model directly, and generate a `PinholeRemapped` as soon as I load it.
 
 ```python
-config = lb.PinholeSplinedConfig(
-    ...,
-    num_knots_x=40,
-    num_knots_y=30,
+spline_model = PinholeSplined.load("calibration.json")
+
+# export to a pinhole model
+pinhole_model = spline_intrinsics.get_pinhole_model(
+    # parameters I chose that match the tradeoffs I want to make
+    k4=(1100, 1100, 1500, 1000)
 )
+
+# Now I can undistort images
+undistorted_img = pinhole_model.undistort(img)
+
+# and use the standard pinhole model directly with opencv
+K = pinhole_model.K()
 ```
-
-<img src="./media/calibration_docs/spline_40x30/residuals.png" width="800">
-<img src="./media/calibration_docs/spline_40x30/residual_grid.png" width="700">
-<img src="./media/calibration_docs/spline_40x30/projection_diff.png" width="1200">
-
-This is the first model that outperforms both OpenCV models in how well it fits the data. The projection difference plot shows that the cross-validation models match pretty well, indicating that the model is not overfitting.
-
-#### Spline 50x35
-
-Let's try an even larger spline grid, 50x35:
-
-```python
-config = lb.PinholeSplinedConfig(
-    ...,
-    num_knots_x=50,
-    num_knots_y=35,
-)
-```
-
-<img src="./media/calibration_docs/spline_50x35/residuals.png" width="1000">
-<img src="./media/calibration_docs/spline_50x35/residual_grid.png" width="700">
-<img src="./media/calibration_docs/spline_50x35/projection_diff.png" width="1200">
-
-The model does not fit the data any better than the 40x30 spline model, but the projection difference is starting to increase slightly, indicating that we are moving towards overfitting.
-
-#### Final choice
-
-The choice is between the `OpenCV RADIAL_6 + TANGENTIAL + THIN_PRISM` model and the `Spline 40x30` model.
-
-For my application I want to bias towards precision, so I'll choose the `Spline 40x30` model.
-
-Another application that I use the same lens+sensor combination is localization from detections of a known world map. There, the precision requirements are slightly more lenient, so for that application I choose the OpenCV model for its simplicity of use.
-
-## 10.
