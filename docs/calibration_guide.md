@@ -2,6 +2,19 @@
 
 This is a practical guide on how to calibrate a camera using lensboy. I'll walk through all the steps you need to get a quality calibration.
 
+## Table of Contents
+
+1. [What is Camera Calibration?](#1-what-is-camera-calibration)
+2. [Preparing Your Lens](#2-preparing-your-lens)
+3. [Choosing a Calibration Target](#3-choosing-a-calibration-target)
+4. [Collecting Calibration Data](#4-collecting-calibration-data)
+5. [Detecting Keypoints](#5-detecting-keypoints)
+6. [First Calibration Run](#6-first-calibration-run)
+7. [Analyzing Calibration Quality](#7-analyzing-calibration-quality)
+8. [Splined Models](#8-splined-models)
+9. [Using your model](#9-using-your-model)
+10. [Conclusion](#10-conclusion)
+
 Throughout the guide, I'll be calibrating this camera as an example:
 
 <img src="./media/calibration_docs/setup/lucid_1.png" width="300"> <img src="./media/calibration_docs/setup/lucid_2.png" width="300"> <img src="./media/calibration_docs/setup/lucid_3.png" width="300">
@@ -20,7 +33,6 @@ Each camera is unique - the exact mapping depends on the physical properties of 
 
 **Camera intrinsics calibration** is the process of finding the parameters of a mathematical function that describes this 3D-to-2D mapping. Once you have this function, you can:
 
-- **Undistort images** - remove lens distortion to get straight lines and accurate measurements
 - **Measure in 3D** - go from pixel coordinates back to real-world coordinates
 - **Localize** - use known world features and camera observations to locate the camera in 3D
 - **Combine multiple cameras** - stereo vision, multi-camera rigs, etc.
@@ -49,7 +61,7 @@ A lens that drifts between calibration and deployment will silently degrade your
 
 The calibration target is a physical object with known geometry that you image from varying positions. We will then use the known geometry and the corresponding detections in the images to solve for the camera parameters.
 
-**ChArUco boards** are a good default choice. A ChArUco board combines a checkerboard pattern with ArUco markers. The ArUco markers let each corner be uniquely identified even when the board is partially occluded, while the checkerboard corners provide sub-pixel accurate detections. OpenCV has support for ChArUco board detection, which `lensboy` wraps in a convenient utility function.
+**ChArUco boards** are a good default choice. A ChArUco board combines a checkerboard pattern with ArUco markers. The ArUco markers let each corner be uniquely identified even when the board is partially occluded, while the checkerboard corners provide sub-pixel accurate detections. `lensboy` wraps OpenCV's ChArUco board detection in a convenient utility function.
 
 <img src="./media/calibration_docs/charuco_example.png" width=800>
 
@@ -98,6 +110,11 @@ These are all angled close-ups with varying angles, and I end up with good cover
 With your images collected, the next step is to detect the features in the images. Each type of target requires a matching detector. I will be using lensboy's `extract_frames_from_charuco()` to detect my ChArUco board. It's just a simple wrapper for OpenCV's ChArUco detector.
 
 ```python
+import cv2
+import lensboy as lb
+
+images = [cv2.imread(p) for p in image_paths]
+
 board = cv2.aruco.CharucoBoard(
     size=(14, 9),
     squareLength=40,  # mm
@@ -105,7 +122,7 @@ board = cv2.aruco.CharucoBoard(
     dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100),
 )
 
-target_points, frames, used_indices = lb.extract_frames_from_charuco(board, images)
+target_points, frames, image_indices = lb.extract_frames_from_charuco(board, images)
 ```
 
 The board definition must match the physical target you used - same number of squares, same dictionary, and correct square/marker sizes in whatever unit you want to work in (typically millimeters). The relevant details are usually printed on ChArUco boards.
@@ -130,9 +147,9 @@ You'll want to choose the distortion model according to your camera and applicat
 - The distortion characteristics of the lens
 - Your accuracy needs
 
-Some lenses have extreme amounts of distortion like the one I'm using now. This requires a distortion model capable of modeling this amount of distortion. Each group of distortion parameters in OpenCV models is intended to model a specific type of distortion, and you can choose your distortion parameters according to the characteristics of your lens+sensor setup. See [this page](https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html) for a detailed explanation of OpenCV-type distortion. However, in my experience, including more distortion parameters doesn't really adversely affect your calibration quality. The solver will just set them to zero if they are not applicable.
+Some lenses have extreme amounts of distortion like the one I'm using now. This requires a distortion model capable of modeling this amount of distortion. Each group of distortion parameters in OpenCV models is intended to model a specific type of distortion, and you can choose your distortion parameters according to the characteristics of your lens+sensor setup. See [this page](https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html) for a detailed explanation of OpenCV-type distortion.
 
-All lenses deviate by some amount from the ideal lenses described by the OpenCV distortion model. By how much and in what way depends on your specific lens. If you want your distortion model to model these imperfections well, the OpenCV models are not sufficient, and you'll need to use a spline-based distortion model, which you can do with lensboy. These use B-spline grids to model the distortion, and are extremely flexible.
+The OpenCV distortion model is a fixed parametric form, and some lenses have distortion characteristics that it cannot fully capture. If you need more flexibility, lensboy also supports spline-based distortion models. These use B-spline grids to model the distortion, and are extremely flexible.
 
 I have a wide-angle lens with extreme distortion. I have high accuracy needs, so I suspect I will need to use a spline-based model. However, let's start by fitting an OpenCV-style lens model to my lens to see how well it works.
 
@@ -183,11 +200,13 @@ We also see the mean reprojection error of the inliers. This is the average norm
 
 Let's analyze the calibration a bit to see if we actually have a good fit.
 
-There are two main things you should think about when analyzing the quality of your calibration
+There are two main things you should think about when analyzing the quality of your calibration.
 
 - **Underfitting:** does your intrinsics model adequately capture your real camera projection? This happens if you choose a model that cannot capture your camera projection to your desired degree of accuracy. In this case, no matter how good your data is, your intrinsics will have systematic errors.
 
-- **Overfitting:** This is when the lens model starts fitting to noise in your data, and you will again get systematic errors in the intrinsics model. This happens when you choose a powerful model, but do not have enough high-quality data to constrain it properly. Two things will happen: first, the model will have too much freedom in between data points, and will behave unpredictably in those areas. The second is that the model will optimize itself to exactly match individual noisy observations.
+- **Overfitting:** This is when the lens model starts fitting to noise in your data, and you will again get systematic errors in the intrinsics model. This happens when you choose a powerful model, but do not have enough high-quality data to constrain it properly.
+
+The tools in this section primarily help you detect underfitting. We'll cover overfitting detection at the end with cross-validation.
 
 ### The residual plot
 
@@ -233,7 +252,7 @@ Here are the worst 3 frames from the image set mentioned before, where I took my
 
 <img src="./media/calibration_docs/bad_detections_worst_3.png" width="800">
 
-This plot is how I found the problem - the detector clearly is struggling in both the extremely distorted parts of the board. Most of my images looked like this, which made most of my samples too noisy.
+This plot is how I found the problem - the detector clearly is struggling in the extremely distorted parts of the board. Most of my images looked like this, which made most of my samples too noisy.
 
 ### The residual grid
 
@@ -256,7 +275,7 @@ This looks _reasonable_. However, I still see a bit too much growth in residual 
 
 ### Target warp
 
-As mentioned earlier, lensboy estimates the warp of near-planar targets by default. I went for a 5-parameter model that should work well for most targets, and has worked well for me. It can be useful to visualize the estimated warp with `plot_target_warp()`.
+As mentioned earlier, lensboy estimates the warp of near-planar targets by default. It uses a 5-parameter Legendre polynomial model, which has worked well for me across a variety of targets. It can be useful to visualize the estimated warp with `plot_target_warp()`.
 
 Let's take a look at the estimated warp for the model we fit earlier:
 
@@ -276,13 +295,13 @@ Most of the time, you should enable target warp estimation.
 
 ### The distortion pattern
 
-lensboy provides the plot `plot_distortion_grid()` to visualize the projection function that your intrinsics define. This doesn't provide much concrete information about the quality of the fit, but is useful for your intuitional understanding of how the distortion model of your camera works.
+lensboy provides the plot `plot_distortion_grid()` to visualize the projection function that your intrinsics define. This doesn't provide much concrete information about the quality of the fit, but is useful for your intuitive understanding of how the distortion model of your camera works.
 
 Let's look at this plot for our camera model:
 
 <img src="./media/calibration_docs/first_model_distortion_grid.png" width="1000">
 
-The left side shows a grid at the $z=1$ in camera frame, and the right shows how that grid is transformed into image space. We can clearly see that my wide-angle lens introduces a large amount of distortion.
+The left side shows a grid at the $z=1$ plane in camera frame, and the right shows how that grid is transformed into image space. We can clearly see that my wide-angle lens introduces a large amount of distortion.
 
 ### Cross-validation via model differencing
 
@@ -291,7 +310,7 @@ We've seen how we can figure out if our model is underfitting. But how can we kn
 In principle, overfitting is defined by two things:
 
 - The model behaves erratically between data points, where it is less constrained
-- The model flexes to exactly match noisy data. This means it will make incorrect predictions on data that has no error.
+- The model flexes to exactly match noisy data, so it will make incorrect predictions on new observations.
 
 A key insight is that because the model behaves erratically between data points, and it bends to noise in the data, you should get different projection models based on the specific dataset you fit them on, even if they are from the same distribution.
 
@@ -319,7 +338,9 @@ Now that we have the two models, let's take a look at `plot_projection_diff()`:
 
 <img src="./media/calibration_docs/first_model_cross_validation.png" width="1200">
 
-The left side shows the magnitude of the projection difference between the models. This looks pretty reasonable! The models differ by less than 0.1 pixel in most of the image, so the model is not overfitting. I would be concerned if there were widespread differences of more than 2x the MAD $\sigma$ from the residual plot.
+The left side shows the magnitude of the projection difference between the models. This looks pretty reasonable! The models differ by less than 0.1 pixel in most of the image, so the model is not overfitting.
+
+> **Rule of thumb:** Be concerned if there are widespread differences of more than 2x the MAD $\sigma$ from the residual plot.
 
 The right side shows the pattern of the projection difference. In reality the differences are usually imperceptibly small, so they are exaggerated.
 
@@ -329,13 +350,13 @@ Another very useful way to use this plot is when you're investigating whether yo
 
 ## 8. Splined Models
 
-The OpenCV model from section 7 fits my lens reasonably well, but looking at the residual grid, I think I can do better. For my application I want to push for maximum precision, so let's see if a more flexible model can reduce the residuals further.
+The OpenCV model from section 6 fits my lens reasonably well, but the residual grid showed directional bias on the right side of the image, so I think I can do better. For my application I want to push for maximum precision, so let's see if a more flexible model can reduce the residuals further.
 
 Spline-based models use B-spline grids to model distortion, and so can model more arbitrary distortion patterns. However, they are also more prone to overfitting due to their flexibility, and thus require more data to constrain properly.
 
 We can configure a spline model in lensboy with `PinholeSplinedConfig`. You control how flexible the model is by tuning the spline grid density.
 
-I'll train a splined model using a 30x20 grid as my starting point:
+I usually start with a 30x20 grid and then adjust the density based on the residual grid and cross-validation plots. Let's fit one:
 
 ```python
 config = lb.PinholeSplinedConfig(
@@ -357,9 +378,9 @@ The fit is tighter, the MAD sigma going from 0.13px to 0.09. There are a bit mor
 
 <img src="./media/calibration_docs/spline_30x20_residual_grid.png" width="1000">
 
-This looks much better than our previous model. There are less directional biases and there is less pattern in the residual magnitudes. Specifically, we've reduced the amount of error in the right side of the image.
+This looks much better than our previous model. There is less directional bias and there is less pattern in the residual magnitudes. Specifically, we've reduced the amount of error in the right side of the image.
 
-Let's take a look at how this spline model's projection function looks like with `plot_distortion_grid()`. I'll show the spline knots by setting `show_spline_knots` to `True`:
+Let's take a look at what this spline model's projection function looks like with `plot_distortion_grid()`. I'll show the spline knots by setting `show_spline_knots` to `True`:
 
 <img src="./media/calibration_docs/spline_30x20_distortion_grid.png" width="1500">
 
@@ -373,7 +394,7 @@ Interesting - the differences are a bit larger than what we saw for the previous
 
 ## 9. Using your model
 
-After calibrating a good lens model, you'll obviously want to save, load, and use it. lensboy is intended mainly for calibration-time use, so it makes it extremely convenient to convert the models to standards formats you can use with OpenCV.
+After calibrating a good lens model, you'll obviously want to save, load, and use it. lensboy focuses on calibration rather than runtime use, so it makes it easy to convert your models into OpenCV-compatible formats for deployment.
 
 ### OpenCV models
 
@@ -394,7 +415,7 @@ In my work I use this same lens+sensor combination for localization from detecti
 
 ### Spline models
 
-You can save and load a spline-based model in the same as for OpenCV models with `model.save(path)` and `PinholeSplined.load(path)`.
+You can save and load a spline-based model in the same way as for OpenCV models with `model.save(path)` and `PinholeSplined.load(path)`.
 
 However, since standard tools do not support lensboy spline models, you'll need to use them slightly differently.
 
@@ -410,34 +431,17 @@ pixels = model.project_points(points_in_cam)
 rays = model.normalize_points(pixel_coords)
 ```
 
-If you always just immediately normalize to rays in your application, this should work just fine.
+If your application only needs camera-frame rays from pixel coordinates (e.g. for PnP or ray-casting), you can use `PinholeSplined` directly and skip the undistortion step entirely.
 
-In applications where this does not work, you'll need to undistort your images to use the calibration. For these applications, you need to convert your `PinholeSplined` model into a `PinholeRemapped` model. A `PinholeRemapped` model consists of a vanilla pinhole model along with undistortion maps that undistort your image to match the pinhole model.
+For applications that work with the images directly, you'll need to undistort your images to remove the spline distortion. To do this, you convert your `PinholeSplined` model into a `PinholeRemapped` model. A `PinholeRemapped` model consists of a vanilla pinhole model along with undistortion maps that undistort your image to match the pinhole model.
 
-To do this, you can use `get_pinhole_nodel()`, `get_pinhole_model_fov()` and `get_pinhole_model_alpha()`, which all return a matching `PinholeRemapped` model with different ways to specify it.
-
-To understand how the undistortion maps map the image into the pinhole model, use the `plot_undistortion()` plot.
-
-<img src="./media/calibration_docs/undistortion_default.png" width="1500">
-
-In the case of a wide-angle lens, there is a tradeoff in what information you keep and what you throw away when choosing the pinhole model. The above plot shows an undistortion model where we opt for throwing away the edges of the distorted image in order to keep all of the information in the interior.
-
-Here is an example of an undistortion map that makes the opposite tradeoff, compressing the information in the interior to keep all the information of the distorted image:
-
-<img src="./media/calibration_docs/undistortion_all.png" width="1500">
-
-Notice how the center of the distorted image is dramatically compressed in the undistorted image.
-
-Since I will be doing stereo vision, I'll go for this route. Since the undistortion maps are pretty large, I'll save the spline model directly, and generate a `PinholeRemapped` as soon as I load it.
+You can do this with `get_pinhole_model()`, which returns a matching `PinholeRemapped` model. Since I will be doing stereo vision, I'll take this route. Since the undistortion maps are pretty large, I'll save the spline model directly, and generate a `PinholeRemapped` as soon as I load it.
 
 ```python
-spline_model = PinholeSplined.load("calibration.json")
+spline_model = lb.PinholeSplined.load("calibration.json")
 
 # export to a pinhole model
-pinhole_model = spline_intrinsics.get_pinhole_model(
-    # parameters I chose that match the tradeoffs I want to make
-    k4=(1100, 1100, 1500, 1000)
-)
+pinhole_model = spline_model.get_pinhole_model(fx=1100, fy=1100)
 
 # Now I can undistort images
 undistorted_img = pinhole_model.undistort(img)
@@ -445,3 +449,19 @@ undistorted_img = pinhole_model.undistort(img)
 # and use the standard pinhole model directly with opencv
 K = pinhole_model.K()
 ```
+
+The `fx` and `fy` parameters control the focal length of the output pinhole model. Higher values zoom in, preserving detail in the center but cropping the edges of the field of view. Lower values preserve the full field of view but compress the center, reducing the effective resolution there. In the case of a wide-angle lens, this tradeoff is particularly pronounced. Let's use `plot_undistortion()` to see what our choice of `fx=1100, fy=1100` looks like:
+
+<img src="./media/calibration_docs/undistortion_default.png" width="1500">
+
+With these values, we throw away the edges of the distorted image in order to keep all of the information in the interior.
+
+Here is an example of an undistortion map that makes the opposite tradeoff, compressing the information in the interior to keep all the information of the distorted image:
+
+<img src="./media/calibration_docs/undistortion_all.png" width="1500">
+
+Notice how the center of the distorted image is dramatically compressed in the undistorted image.
+
+## 10. Conclusion
+
+Intrinsics can make or break a vision application. Bad intrinsics cause subtle, systematic errors that propagate through everything downstream - localization, stereo, measurements - and they are notoriously hard to trace back to the calibration. You can spend days debugging a system only to find that the root cause was a slightly off calibration. It is just easier to work when you can trust your intrinsics, so it's worth getting them right.

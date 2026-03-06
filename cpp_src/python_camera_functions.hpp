@@ -34,7 +34,7 @@ static py::array_t<double> project_pinhole_splined_pywrapper(
 
     const ssize_t N = pb.shape[0];
 
-    const double* k4p = static_cast<const double*>(intrinsics.k4.request().ptr);
+    const double* pinhole_params = static_cast<const double*>(intrinsics.pinhole_parameters.request().ptr);
     const double* dxp = static_cast<const double*>(dxb.ptr);
     const double* dyp = static_cast<const double*>(dyb.ptr);
     const double* P = static_cast<const double*>(pb.ptr);
@@ -55,7 +55,7 @@ static py::array_t<double> project_pinhole_splined_pywrapper(
         Vec2<double> r;
         project_pinhole_splined<double>(
             &model_config,
-            k4p,  // fx, fy, cx, cy
+            pinhole_params,  // fx, fy, cx, cy
             dxp,  // row-major contiguous (C-order)
             dyp,  // row-major contiguous (C-order)
             p,
@@ -72,7 +72,7 @@ static py::array_t<double> project_pinhole_splined_pywrapper(
 static py::tuple make_undistortion_maps_pinhole_splined(
     lensboy::PinholeSplinedConfig& model_config,
     lensboy::PinholeSplinedIntrinsicsParameters& intrinsics,
-    py::array_t<double, py::array::c_style | py::array::forcecast> k4,
+    py::array_t<double, py::array::c_style | py::array::forcecast> pinhole_parameters,
     std::pair<int, int> image_size_wh
 ) {
     // --- grids: must match model_config dimensions ---
@@ -89,34 +89,34 @@ static py::tuple make_undistortion_maps_pinhole_splined(
         "dy_grid must have shape (num_knots_y, num_knots_x)"
     );
 
-    auto k4b_in = intrinsics.k4.request();
+    auto pinhole_params_in_buf = intrinsics.pinhole_parameters.request();
     require(
-        k4b_in.ndim == 1 && k4b_in.shape[0] == 4,
-        "intrinsics.k4 must have shape (4,)"
+        pinhole_params_in_buf.ndim == 1 && pinhole_params_in_buf.shape[0] == 4,
+        "intrinsics.pinhole_parameters must have shape (4,)"
     );
-    const double* k4_in = static_cast<const double*>(k4b_in.ptr);
+    const double* pinhole_params_in = static_cast<const double*>(pinhole_params_in_buf.ptr);
 
     require(
-        k4_in[0] != 0.0 && k4_in[1] != 0.0,
-        "intrinsics.k4 fx/fy must be non-zero"
+        pinhole_params_in[0] != 0.0 && pinhole_params_in[1] != 0.0,
+        "intrinsics.pinhole_parameters fx/fy must be non-zero"
     );
 
-    // Undistorted/output camera k4 (controls output view)
-    double k4_out_storage[4];
+    // Undistorted/output camera pinhole_parameters (controls output view)
+    double pinhole_params_out_storage[4];
 
-    auto k4b = k4.request();
-    require(k4b.ndim == 1 && k4b.shape[0] == 4, "new_k4 must have shape (4,)");
-    const double* p = static_cast<const double*>(k4b.ptr);
+    auto pinhole_params_out_buf = pinhole_parameters.request();
+    require(pinhole_params_out_buf.ndim == 1 && pinhole_params_out_buf.shape[0] == 4, "pinhole_parameters must have shape (4,)");
+    const double* p = static_cast<const double*>(pinhole_params_out_buf.ptr);
     for (int i = 0; i < 4; ++i) {
-        k4_out_storage[i] = p[i];
+        pinhole_params_out_storage[i] = p[i];
     }
-    const double* k4_out = k4_out_storage;
+    const double* pinhole_params_out = pinhole_params_out_storage;
 
-    const double fx_out = k4_out[0];
-    const double fy_out = k4_out[1];
-    const double cx_out = k4_out[2];
-    const double cy_out = k4_out[3];
-    require(fx_out != 0.0 && fy_out != 0.0, "new_k4 fx/fy must be non-zero");
+    const double fx_out = pinhole_params_out[0];
+    const double fy_out = pinhole_params_out[1];
+    const double cx_out = pinhole_params_out[2];
+    const double cy_out = pinhole_params_out[3];
+    require(fx_out != 0.0 && fy_out != 0.0, "pinhole_parameters fx/fy must be non-zero");
 
     const double* dxp = static_cast<const double*>(dxb.ptr);
     const double* dyp = static_cast<const double*>(dyb.ptr);
@@ -139,7 +139,7 @@ static py::tuple make_undistortion_maps_pinhole_splined(
 
             Vec3<double> p(x_norm, y_norm, 1.0);
             Vec2<double> r;
-            project_pinhole_splined(&model_config, k4_in, dxp, dyp, p, r);
+            project_pinhole_splined(&model_config, pinhole_params_in, dxp, dyp, p, r);
 
             const int idx = y * W + x;
             MX[idx] = (float)r[0];

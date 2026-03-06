@@ -20,7 +20,7 @@ struct PinholeSplinedConfig {
 };
 
 struct PinholeSplinedIntrinsicsParameters {
-    py::array_t<double, py::array::c_style | py::array::forcecast> k4;
+    py::array_t<double, py::array::c_style | py::array::forcecast> pinhole_parameters;
     py::array_t<double, py::array::c_style | py::array::forcecast> dx_grid;
     py::array_t<double, py::array::c_style | py::array::forcecast> dy_grid;
 };
@@ -273,7 +273,7 @@ static inline T eval_bspline2d_uniform_cubic_clamped(
 template <typename T>
 void project_pinhole_splined(
     PinholeSplinedConfig* config,
-    const T* const k4,  // fx, fy, cx, cy
+    const T* const pinhole_parameters,  // fx, fy, cx, cy
     const T* const dx_grid,
     const T* const dy_grid,
     const Vec3<T>& point_in_camera,
@@ -300,10 +300,10 @@ void project_pinhole_splined(
     const T y_range_start = T(-half_y_range);
     const T y_range_end = T(+half_y_range);
 
-    const T fx = k4[0];
-    const T fy = k4[1];
-    const T cx = k4[2];
-    const T cy = k4[3];
+    const T fx = pinhole_parameters[0];
+    const T fy = pinhole_parameters[1];
+    const T cx = pinhole_parameters[2];
+    const T cy = pinhole_parameters[3];
 
     const T inv_x_span = T(1) / (x_range_end - x_range_start);
     const T inv_y_span = T(1) / (y_range_end - y_range_start);

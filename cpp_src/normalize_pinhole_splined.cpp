@@ -161,10 +161,10 @@ py::array_t<double> normalize_pinhole_splined_points(
         "dy_grid must have shape (num_knots_y, num_knots_x)"
     );
 
-    auto k4b = intrinsics.k4.request();
-    require(k4b.ndim == 1 && k4b.shape[0] == 4, "k4 must have shape (4,)");
-    const double* k4 = static_cast<const double*>(k4b.ptr);
-    const double fx = k4[0], fy = k4[1], cx = k4[2], cy = k4[3];
+    auto pinhole_params_buf = intrinsics.pinhole_parameters.request();
+    require(pinhole_params_buf.ndim == 1 && pinhole_params_buf.shape[0] == 4, "pinhole_parameters must have shape (4,)");
+    const double* pinhole_params = static_cast<const double*>(pinhole_params_buf.ptr);
+    const double fx = pinhole_params[0], fy = pinhole_params[1], cx = pinhole_params[2], cy = pinhole_params[3];
     require(fx != 0.0 && fy != 0.0, "fx/fy must be non-zero");
 
     const double* dxp = static_cast<const double*>(dxb.ptr);

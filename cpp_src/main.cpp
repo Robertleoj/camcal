@@ -65,18 +65,18 @@ PYBIND11_MODULE(
         "PinholeSplinedIntrinsicsParameters"
     )
         .def(
-            py::init([](py::array_t<double> k4,
+            py::init([](py::array_t<double> pinhole_parameters,
                         py::array_t<double> dx_grid,
                         py::array_t<double> dy_grid) {
                 using A = py::
                     array_t<double, py::array::c_style | py::array::forcecast>;
-                auto k4_ = A(k4);
+                auto pinhole_params_ = A(pinhole_parameters);
                 auto dx_ = A(dx_grid);
                 auto dy_ = A(dy_grid);
 
-                auto k4b = k4_.request();
-                if (k4b.ndim != 1 || k4b.shape[0] != 4) {
-                    throw py::value_error("k4 must have shape (4,)");
+                auto pinhole_params_buf = pinhole_params_.request();
+                if (pinhole_params_buf.ndim != 1 || pinhole_params_buf.shape[0] != 4) {
+                    throw py::value_error("pinhole_parameters must have shape (4,)");
                 }
 
                 auto dxb = dx_.request();
@@ -89,16 +89,16 @@ PYBIND11_MODULE(
                 }
 
                 return lensboy::PinholeSplinedIntrinsicsParameters{
-                    k4_,
+                    pinhole_params_,
                     dx_,
                     dy_
                 };
             }),
-            py::arg("k4"),
+            py::arg("pinhole_parameters"),
             py::arg("dx_grid"),
             py::arg("dy_grid")
         )
-        .def_readwrite("k4", &lensboy::PinholeSplinedIntrinsicsParameters::k4)
+        .def_readwrite("pinhole_parameters", &lensboy::PinholeSplinedIntrinsicsParameters::pinhole_parameters)
         .def_readwrite(
             "dx_grid",
             &lensboy::PinholeSplinedIntrinsicsParameters::dx_grid
@@ -212,7 +212,7 @@ PYBIND11_MODULE(
         &lensboy::make_undistortion_maps_pinhole_splined,
         py::arg("model_config"),
         py::arg("intrinsics"),
-        py::arg("k4"),
+        py::arg("pinhole_parameters"),
         py::arg("image_size_wh")
     );
 }

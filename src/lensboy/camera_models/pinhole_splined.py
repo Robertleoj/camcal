@@ -183,7 +183,7 @@ class PinholeSplined(CameraModel):
 
     def _cpp_params(self) -> lbb.PinholeSplinedIntrinsicsParameters:
         return lbb.PinholeSplinedIntrinsicsParameters(
-            self._k4(), self.dx_grid, self.dy_grid
+            self._pinhole_parameters(), self.dx_grid, self.dy_grid
         )
 
     def normalize_points(self, pixel_coords: np.ndarray) -> np.ndarray:
@@ -233,7 +233,7 @@ class PinholeSplined(CameraModel):
             points_in_camera=points_in_cam,
         )
 
-    def _k4(self):
+    def _pinhole_parameters(self):
         return (self.fx, self.fy, self.cx, self.cy)
 
     def _K(self):
@@ -274,36 +274,45 @@ class PinholeSplined(CameraModel):
         cy = image_h / 2.0
 
         return self.get_pinhole_model(
-            k4=(fx, fy, cx, cy),
+            fx=fx, fy=fy, cx=cx, cy=cy,
             image_size_wh=image_size_wh,
         )
 
     def get_pinhole_model(
         self,
-        k4: tuple[float, float, float, float] | None = None,
+        fx: float | None = None,
+        fy: float | None = None,
+        cx: float | None = None,
+        cy: float | None = None,
         image_size_wh: tuple[int, int] | None = None,
     ) -> PinholeRemapped:
         """Build an undistorted pinhole view with explicit intrinsics.
 
         Args:
-            k4: Pinhole intrinsics as (fx, fy, cx, cy).
-                Defaults to the model's intrinsics.
+            fx: Horizontal focal length. Defaults to the model's fx.
+            fy: Vertical focal length. Defaults to the model's fy.
+            cx: Principal point x. Defaults to the model's cx.
+            cy: Principal point y. Defaults to the model's cy.
             image_size_wh: Output image size as (width, height).
                 Defaults to the model's image size.
 
         Returns:
             Undistorted pinhole model with precomputed remap tables.
         """
-        if k4 is None:
-            k4 = self._k4()
+        fx = fx if fx is not None else self.fx
+        fy = fy if fy is not None else self.fy
+        cx = cx if cx is not None else self.cx
+        cy = cy if cy is not None else self.cy
 
         if image_size_wh is None:
             image_size_wh = (self.image_width, self.image_height)
 
+        pinhole_parameters = (fx, fy, cx, cy)
+
         map_x, map_y = lbb.make_undistortion_maps_pinhole_splined(
             self._cpp_config(),
             self._cpp_params(),
-            np.array(k4, dtype=float),
+            np.array(pinhole_parameters, dtype=float),
             image_size_wh,
         )
 
@@ -312,10 +321,10 @@ class PinholeSplined(CameraModel):
             image_height=image_size_wh[1],
             input_image_width=self.image_width,
             input_image_height=self.image_height,
-            fx=k4[0],
-            fy=k4[1],
-            cx=k4[2],
-            cy=k4[3],
+            fx=fx,
+            fy=fy,
+            cx=cx,
+            cy=cy,
             map_x=map_x,
             map_y=map_y,
         )
@@ -356,4 +365,4 @@ class PinholeSplined(CameraModel):
         cx = new_K[0, 2]
         cy = new_K[1, 2]
 
-        return self.get_pinhole_model((fx, fy, cx, cy), image_size_wh)
+        return self.get_pinhole_model(fx=fx, fy=fy, cx=cx, cy=cy, image_size_wh=image_size_wh)
