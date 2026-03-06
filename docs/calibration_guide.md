@@ -55,7 +55,7 @@ My camera will be experiencing vibrations, and the end effector experiences the 
 
 <img src="./media/calibration_docs/setup/set_screw.png" width=700>
 
-A lens that drifts between calibration and deployment will silently degrade your results. It can be hard to detect when the camera is out in the field, so prevention is your best option, and first line of defense.
+A lens that drifts between calibration and deployment will silently degrade your results. It can be hard to detect when the camera is out in the field, so prevention is your best option, and first line of defense. If there is any mechanical movement after calibration, you need to recalibrate.
 
 ## 3. Choosing a Calibration Target
 
