@@ -491,10 +491,11 @@ def plot_residuals(
 ) -> Figure | None:
     """Per-component histogram and 2D scatter of reprojection residuals.
 
-    Left panel: stacked histogram (inliers blue, outliers red) with a 1D
-    Gaussian fit overlaid. Right panel: 2D scatter of residuals with fitted
-    2D Gaussian contours.  Both axes are trimmed to ±``n_sigma`` standard
-    deviations.
+    Top-left: inlier histogram with a 1D Gaussian fit overlaid.
+    Bottom-left: 2D scatter of inlier residuals with fitted 2D Gaussian
+    contours.  Both left panels are trimmed to ±``n_sigma`` standard
+    deviations.  Right column: full-range scatter highlighting outliers
+    in red.
 
     Args:
         frame_diagnostics: Per-frame reprojection diagnostics.
