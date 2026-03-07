@@ -25,7 +25,11 @@ jobs:
           restore-keys: vcpkg-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 5
+          command: pipx run cibuildwheel==2.21.3
 
       - uses: actions/upload-artifact@v4
         with:
