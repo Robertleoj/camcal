@@ -1,1 +1,0 @@
-- Write a blog post on how to properly calibrate a camera with `lensboy`
