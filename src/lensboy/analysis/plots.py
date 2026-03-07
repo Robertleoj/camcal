@@ -209,6 +209,10 @@ def plot_distortion_grid(
         cmap_name: Matplotlib colormap name.
         show_spline_knots: When True and the model is a PinholeSplined,
             overlay the spline control points on both panels.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
 
     W = int(model.image_width)
@@ -500,6 +504,10 @@ def plot_residuals(
             2D scatter plots. The full-range plot is unaffected. Auto-scaled
             from n_sigma if None.
         title: Overall figure title.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     inlier_2d: list[np.ndarray] = []
     outlier_2d: list[np.ndarray] = []
@@ -697,6 +705,10 @@ def plot_residual_vectors(
             length (direction only).
         color_by: ``"magnitude"`` colours by residual norm, ``"angle"``
             colours by residual direction using a cyclic colormap.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     positions: list[np.ndarray] = []
     residuals: list[np.ndarray] = []
@@ -807,6 +819,10 @@ def plot_residual_grid(
         arrow_scale: Multiplier applied to the mean-residual arrows.
         heatmap_max: Upper limit for the colour scale. Auto-scaled if None.
         title: Plot title.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     positions: list[np.ndarray] = []
     residuals: list[np.ndarray] = []
@@ -932,6 +948,10 @@ def plot_target_and_poses(
         cameras_T_target: Camera-from-target poses, one per image.
         triad_scale: Length of each triad axis arrow in target units.
         title: Plot title.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     bg = "#111111"
     fg = "white"
@@ -1026,6 +1046,10 @@ def plot_target_warp(
         grid_res: Number of grid samples along each axis.
         contour_levels: Number of contour lines.
         title: Plot title.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     wc = target_warp.warp_coordinates
     a, b, c, d, e = target_warp.object_warp
@@ -1156,6 +1180,10 @@ def plot_undistortion(
         grid_step_px: Spacing between grid lines in pixels.
         line_thickness: Line width in pixels.  When None, chosen automatically
             based on the image diagonal.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     W_in = model.input_image_width
     H_in = model.input_image_height
@@ -1458,6 +1486,10 @@ def plot_worst_residual_frames(
         include_outliers: Whether to include outlier points. When False, only
             inlier points (per ``FrameDiagnostics.inlier_mask``) are shown and used
             for ranking.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     per_frame_mags = []
     for fi in frame_diagnostics:
@@ -1593,6 +1625,10 @@ def plot_projection_diff(
             If None, chosen automatically.
         grid_lines: Approximate number of grid lines along the longer
             image axis.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     from lensboy.analysis.differencing import compute_projection_diff
 

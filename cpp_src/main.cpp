@@ -75,8 +75,11 @@ PYBIND11_MODULE(
                 auto dy_ = A(dy_grid);
 
                 auto pinhole_params_buf = pinhole_params_.request();
-                if (pinhole_params_buf.ndim != 1 || pinhole_params_buf.shape[0] != 4) {
-                    throw py::value_error("pinhole_parameters must have shape (4,)");
+                if (pinhole_params_buf.ndim != 1 ||
+                    pinhole_params_buf.shape[0] != 4) {
+                    throw py::value_error(
+                        "pinhole_parameters must have shape (4,)"
+                    );
                 }
 
                 auto dxb = dx_.request();
@@ -98,7 +101,10 @@ PYBIND11_MODULE(
             py::arg("dx_grid"),
             py::arg("dy_grid")
         )
-        .def_readwrite("pinhole_parameters", &lensboy::PinholeSplinedIntrinsicsParameters::pinhole_parameters)
+        .def_readwrite(
+            "pinhole_parameters",
+            &lensboy::PinholeSplinedIntrinsicsParameters::pinhole_parameters
+        )
         .def_readwrite(
             "dx_grid",
             &lensboy::PinholeSplinedIntrinsicsParameters::dx_grid

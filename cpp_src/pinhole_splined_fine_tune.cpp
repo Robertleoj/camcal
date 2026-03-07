@@ -397,7 +397,9 @@ py::dict fine_tune_pinhole_splined(
         "dy_grid must have shape (num_knots_y, num_knots_x)"
     );
 
-    double* pinhole_params = static_cast<double*>(intrinsics_parameters.pinhole_parameters.request().ptr);
+    double* pinhole_params = static_cast<double*>(
+        intrinsics_parameters.pinhole_parameters.request().ptr
+    );
     double* dxp = static_cast<double*>(dxb.ptr);
     double* dyp = static_cast<double*>(dyb.ptr);
 

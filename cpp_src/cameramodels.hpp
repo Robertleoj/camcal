@@ -20,7 +20,8 @@ struct PinholeSplinedConfig {
 };
 
 struct PinholeSplinedIntrinsicsParameters {
-    py::array_t<double, py::array::c_style | py::array::forcecast> pinhole_parameters;
+    py::array_t<double, py::array::c_style | py::array::forcecast>
+        pinhole_parameters;
     py::array_t<double, py::array::c_style | py::array::forcecast> dx_grid;
     py::array_t<double, py::array::c_style | py::array::forcecast> dy_grid;
 };

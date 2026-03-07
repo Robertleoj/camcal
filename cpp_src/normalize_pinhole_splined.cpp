@@ -162,9 +162,14 @@ py::array_t<double> normalize_pinhole_splined_points(
     );
 
     auto pinhole_params_buf = intrinsics.pinhole_parameters.request();
-    require(pinhole_params_buf.ndim == 1 && pinhole_params_buf.shape[0] == 4, "pinhole_parameters must have shape (4,)");
-    const double* pinhole_params = static_cast<const double*>(pinhole_params_buf.ptr);
-    const double fx = pinhole_params[0], fy = pinhole_params[1], cx = pinhole_params[2], cy = pinhole_params[3];
+    require(
+        pinhole_params_buf.ndim == 1 && pinhole_params_buf.shape[0] == 4,
+        "pinhole_parameters must have shape (4,)"
+    );
+    const double* pinhole_params =
+        static_cast<const double*>(pinhole_params_buf.ptr);
+    const double fx = pinhole_params[0], fy = pinhole_params[1],
+                 cx = pinhole_params[2], cy = pinhole_params[3];
     require(fx != 0.0 && fy != 0.0, "fx/fy must be non-zero");
 
     const double* dxp = static_cast<const double*>(dxb.ptr);
