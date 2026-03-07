@@ -274,7 +274,10 @@ class PinholeSplined(CameraModel):
         cy = image_h / 2.0
 
         return self.get_pinhole_model(
-            fx=fx, fy=fy, cx=cx, cy=cy,
+            fx=fx,
+            fy=fy,
+            cx=cx,
+            cy=cy,
             image_size_wh=image_size_wh,
         )
 
@@ -365,4 +368,6 @@ class PinholeSplined(CameraModel):
         cx = new_K[0, 2]
         cy = new_K[1, 2]
 
-        return self.get_pinhole_model(fx=fx, fy=fy, cx=cx, cy=cy, image_size_wh=image_size_wh)
+        return self.get_pinhole_model(
+            fx=fx, fy=fy, cx=cx, cy=cy, image_size_wh=image_size_wh
+        )

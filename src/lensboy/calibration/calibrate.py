@@ -7,13 +7,13 @@ import cv2
 import numpy as np
 
 from lensboy import lensboy_bindings as lbb
+from lensboy._logging import log, warn
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
 from lensboy.camera_models.opencv import OpenCV, OpenCVConfig
 from lensboy.camera_models.pinhole_splined import (
     PinholeSplined,
     PinholeSplinedConfig,
 )
-from lensboy._logging import log, warn
 from lensboy.geometry.pose import Pose
 
 DEFAULT_OUTLIER_THRESHOLD = 5.0
@@ -216,7 +216,9 @@ class CalibrationResult(Generic[T]):
         Returns:
             Total outlier count.
         """
-        return sum(int(np.count_nonzero(~fi.inlier_mask)) for fi in self.frame_diagnostics)
+        return sum(
+            int(np.count_nonzero(~fi.inlier_mask)) for fi in self.frame_diagnostics
+        )
 
     def num_detections(self) -> int:
         """Count the total number of detections across all frames.

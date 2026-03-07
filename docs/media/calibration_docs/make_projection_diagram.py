@@ -30,7 +30,9 @@ def barrel_distort(
     return xs * factor, ys * factor
 
 
-def colored_segments_2d(lines: list[np.ndarray], lines_for_color: list[np.ndarray] | None = None) -> tuple[np.ndarray, np.ndarray]:
+def colored_segments_2d(
+    lines: list[np.ndarray], lines_for_color: list[np.ndarray] | None = None
+) -> tuple[np.ndarray, np.ndarray]:
     all_segs = []
     all_colors = []
     if lines_for_color is None:
@@ -43,7 +45,9 @@ def colored_segments_2d(lines: list[np.ndarray], lines_for_color: list[np.ndarra
     return np.concatenate(all_segs), np.concatenate(all_colors)
 
 
-def colored_segments_3d(lines_3d: list[np.ndarray], lines_2d_for_color: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+def colored_segments_3d(
+    lines_3d: list[np.ndarray], lines_2d_for_color: list[np.ndarray]
+) -> tuple[np.ndarray, np.ndarray]:
     all_segs = []
     all_colors = []
     for line3d, line2d in zip(lines_3d, lines_2d_for_color):
@@ -71,12 +75,14 @@ ax3d.set_axis_off()
 # Camera looking along +Y, pulled back so it doesn't overlap the grid
 cam_y = -2.0
 cam_size = 0.5
-cam_corners = np.array([
-    [-cam_size, cam_y + cam_size * 2.5, -cam_size * 0.7],
-    [cam_size, cam_y + cam_size * 2.5, -cam_size * 0.7],
-    [cam_size, cam_y + cam_size * 2.5, cam_size * 0.7],
-    [-cam_size, cam_y + cam_size * 2.5, cam_size * 0.7],
-])
+cam_corners = np.array(
+    [
+        [-cam_size, cam_y + cam_size * 2.5, -cam_size * 0.7],
+        [cam_size, cam_y + cam_size * 2.5, -cam_size * 0.7],
+        [cam_size, cam_y + cam_size * 2.5, cam_size * 0.7],
+        [-cam_size, cam_y + cam_size * 2.5, cam_size * 0.7],
+    ]
+)
 cam_apex = np.array([0, cam_y, 0])
 
 # Camera body edges
@@ -103,8 +109,13 @@ ax3d.add_collection(Line3DCollection(segs3d, colors=colors3d, linewidths=1.2))
 ray_corners = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
 for rx, ry in ray_corners:
     ax3d.plot3D(
-        [0, rx * grid_scale], [cam_y, grid_dist], [0, ry * grid_scale],
-        color=fg, linewidth=0.5, alpha=0.25, linestyle="--",
+        [0, rx * grid_scale],
+        [cam_y, grid_dist],
+        [0, ry * grid_scale],
+        color=fg,
+        linewidth=0.5,
+        alpha=0.25,
+        linestyle="--",
     )
 
 ax3d.set_xlim(-grid_scale * 1.1, grid_scale * 1.1)
@@ -134,7 +145,9 @@ segs2d, colors2d = colored_segments_2d(distorted_lines, grid_lines)
 ax2d.add_collection(LineCollection(segs2d, colors=colors2d, linewidths=1.5))
 
 # Arrow between panels
-fig.text(0.50, 0.50, "→", fontsize=36, color=fg, ha="center", va="center", fontweight="bold")
+fig.text(
+    0.50, 0.50, "→", fontsize=36, color=fg, ha="center", va="center", fontweight="bold"
+)
 
 ax3d.set_position([-0.15, -0.15, 0.7, 1.25])
 ax2d.set_position([0.55, 0.1, 0.42, 0.78])

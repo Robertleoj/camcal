@@ -6,9 +6,7 @@ from lensboy.analysis.image import to_gray
 from lensboy.calibration.calibrate import Frame
 
 
-def _detect_charuco(
-    img: np.ndarray, board: cv2.aruco.CharucoBoard
-) -> Frame | None:
+def _detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Frame | None:
     charuco_params = cv2.aruco.CharucoParameters()
     charuco_params.minMarkers = 1
 
