@@ -125,7 +125,7 @@ class WarpCoordinates:
         )
 
     @staticmethod
-    def _from_cpp(cpp: lbb.WarpCoordinates) -> "WarpCoordinates":
+    def _from_cpp(cpp: lbb.WarpCoordinates) -> WarpCoordinates:
         """Deserialise from the C++ bindings representation."""
         return WarpCoordinates(
             target_from_warp_frame=Pose._from_cpp(cpp.target_from_warp_frame),
@@ -247,9 +247,19 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         grid_cells: int = 20,
         return_figure: bool = False,
     ) -> Figure | None:
-        """Plot detected point coverage across the image.
+        """Scatter-plot all detected points with empty grid cells highlighted.
 
-        See ``lensboy.analysis.plot_detection_coverage``.
+        Divides the image into a grid and shades cells with no detections,
+        making coverage gaps easy to spot.
+
+        Args:
+            title: Plot title.
+            s: Marker size passed to ``ax.scatter``.
+            grid_cells: Number of grid cells along the longer image axis.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
         """
         from lensboy.analysis.plots import plot_detection_coverage
 
@@ -274,9 +284,23 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         show_spline_knots: bool = False,
         return_figure: bool = False,
     ) -> Figure | None:
-        """Plot distortion grid for the calibrated model.
+        """Project a regular grid through a camera model to visualize distortion.
 
-        See ``lensboy.analysis.plot_distortion_grid``.
+        Builds a grid in normalized (tan-angle) space from the model's FOV, projects
+        it, and clips to the image bounds.
+
+        Args:
+            grid_step_norm: Spacing between grid lines in normalized coordinates.
+            fov_fraction: Fraction of the full FOV to sample (0, 1].
+            ux_max: Upper bound in normalized x, mirrored to negative.
+            uy_max: Upper bound in normalized y, mirrored to negative.
+            cmap_name: Matplotlib colormap name.
+            show_spline_knots: When True and the model is a PinholeSplined,
+                overlay the spline control points on both panels.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
         """
         from lensboy.analysis.plots import plot_distortion_grid
 
@@ -300,9 +324,25 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         title: str = "Reprojection residuals",
         return_figure: bool = False,
     ) -> Figure | None:
-        """Plot reprojection residual histograms.
+        """Per-component histogram and 2D scatter of reprojection residuals.
 
-        See ``lensboy.analysis.plot_residuals``.
+        Top-left: inlier histogram with a 1D Gaussian fit overlaid.
+        Bottom-left: 2D scatter of inlier residuals with fitted 2D Gaussian
+        contours.  Both left panels are trimmed to ±``n_sigma`` standard
+        deviations.  Right column: full-range scatter highlighting outliers
+        in red.
+
+        Args:
+            bins: Number of histogram bins.
+            n_sigma: Number of fitted-Gaussian standard deviations for axis limits.
+            axis_range: Fixed symmetric axis limit (±value) for the histogram and
+                2D scatter plots. The full-range plot is unaffected. Auto-scaled
+                from n_sigma if None.
+            title: Overall figure title.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
         """
         from lensboy.analysis.plots import plot_residuals
 
@@ -324,9 +364,22 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         color_by: str = "magnitude",
         return_figure: bool = False,
     ) -> Figure | None:
-        """Plot residual vectors at detection locations.
+        """Quiver plot of reprojection residual vectors over the image plane.
 
-        See ``lensboy.analysis.plot_residual_vectors``.
+        Each arrow is placed at the detected point location with direction and
+        length given by the residual.
+
+        Args:
+            title: Plot title.
+            scale: Multiplier applied to arrow lengths for visibility.
+            scale_by_magnitude: When False, all arrows are drawn with uniform
+                length (direction only).
+            color_by: ``"magnitude"`` colours by residual norm, ``"angle"``
+                colours by residual direction using a cyclic colormap.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
         """
         from lensboy.analysis.plots import plot_residual_vectors
 
@@ -351,9 +404,21 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         title: str = "Residual grid",
         return_figure: bool = False,
     ) -> Figure | None:
-        """Plot binned residual grid.
+        """Binned residual summary showing per-cell magnitude and mean direction.
 
-        See ``lensboy.analysis.plot_residual_grid``.
+        The image plane is divided into a grid. Each cell is coloured by the mean
+        inlier residual magnitude and has an arrow showing the mean residual
+        vector, revealing spatial bias patterns.
+
+        Args:
+            grid_cells: Number of grid cells along the longer image axis.
+            arrow_scale: Multiplier applied to the mean-residual arrows.
+            heatmap_max: Upper limit for the colour scale. Auto-scaled if None.
+            title: Plot title.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
         """
         from lensboy.analysis.plots import plot_residual_grid
 
@@ -376,9 +441,18 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         title: str = "Target and camera poses",
         return_figure: bool = False,
     ) -> Figure | None:
-        """Plot 3D target points with camera poses.
+        """3D scatter of the calibration target with camera poses shown as triads.
 
-        See ``lensboy.analysis.plot_target_and_poses``.
+        Each camera is drawn as a coordinate-frame triad (X=red, Y=green, Z=blue)
+        at the camera position in the target reference frame.
+
+        Args:
+            triad_scale: Length of each triad axis arrow in target units.
+            title: Plot title.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
         """
         from lensboy.analysis.plots import plot_target_and_poses
 
@@ -398,9 +472,20 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         title: str = "Target warp",
         return_figure: bool = False,
     ) -> Figure | None:
-        """Plot estimated target warp.
+        """Contour plot of the target warp z-displacement viewed from above.
 
-        See ``lensboy.analysis.plot_target_warp``.
+        Evaluates the warp function over a dense grid in the warp frame's xy plane
+        and shows filled contours of the z height, with target point positions
+        scattered on top.
+
+        Args:
+            grid_res: Number of grid samples along each axis.
+            contour_levels: Number of contour lines.
+            title: Plot title.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
 
         Raises:
             ValueError: If no target warp was estimated.
@@ -408,9 +493,7 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         from lensboy.analysis.plots import plot_target_warp
 
         if self.target_warp is None:
-            raise ValueError(
-                "No target warp was estimated in this calibration."
-            )
+            raise ValueError("No target warp was estimated in this calibration.")
         return plot_target_warp(
             self.target_points,
             self.target_warp,
@@ -430,12 +513,25 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         include_outliers: bool = True,
         return_figure: bool = False,
     ) -> Figure | None:
-        """Plot frames with largest residuals.
+        """Show the frames with the largest residuals, with residual vectors overlaid.
 
-        See ``lensboy.analysis.plot_worst_residual_frames``.
+        Frames are ranked by their single worst (max-magnitude) residual and the
+        top ``n`` are displayed in a single-column figure.  Each subplot shows the
+        image with quiver arrows from detected points in the direction and
+        magnitude of the residual, coloured by magnitude.
 
         Args:
-            images: Source images corresponding to each frame.
+            images: Source images corresponding to each frame, shape (H, W) or (H, W, 3).
+            n: Number of worst frames to display.
+            scale: Multiplier applied to arrow lengths for visibility.
+            title: Overall figure title.
+            include_outliers: Whether to include outlier points. When False, only
+                inlier points (per ``FrameDiagnostics.inlier_mask``) are shown and used
+                for ranking.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
         """
         from lensboy.analysis.plots import plot_worst_residual_frames
 
