@@ -30,7 +30,7 @@ class OpenCVConfig(CameraModelConfig):
         image_height: Image height in pixels.
         image_width: Image width in pixels.
         initial_focal_length: Initial focal length guess in pixels.
-        included_distoriton_coefficients: Boolean mask selecting which of the 14
+        included_distortion_coefficients: Boolean mask selecting which of the 14
             OpenCV distortion coefficients to optimise, shape (14,).
     """
 
@@ -38,7 +38,7 @@ class OpenCVConfig(CameraModelConfig):
     image_width: int
 
     initial_focal_length: float
-    included_distoriton_coefficients: np.ndarray = field(
+    included_distortion_coefficients: np.ndarray = field(
         default_factory=lambda: OpenCVConfig.STANDARD
     )
 
@@ -51,11 +51,11 @@ class OpenCVConfig(CameraModelConfig):
     FULL_14 = _mask(*range(14))
 
     def __post_init__(self):
-        assert self.included_distoriton_coefficients.shape == (14,), (
-            f"Expected (14,) mask, got {self.included_distoriton_coefficients.shape}"
+        assert self.included_distortion_coefficients.shape == (14,), (
+            f"Expected (14,) mask, got {self.included_distortion_coefficients.shape}"
         )
-        assert self.included_distoriton_coefficients.dtype == np.bool_, (
-            f"Expected bool dtype, got {self.included_distoriton_coefficients.dtype}"
+        assert self.included_distortion_coefficients.dtype == np.bool_, (
+            f"Expected bool dtype, got {self.included_distortion_coefficients.dtype}"
         )
 
     def optimize_mask(self) -> np.ndarray:
@@ -68,7 +68,7 @@ class OpenCVConfig(CameraModelConfig):
         mask = np.zeros(18, dtype=bool)
 
         mask[:4] = True
-        mask[4:] = self.included_distoriton_coefficients
+        mask[4:] = self.included_distortion_coefficients
         return mask
 
     def get_initial_value(self) -> OpenCV:

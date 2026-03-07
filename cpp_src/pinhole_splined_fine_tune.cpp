@@ -234,7 +234,7 @@ static inline void BuildProblem(
     ceres::Problem& problem,
     const PinholeSplinedConfig& cfg,
     const SplineMap& map,
-    const double* k4p,
+    const double* pinhole_params,
     double* dxp,
     double* dyp,
     double* warp_coeffs,
@@ -254,9 +254,9 @@ static inline void BuildProblem(
     const int ny = (int)cfg.num_knots_y;
     const int n_knots = nx * ny;
 
-    // k4 constant
-    problem.AddParameterBlock(const_cast<double*>(k4p), 4);
-    problem.SetParameterBlockConstant(const_cast<double*>(k4p));
+    // pinhole_parameters constant
+    problem.AddParameterBlock(const_cast<double*>(pinhole_params), 4);
+    problem.SetParameterBlockConstant(const_cast<double*>(pinhole_params));
 
     // warp coeffs block (always present; constant when no warp)
     problem.AddParameterBlock(warp_coeffs, 5);
@@ -348,7 +348,7 @@ static inline void BuildProblem(
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 16 dx knots
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1   // 16 dy knots
             >(new ReprojectionErrorSplined{
-                map, k4p[0], k4p[1], k4p[2], k4p[3], pw, ix, iy, ox, oy, hw, wc
+                map, pinhole_params[0], pinhole_params[1], pinhole_params[2], pinhole_params[3], pw, ix, iy, ox, oy, hw, wc
             });
 
             // Build parameter list: cam + warp_coeffs + 16 dx + 16 dy
@@ -397,7 +397,9 @@ py::dict fine_tune_pinhole_splined(
         "dy_grid must have shape (num_knots_y, num_knots_x)"
     );
 
-    double* k4p = static_cast<double*>(intrinsics_parameters.k4.request().ptr);
+    double* pinhole_params = static_cast<double*>(
+        intrinsics_parameters.pinhole_parameters.request().ptr
+    );
     double* dxp = static_cast<double*>(dxb.ptr);
     double* dyp = static_cast<double*>(dyb.ptr);
 
@@ -427,6 +429,7 @@ py::dict fine_tune_pinhole_splined(
 
     ceres::Solver::Options options;
 
+    options.num_threads = static_cast<int>(std::thread::hardware_concurrency());
     options.linear_solver_type = ceres::ITERATIVE_SCHUR;
 
     options.preconditioner_type = ceres::SCHUR_JACOBI;
@@ -448,7 +451,7 @@ py::dict fine_tune_pinhole_splined(
             problem,
             model_config,
             map,
-            k4p,
+            pinhole_params,
             dxp,
             dyp,
             warp_coeffs,

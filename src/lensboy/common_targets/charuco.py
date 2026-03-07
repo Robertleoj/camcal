@@ -1,13 +1,9 @@
-import logging
-
 import cv2
 import numpy as np
 
-from lensboy._internal.progress import progress
+from lensboy._logging import log, progress
 from lensboy.analysis.image import to_gray
 from lensboy.calibration.calibrate import Frame
-
-logger = logging.getLogger(__name__)
 
 
 def _detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Frame | None:
@@ -33,7 +29,8 @@ def _detect_charuco(img: np.ndarray, board: cv2.aruco.CharucoBoard) -> Frame | N
 
 
 def extract_frames_from_charuco(
-    board: cv2.aruco.CharucoBoard, images: list[np.ndarray]
+    board: cv2.aruco.CharucoBoard,
+    images: list[np.ndarray],
 ) -> tuple[np.ndarray, list[Frame], list[int]]:
     """Detect ChArUco corners in a batch of images.
 
@@ -42,8 +39,6 @@ def extract_frames_from_charuco(
     Args:
         board: The ChArUco board definition.
         images: Calibration images, each of shape (H, W) or (H, W, C).
-        used_image_indices: image indices corresponding to the frames.If charuco
-            detection fails in an image, it will be left out.
 
     Returns:
         target_points: 3D corner coordinates from the board definition, shape (N, 3).
@@ -59,7 +54,7 @@ def extract_frames_from_charuco(
             frames.append(frame)
             image_indices.append(i)
 
-    logger.info(f"Detected charuco in {len(frames)}/{len(images)} images")
+    log(f"Detected charuco in {len(frames)}/{len(images)} images")
 
     target_points = np.array(board.getChessboardCorners())
 

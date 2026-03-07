@@ -5,7 +5,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "lensboy"
-version = "1.1.4"
+version = "2.0.0"
 description = "lensboy for camera calibrations"
 authors = [{ name = "Robert Leo", email = "robert.leo.jonsson@gmail.com" }]
 
@@ -76,7 +76,7 @@ dev = [
 
 
 [tool.ruff]
-exclude = ["**/*.pyi", "**/*.ipynb", "experimental/**"]
+exclude = ["**/*.pyi", "**/*.ipynb", "experimental/**", "docs/**"]
 line-length = 90
 
 [tool.ruff.lint]

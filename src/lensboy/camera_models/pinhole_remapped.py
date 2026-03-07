@@ -192,6 +192,10 @@ class PinholeRemapped(CameraModel):
         y = (pts[:, 1] - self.cy) / self.fy
         return np.stack([x, y, np.ones_like(x)], axis=1)
 
+    def K(self) -> np.ndarray:
+        """Return the 3x3 camera intrinsics matrix."""
+        return np.array([[self.fx, 0, self.cx], [0, self.fy, self.cy], [0, 0, 1]])
+
     def project_points(self, points_in_cam: np.ndarray) -> np.ndarray:
         """Project 3D camera-frame points into the undistorted image.
 

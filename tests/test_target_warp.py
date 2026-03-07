@@ -7,7 +7,7 @@ import numpy as np
 import lensboy as lb
 from lensboy.calibration.calibrate import _make_warp_coordinates
 
-OPENCV_MODEL_PATH = Path(__file__).parent.parent / "data/camera_models/opencv.json"
+OPENCV_MODEL_PATH = Path(__file__).parent.parent / "data/test_datasets/opencv.json"
 
 
 def _make_synthetic_warp_dataset(
@@ -104,7 +104,7 @@ def test_warp_recovery_opencv() -> None:
         image_height=model.image_height,
         image_width=model.image_width,
         initial_focal_length=float(model.fx),
-        included_distoriton_coefficients=lb.OpenCVConfig.FULL_14,
+        included_distortion_coefficients=lb.OpenCVConfig.FULL_14,
     )
     result = lb.calibrate_camera(
         target_points,
@@ -113,10 +113,10 @@ def test_warp_recovery_opencv() -> None:
         estimate_target_warp=True,
     )
 
-    assert result.warp_info is not None, "Warp should have been estimated"
+    assert result.target_warp is not None, "Warp should have been estimated"
 
     gt_warped = ground_truth_warp.warp_target(target_points)
-    recovered_warped = result.warp_info.warp_target(target_points)
+    recovered_warped = result.target_warp.warp_target(target_points)
     np.testing.assert_allclose(
         recovered_warped,
         gt_warped,

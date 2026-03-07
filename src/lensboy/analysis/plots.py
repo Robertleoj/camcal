@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-import logging
-
 import cv2
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colorbar import Colorbar
+from matplotlib.figure import Figure
 from matplotlib.patches import Circle
 
 import lensboy as lb
+from lensboy._logging import log
 from lensboy.analysis.image import to_color
 from lensboy.analysis.utils import rot_euler
-
-logger = logging.getLogger(__name__)
 
 
 class Color:
@@ -37,7 +35,7 @@ def _draw_points(
     return img
 
 
-def draw_points_in_image(
+def draw_points(
     points_in_image: np.ndarray,
     *,
     image: np.ndarray | None = None,
@@ -81,12 +79,13 @@ def plot_detection_coverage(
     image_height: int,
     title: str = "Coverage",
     s: float = 6.0,
-    grid_cells: int = 30,
-) -> None:
-    """Scatter-plot all detected points with a smoothed coverage heatmap.
+    grid_cells: int = 20,
+    return_figure: bool = False,
+) -> Figure | None:
+    """Scatter-plot all detected points with empty grid cells highlighted.
 
-    Shows a density heatmap behind the scatter points so that regions with
-    poor coverage are immediately visible as dark patches.
+    Divides the image into a grid and shades cells with no detections,
+    making coverage gaps easy to spot.
 
     Args:
         detections: Frames containing detected calibration points.
@@ -94,7 +93,11 @@ def plot_detection_coverage(
         image_height: Sensor height in pixels, sets the y-axis limit.
         title: Plot title.
         s: Marker size passed to ``ax.scatter``.
-        grid_cells: Number of grid cells along the longer image axis for the heatmap.
+        grid_cells: Number of grid cells along the longer image axis.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     pts_list = []
     for d in detections:
@@ -112,16 +115,15 @@ def plot_detection_coverage(
     bg = "#111111"
     fg = "white"
     accent = "#00d4ff"
+    gap_color = "#3a0000"
 
     fig, ax = plt.subplots(figsize=(20, 15))
     fig.patch.set_facecolor(bg)
     ax.set_facecolor(bg)
-    ax.tick_params(colors=fg)
-    ax.xaxis.label.set_color(fg)
-    ax.yaxis.label.set_color(fg)
-    ax.title.set_color(fg)
+    ax.set_xticks([])
+    ax.set_yticks([])
     for spine in ax.spines.values():
-        spine.set_color(fg)
+        spine.set_visible(False)
 
     if pts.shape[0] > 0:
         aspect = image_width / image_height
@@ -132,31 +134,54 @@ def plot_detection_coverage(
             ny = grid_cells
             nx = max(1, int(round(grid_cells * aspect)))
 
+        cell_w = image_width / nx
+        cell_h = image_height / ny
+
         counts, _, _ = np.histogram2d(
             pts[:, 0],
             pts[:, 1],
             bins=[nx, ny],
             range=[[0, image_width], [0, image_height]],
         )
-        # counts is (nx, ny) with x along axis 0 — transpose so y is rows
-        ax.imshow(
-            counts.T,
-            extent=[0, image_width, image_height, 0],  # type: ignore
-            cmap="inferno",
-            interpolation="gaussian",
-            aspect="auto",
-        )
+
+        for ix in range(nx):
+            for iy in range(ny):
+                if counts[ix, iy] == 0:
+                    ax.add_patch(
+                        plt.Rectangle(  # type: ignore
+                            (ix * cell_w, iy * cell_h),
+                            cell_w,
+                            cell_h,
+                            facecolor=gap_color,
+                            edgecolor=None,
+                        )
+                    )
+
         ax.scatter(pts[:, 0], pts[:, 1], s=s, color=accent)
 
-    ax.set_title(f"{title}  (N={pts.shape[0]})")
-    ax.set_xlabel("x [px]")
-    ax.set_ylabel("y [px]")
+    # Draw image border as a data-space rectangle
+    ax.add_patch(
+        plt.Rectangle(  # type: ignore
+            (0, 0),
+            image_width,
+            image_height,
+            facecolor="none",
+            edgecolor=fg,
+            linewidth=1.5,
+        )
+    )
 
-    ax.set_xlim(0, image_width)
-    ax.set_ylim(image_height, 0)
+    ax.set_title(f"{title}  (N={pts.shape[0]})", color=fg, fontsize=18)
+
+    pad = max(image_width, image_height) * 0.03
+    ax.set_xlim(-pad, image_width + pad)
+    ax.set_ylim(image_height + pad, 0)
 
     ax.set_aspect("equal", adjustable="box")
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_distortion_grid(
@@ -168,7 +193,8 @@ def plot_distortion_grid(
     uy_max: float | None = None,
     cmap_name: str = "jet",
     show_spline_knots: bool = False,
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Project a regular grid through a camera model to visualize distortion.
 
     Builds a grid in normalized (tan-angle) space from the model's FOV, projects
@@ -183,6 +209,10 @@ def plot_distortion_grid(
         cmap_name: Matplotlib colormap name.
         show_spline_knots: When True and the model is a PinholeSplined,
             overlay the spline control points on both panels.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
 
     W = int(model.image_width)
@@ -444,36 +474,45 @@ def plot_distortion_grid(
     ax1.set_ylim(H - 1, 0)
     ax1.set_aspect("equal")
 
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_residuals(
-    frame_infos: list[lb.FrameInfo],
+    frame_diagnostics: list[lb.FrameDiagnostics],
     *,
     bins: int = 100,
     n_sigma: float = 6.0,
     axis_range: float | None = None,
     title: str = "Reprojection residuals",
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Per-component histogram and 2D scatter of reprojection residuals.
 
-    Left panel: stacked histogram (inliers blue, outliers red) with a 1D
-    Gaussian fit overlaid. Right panel: 2D scatter of residuals with fitted
-    2D Gaussian contours.  Both axes are trimmed to ±``n_sigma`` standard
-    deviations.
+    Top-left: inlier histogram with a 1D Gaussian fit overlaid.
+    Bottom-left: 2D scatter of inlier residuals with fitted 2D Gaussian
+    contours.  Both left panels are trimmed to ±``n_sigma`` standard
+    deviations.  Right column: full-range scatter highlighting outliers
+    in red.
 
     Args:
-        frame_infos: Per-frame reprojection diagnostics.
+        frame_diagnostics: Per-frame reprojection diagnostics.
         bins: Number of histogram bins.
         n_sigma: Number of fitted-Gaussian standard deviations for axis limits.
         axis_range: Fixed symmetric axis limit (±value) for the histogram and
             2D scatter plots. The full-range plot is unaffected. Auto-scaled
             from n_sigma if None.
         title: Overall figure title.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     inlier_2d: list[np.ndarray] = []
     outlier_2d: list[np.ndarray] = []
-    for fi in frame_infos:
+    for fi in frame_diagnostics:
         inlier_2d.append(fi.residuals[fi.inlier_mask])
         outlier_2d.append(fi.residuals[~fi.inlier_mask])
 
@@ -633,12 +672,15 @@ def plot_residuals(
     ax_full.set_title(f"Full range ({n_outliers} outlier points)")
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_residual_vectors(
     frames: list[lb.Frame],
-    frame_infos: list[lb.FrameInfo],
+    frame_diagnostics: list[lb.FrameDiagnostics],
     *,
     image_width: int,
     image_height: int,
@@ -646,7 +688,8 @@ def plot_residual_vectors(
     scale: float = 10.0,
     scale_by_magnitude: bool = True,
     color_by: str = "magnitude",
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Quiver plot of reprojection residual vectors over the image plane.
 
     Each arrow is placed at the detected point location with direction and
@@ -654,7 +697,7 @@ def plot_residual_vectors(
 
     Args:
         frames: Detected calibration frames.
-        frame_infos: Matching per-frame reprojection diagnostics.
+        frame_diagnostics: Matching per-frame reprojection diagnostics.
         image_width: Sensor width in pixels, sets the x-axis limit.
         image_height: Sensor height in pixels, sets the y-axis limit.
         title: Plot title.
@@ -663,10 +706,14 @@ def plot_residual_vectors(
             length (direction only).
         color_by: ``"magnitude"`` colours by residual norm, ``"angle"``
             colours by residual direction using a cyclic colormap.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     positions: list[np.ndarray] = []
     residuals: list[np.ndarray] = []
-    for frame, fi in zip(frames, frame_infos):
+    for frame, fi in zip(frames, frame_diagnostics):
         positions.append(frame.detected_points_in_image)
         residuals.append(fi.residuals)
 
@@ -740,20 +787,24 @@ def plot_residual_vectors(
     ax.set_aspect("equal", adjustable="box")
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_residual_grid(
     frames: list[lb.Frame],
-    frame_infos: list[lb.FrameInfo],
+    frame_diagnostics: list[lb.FrameDiagnostics],
     *,
     image_width: int,
     image_height: int,
-    grid_cells: int = 50,
+    grid_cells: int = 40,
     arrow_scale: float = 100.0,
     heatmap_max: float | None = None,
     title: str = "Residual grid",
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Binned residual summary showing per-cell magnitude and mean direction.
 
     The image plane is divided into a grid. Each cell is coloured by the mean
@@ -762,17 +813,21 @@ def plot_residual_grid(
 
     Args:
         frames: Detected calibration frames.
-        frame_infos: Matching per-frame reprojection diagnostics.
+        frame_diagnostics: Matching per-frame reprojection diagnostics.
         image_width: Sensor width in pixels, sets the x-axis limit.
         image_height: Sensor height in pixels, sets the y-axis limit.
         grid_cells: Number of grid cells along the longer image axis.
         arrow_scale: Multiplier applied to the mean-residual arrows.
         heatmap_max: Upper limit for the colour scale. Auto-scaled if None.
         title: Plot title.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     positions: list[np.ndarray] = []
     residuals: list[np.ndarray] = []
-    for frame, fi in zip(frames, frame_infos):
+    for frame, fi in zip(frames, frame_diagnostics):
         positions.append(frame.detected_points_in_image[fi.inlier_mask])
         residuals.append(fi.residuals[fi.inlier_mask])
 
@@ -870,7 +925,10 @@ def plot_residual_grid(
     ax.set_aspect("equal", adjustable="box")
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_target_and_poses(
@@ -879,7 +937,8 @@ def plot_target_and_poses(
     *,
     triad_scale: float = 20.0,
     title: str = "Target and camera poses",
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """3D scatter of the calibration target with camera poses shown as triads.
 
     Each camera is drawn as a coordinate-frame triad (X=red, Y=green, Z=blue)
@@ -890,6 +949,10 @@ def plot_target_and_poses(
         cameras_T_target: Camera-from-target poses, one per image.
         triad_scale: Length of each triad axis arrow in target units.
         title: Plot title.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     bg = "#111111"
     fg = "white"
@@ -957,7 +1020,10 @@ def plot_target_and_poses(
     ax.set_title(title, color=fg)
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_target_warp(
@@ -967,7 +1033,8 @@ def plot_target_warp(
     grid_res: int = 300,
     contour_levels: int = 15,
     title: str = "Target warp",
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Contour plot of the target warp z-displacement viewed from above.
 
     Evaluates the warp function over a dense grid in the warp frame's xy plane
@@ -980,6 +1047,10 @@ def plot_target_warp(
         grid_res: Number of grid samples along each axis.
         contour_levels: Number of contour lines.
         title: Plot title.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     wc = target_warp.warp_coordinates
     a, b, c, d, e = target_warp.object_warp
@@ -1045,14 +1116,17 @@ def plot_target_warp(
     ax.set_xlim(gx.min() - margin * x_extent, gx.max() + margin * x_extent)
     ax.set_ylim(gy.min() - margin * y_extent, gy.max() + margin * y_extent)
 
-    coeff_str = ", ".join(f"{v:.5f}" for v in (a, b, c, d, e))
-    ax.set_title(f"{title}  ({coeff_str})")
+    deflection = target_warp.max_deflection(target_points)
+    ax.set_title(f"{title}  (max deflection: {deflection:.4f})")
     ax.set_xlabel("warp x [target units]")
     ax.set_ylabel("warp y [target units]")
     ax.set_aspect("equal", adjustable="box")
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def _remap_point(model: lb.PinholeRemapped, x: float, y: float) -> tuple[float, float]:
@@ -1091,7 +1165,8 @@ def plot_undistortion(
     image: np.ndarray | None = None,
     grid_step_px: int = 50,
     line_thickness: int | None = None,
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Visualize distortion and undistortion with grid warping.
 
     Row 1: regular grid in distorted pixel space (left) remapped to
@@ -1106,6 +1181,10 @@ def plot_undistortion(
         grid_step_px: Spacing between grid lines in pixels.
         line_thickness: Line width in pixels.  When None, chosen automatically
             based on the image diagonal.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     W_in = model.input_image_width
     H_in = model.input_image_height
@@ -1374,11 +1453,14 @@ def plot_undistortion(
         axes[2, 1].set_ylabel("v (px)")
         axes[2, 1].set_aspect("equal")
 
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def plot_worst_residual_frames(
-    frame_infos: list[lb.FrameInfo],
+    frame_diagnostics: list[lb.FrameDiagnostics],
     frames: list[lb.Frame],
     images: list[np.ndarray],
     *,
@@ -1386,7 +1468,8 @@ def plot_worst_residual_frames(
     scale: float = 10.0,
     title: str = "Worst residual frames",
     include_outliers: bool = True,
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Show the frames with the largest residuals, with residual vectors overlaid.
 
     Frames are ranked by their single worst (max-magnitude) residual and the
@@ -1395,18 +1478,22 @@ def plot_worst_residual_frames(
     magnitude of the residual, coloured by magnitude.
 
     Args:
-        frame_infos: Per-frame reprojection diagnostics.
-        frames: Detected calibration frames (same order as ``frame_infos``).
+        frame_diagnostics: Per-frame reprojection diagnostics.
+        frames: Detected calibration frames (same order as ``frame_diagnostics``).
         images: Source images corresponding to each frame, shape (H, W) or (H, W, 3).
         n: Number of worst frames to display.
         scale: Multiplier applied to arrow lengths for visibility.
         title: Overall figure title.
         include_outliers: Whether to include outlier points. When False, only
-            inlier points (per ``FrameInfo.inlier_mask``) are shown and used
+            inlier points (per ``FrameDiagnostics.inlier_mask``) are shown and used
             for ranking.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     per_frame_mags = []
-    for fi in frame_infos:
+    for fi in frame_diagnostics:
         mags = np.linalg.norm(fi.residuals, axis=1)
         if not include_outliers:
             mags = mags[fi.inlier_mask]
@@ -1435,7 +1522,7 @@ def plot_worst_residual_frames(
 
     for ax_row, idx in zip(axes, selected):
         ax = ax_row[0]
-        fi = frame_infos[idx]
+        fi = frame_diagnostics[idx]
         frame = frames[idx]
         img = to_color(images[idx])
 
@@ -1489,7 +1576,10 @@ def plot_worst_residual_frames(
         cbar.ax.tick_params(colors=fg)
 
     plt.tight_layout()
+    if return_figure:
+        return fig
     plt.show()
+    return None
 
 
 def _125_levels(vmax: float) -> list[float]:
@@ -1514,7 +1604,8 @@ def plot_projection_diff(
     heatmap_max: float | None = None,
     diff_scale: float | None = None,
     grid_lines: int = 60,
-) -> None:
+    return_figure: bool = False,
+) -> Figure | None:
     """Compare two camera models by aligning them and plotting the residual.
 
     The two models are aligned by finding the rotation (and optionally
@@ -1535,6 +1626,10 @@ def plot_projection_diff(
             If None, chosen automatically.
         grid_lines: Approximate number of grid lines along the longer
             image axis.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
     """
     from lensboy.analysis.differencing import compute_projection_diff
 
@@ -1548,10 +1643,8 @@ def plot_projection_diff(
     )
 
     euler = rot_euler(pose)
-    logger.info(
-        f"Implied rotation: x={euler[0]:.4f} y={euler[1]:.4f} z={euler[2]:.4f} deg"
-    )
-    logger.info(f"Implied translation: {pose.translation}")
+    log(f"Implied rotation: x={euler[0]:.4f} y={euler[1]:.4f} z={euler[2]:.4f} deg")
+    log(f"Implied translation: {pose.translation}")
     diff_norm = np.linalg.norm(diff, axis=1)
 
     if heatmap_max is None:
@@ -1771,4 +1864,7 @@ def plot_projection_diff(
     ax_grid.set_ylabel("y [px]")
     ax_grid.set_title(f"Deformation grid ({diff_scale:.0f}x exaggerated)")
 
+    if return_figure:
+        return fig
     plt.show()
+    return None

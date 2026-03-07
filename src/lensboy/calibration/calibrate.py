@@ -1,5 +1,3 @@
-import logging
-import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from timeit import default_timer
@@ -9,6 +7,7 @@ import cv2
 import numpy as np
 
 from lensboy import lensboy_bindings as lbb
+from lensboy._logging import log, warn
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
 from lensboy.camera_models.opencv import OpenCV, OpenCVConfig
 from lensboy.camera_models.pinhole_splined import (
@@ -17,9 +16,7 @@ from lensboy.camera_models.pinhole_splined import (
 )
 from lensboy.geometry.pose import Pose
 
-LOG = logging.getLogger(__name__)
-
-DEFAULT_OUTLIER_THRESHOLD = 3.0
+DEFAULT_OUTLIER_THRESHOLD = 5.0
 MAX_OUTLIER_FILTER_PASSES = 2
 
 
@@ -73,7 +70,7 @@ _IntrinsicsT = TypeVar("_IntrinsicsT", OpenCV, PinholeSplined)
 
 
 @dataclass
-class FrameInfo:
+class FrameDiagnostics:
     """Per-image reprojection diagnostics computed after calibration.
 
     Attributes:
@@ -164,6 +161,22 @@ class TargetWarp:
             target_points,
         )
 
+    def max_deflection(self, target_points: np.ndarray) -> float:
+        """Peak-to-peak z-deflection caused by the warp, in target units.
+
+        Args:
+            target_points: Original 3D target coordinates, shape (N, 3).
+
+        Returns:
+            The spread (max minus min) of warp-induced z change.
+        """
+        warp_frame_from_target = self.warp_coordinates.target_from_warp_frame.inverse()
+        z_original = warp_frame_from_target.apply(target_points)[:, 2]
+        warped = self.warp_target(target_points)
+        z_warped = warp_frame_from_target.apply(warped)[:, 2]
+        dz = z_warped - z_original
+        return float(np.max(dz) - np.min(dz))
+
 
 @dataclass
 class CalibrationResult(Generic[T]):
@@ -172,14 +185,14 @@ class CalibrationResult(Generic[T]):
     Attributes:
         optimized_camera_model: The calibrated camera model.
         optimized_cameras_T_target: One pose per image (camera-from-target).
-        frame_infos: Per-image reprojection diagnostics, one per input image.
-        warp_info: Estimated target warp, or None if not estimated.
+        frame_diagnostics: Per-image reprojection diagnostics, one per input image.
+        target_warp: Estimated target warp, or None if not estimated.
     """
 
     optimized_camera_model: T
     optimized_cameras_T_target: list[Pose]
-    frame_infos: list[FrameInfo]
-    warp_info: TargetWarp | None = None
+    frame_diagnostics: list[FrameDiagnostics]
+    target_warp: TargetWarp | None = None
 
     def residual_sigma_map(self) -> float:
         """Robust MAP estimate of residual standard deviation over inliers.
@@ -191,7 +204,7 @@ class CalibrationResult(Generic[T]):
             Estimated residual standard deviation in pixels.
         """
         inlier_vals = np.concatenate(
-            [fi.residuals[fi.inlier_mask] for fi in self.frame_infos]
+            [fi.residuals[fi.inlier_mask] for fi in self.frame_diagnostics]
         ).ravel()
         mu = float(np.median(inlier_vals))
         mad = float(np.median(np.abs(inlier_vals - mu)))
@@ -203,7 +216,9 @@ class CalibrationResult(Generic[T]):
         Returns:
             Total outlier count.
         """
-        return sum(int(np.count_nonzero(~fi.inlier_mask)) for fi in self.frame_infos)
+        return sum(
+            int(np.count_nonzero(~fi.inlier_mask)) for fi in self.frame_diagnostics
+        )
 
     def num_detections(self) -> int:
         """Count the total number of detections across all frames.
@@ -211,7 +226,7 @@ class CalibrationResult(Generic[T]):
         Returns:
             Total detection count (inliers + outliers).
         """
-        return sum(len(fi.residuals) for fi in self.frame_infos)
+        return sum(len(fi.residuals) for fi in self.frame_diagnostics)
 
 
 def _project_and_calculate_residuals(
@@ -230,7 +245,7 @@ def _project_and_calculate_residuals(
 
     projected_points_in_image = model.project_points(points_in_camera)
 
-    residuals = frame.detected_points_in_image - projected_points_in_image
+    residuals = projected_points_in_image - frame.detected_points_in_image
 
     return projected_points_in_image, residuals
 
@@ -251,25 +266,14 @@ def _robust_sigma_xy(residuals: list[np.ndarray]) -> float:
     return float(np.sqrt(0.5 * (sx * sx + sy * sy)))
 
 
-def _radius_threshold_from_k(k: float) -> float:
-    # If x,y ~ N(0, sigma^2), then r^2/sigma^2 ~ chi2(df=2).
-    # A 1D ±kσ "inlier probability" is p = 2*Phi(k)-1.
-    # For df=2: chi2 CDF is 1-exp(-x/2), so quantile is x = -2 ln(1-p).
-    # Threshold radius = sqrt(x) * sigma.
-    p1 = 0.5 * (1.0 + math.erf(k / math.sqrt(2.0)))
-    p = 2.0 * p1 - 1.0
-    x = -2.0 * np.log(1.0 - p)
-    return float(np.sqrt(x))
-
-
 def _filter_outliers(
     frames: list,
     residuals: list[np.ndarray],
-    k: float = 3.5,
-    sigma_floor_px: float = 0.25,  # prevents collapse
+    k: float,
+    sigma_floor_px: float = 0.05,  # prevents collapse
 ) -> list:
     sigma = max(_robust_sigma_xy(residuals), sigma_floor_px)
-    gate = _radius_threshold_from_k(k) * sigma  # radius in pixels
+    gate = k * sigma
 
     filtered = []
     for frame, r in zip(frames, residuals):
@@ -298,7 +302,7 @@ def _opencv_calibrate_inner(
 
     cameras_from_target_in = [p._to_cpp() for p in curr_cameras_from_target]
 
-    LOG.info("Running full optimization...")
+    log("Running full optimization...")
     start_time = default_timer()
     result = lbb.calibrate_opencv(
         intrinsics_initial_value=params,
@@ -312,7 +316,7 @@ def _opencv_calibrate_inner(
         warp_coeffs_initial=list(warp_coeffs) if warp_coeffs is not None else [0.0] * 5,
     )
     end_time = default_timer()
-    LOG.info(f"Ran optimizer in {end_time - start_time:.2f}s")
+    log(f"Ran optimizer in {end_time - start_time:.2f}s")
 
     optimized_intrinsics = curr_intrinsics._with_params(result["intrinsics"])
 
@@ -334,15 +338,15 @@ def _opencv_calibrate_inner(
     return optimized_intrinsics, optimized_cameras_from_target, out_coeffs
 
 
-def _compute_frame_infos(
+def _compute_frame_diagnostics(
     intrinsics: OpenCV | PinholeSplined,
     cameras_from_target: list[Pose],
     original_frames: list[Frame],
     filtered_frames: list[Frame] | None,
     target_points: np.ndarray,
     target_warp: TargetWarp | None = None,
-) -> list[FrameInfo]:
-    frame_infos: list[FrameInfo] = []
+) -> list[FrameDiagnostics]:
+    frame_diagnostics: list[FrameDiagnostics] = []
     for i in range(len(cameras_from_target)):
         projected, residuals = _project_and_calculate_residuals(
             target_points,
@@ -360,20 +364,20 @@ def _compute_frame_infos(
         else:
             inlier_mask = np.ones(len(original_frames[i]), dtype=bool)
 
-        frame_infos.append(FrameInfo(projected, residuals, inlier_mask))
+        frame_diagnostics.append(FrameDiagnostics(projected, residuals, inlier_mask))
 
-    return frame_infos
+    return frame_diagnostics
 
 
-def _log_residual_stats(frame_infos: list[FrameInfo]) -> None:
+def _log_residual_stats(frame_diagnostics: list[FrameDiagnostics]) -> None:
     inlier_norms = np.concatenate(
         [
             np.linalg.norm(fi.residuals[fi.inlier_mask], axis=1)
-            for fi in frame_infos
+            for fi in frame_diagnostics
             if fi.inlier_mask.any()
         ]
     )
-    LOG.info(
+    log(
         f"Residuals (inliers): mean={np.mean(inlier_norms):.3f}px, "
         f"worst={np.max(inlier_norms):.3f}px"
     )
@@ -404,7 +408,7 @@ def _run_with_outlier_filtering(
             state = optimize_fn(state)
         else:
             n_empty = sum(not m for m in non_empty_mask)
-            LOG.info(f"Skipping {n_empty} frame(s) with no inlier points")
+            log(f"Skipping {n_empty} frame(s) with no inlier points")
             active_frames = [f for f, m in zip(state.frames, non_empty_mask) if m]
             active_poses = [
                 p for p, m in zip(state.cameras_from_target, non_empty_mask) if m
@@ -453,7 +457,7 @@ def _run_with_outlier_filtering(
         total_remaining = sum(len(f) for f in new_frames)
         total_outliers = total_observations - total_remaining
         pct = total_outliers / total_observations * 100
-        LOG.info(
+        log(
             f"Outlier filtering: {total_outliers}/{total_observations}"
             f" ({pct:.1f}%) outliers - going again..."
         )
@@ -484,7 +488,7 @@ def _initialize_poses_with_pnp(
                 )
                 continue
 
-        LOG.warning("PnP init failed for frame, using fallback pose")
+        warn("PnP init failed for frame, using fallback pose")
         poses.append(Pose.from_tz(100))
 
     return poses
@@ -501,7 +505,7 @@ def _make_warp_coordinates(target_points: np.ndarray) -> WarpCoordinates | None:
 
     planarity_ratio = s[2] / s[1] if s[1] > 1e-10 else np.inf
     if planarity_ratio > _PLANARITY_RATIO_THRESHOLD:
-        LOG.warning(
+        warn(
             "Target warp can only be estimated with a planar target "
             f"(planarity ratio {planarity_ratio:.3f} > {_PLANARITY_RATIO_THRESHOLD}). "
             "Skipping warp estimation."
@@ -530,7 +534,7 @@ def _make_warp_coordinates(target_points: np.ndarray) -> WarpCoordinates | None:
         x_scale = float(np.linalg.norm(e0) / 2.0)
         y_scale = float(np.linalg.norm(e1) / 2.0)
     else:
-        LOG.info("Target is not rectangular; falling back to PCA for warp frame axes.")
+        log("Target is not rectangular; falling back to PCA for warp frame axes.")
         eigvals, eigvecs = np.linalg.eigh(np.cov(points_2d.T))
         order = np.argsort(eigvals)[::-1]
         u = eigvecs[:, order[0]]
@@ -572,7 +576,7 @@ def _opencv_calibrate(
         f"Expected floating dtype for target_points, got {target_points.dtype}"
     )
     initial_intrinsics = config.get_initial_value()
-    LOG.info("Computing initial poses with PnP...")
+    log("Computing initial poses with PnP...")
     initial_cameras_from_target = _initialize_poses_with_pnp(
         initial_intrinsics, target_points, frames
     )
@@ -603,28 +607,29 @@ def _opencv_calibrate(
         warp_coordinates=warp_coordinates,
     )
 
-    warp_info = None
+    target_warp = None
     if warp_coordinates is not None and state.warp_coeffs is not None:
-        warp_info = TargetWarp(
+        target_warp = TargetWarp(
             warp_coordinates=warp_coordinates, object_warp=state.warp_coeffs
         )
-        LOG.info(f"Target warp coefficients: {state.warp_coeffs}")
+        deflection = target_warp.max_deflection(target_points)
+        log(f"Target warp max deflection: {deflection:.4f} (target units)")
 
-    frame_infos = _compute_frame_infos(
+    frame_diagnostics = _compute_frame_diagnostics(
         state.intrinsics,
         state.cameras_from_target,
         frames,
         state.frames if state.frames is not frames else None,
         target_points,
-        warp_info,
+        target_warp,
     )
 
-    _log_residual_stats(frame_infos)
+    _log_residual_stats(frame_diagnostics)
     return CalibrationResult(
         optimized_camera_model=state.intrinsics,
         optimized_cameras_T_target=state.cameras_from_target,
-        frame_infos=frame_infos,
-        warp_info=warp_info,
+        frame_diagnostics=frame_diagnostics,
+        target_warp=target_warp,
     )
 
 
@@ -698,21 +703,21 @@ def _calibrate_pinhole_splined(
         image_height=config.image_height,
         image_width=config.image_width,
         initial_focal_length=config.initial_focal_length,
-        included_distoriton_coefficients=OpenCVConfig.FULL_14,
+        included_distortion_coefficients=OpenCVConfig.FULL_14,
     )
 
-    LOG.info("Calibrating seed opencv model...")
+    log("Calibrating seed opencv model...")
     start_time = default_timer()
     opencv_calibration_result = _opencv_calibrate(
         target_points, frames, opencv_config, None, estimate_target_warp=False
     )
     end_time = default_timer()
-    LOG.info(f"OpenCV seed model ready in {end_time - start_time:.1f}s")
+    log(f"OpenCV seed model ready in {end_time - start_time:.1f}s")
 
     opencv_model = opencv_calibration_result.optimized_camera_model
 
     fov_deg_x, fov_deg_y = _compute_fov_from_opencv(opencv_model)
-    LOG.info(f"Computed FOV from OpenCV model: {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
+    log(f"Computed FOV from OpenCV model: {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
 
     cpp_config = lbb.PinholeSplinedConfig(
         config.image_width,
@@ -723,13 +728,13 @@ def _calibrate_pinhole_splined(
         config.num_knots_y,
     )
 
-    LOG.info("Calculating matching spline model...")
+    log("Calculating matching spline model...")
     start_time = default_timer()
     out_dict = lbb.get_matching_spline_distortion_model(
         opencv_model.distortion_coeffs.tolist(), cpp_config
     )
     end_time = default_timer()
-    LOG.info(f"Matching spline model ready in {end_time - start_time:.1f}s")
+    log(f"Matching spline model ready in {end_time - start_time:.1f}s")
 
     x_knots = out_dict["x_knots"]
     y_knots = out_dict["y_knots"]
@@ -758,7 +763,7 @@ def _calibrate_pinhole_splined(
     def optimize_fn(
         state: _OptimizationState[PinholeSplined],
     ) -> _OptimizationState[PinholeSplined]:
-        LOG.info("Running full optimization...")
+        log("Running full optimization...")
         start = default_timer()
         intrinsics, cameras, kxy = _pinhole_splined_refine_inner(
             state.intrinsics,
@@ -768,7 +773,7 @@ def _calibrate_pinhole_splined(
             warp_coordinates,
             state.warp_coeffs,
         )
-        LOG.info(f"Performed full optimization in {default_timer() - start:.2f}s")
+        log(f"Performed full optimization in {default_timer() - start:.2f}s")
         return replace(
             state, intrinsics=intrinsics, cameras_from_target=cameras, warp_coeffs=kxy
         )
@@ -781,33 +786,33 @@ def _calibrate_pinhole_splined(
         warp_coordinates=warp_coordinates,
     )
 
-    warp_info = None
+    target_warp = None
     if warp_coordinates is not None and state.warp_coeffs is not None:
-        warp_info = TargetWarp(
+        target_warp = TargetWarp(
             warp_coordinates=warp_coordinates, object_warp=state.warp_coeffs
         )
+        deflection = target_warp.max_deflection(target_points)
+        log(f"Target warp max deflection: {deflection:.4f} (target units)")
 
-        LOG.info(f"Target warp coefficients: {state.warp_coeffs}")
-
-    frame_infos = _compute_frame_infos(
+    frame_diagnostics = _compute_frame_diagnostics(
         state.intrinsics,
         state.cameras_from_target,
         frames,
         state.frames if state.frames is not frames else None,
         target_points,
-        warp_info,
+        target_warp,
     )
 
     final_intrinsics = replace(
         state.intrinsics, seed_opencv_distortion_parameters=opencv_model.distortion_coeffs
     )
 
-    _log_residual_stats(frame_infos)
+    _log_residual_stats(frame_diagnostics)
     return CalibrationResult(
         optimized_camera_model=final_intrinsics,
         optimized_cameras_T_target=state.cameras_from_target,
-        frame_infos=frame_infos,
-        warp_info=warp_info,
+        frame_diagnostics=frame_diagnostics,
+        target_warp=target_warp,
     )
 
 
@@ -818,7 +823,6 @@ def calibrate_camera(
     camera_model_config: PinholeSplinedConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
-    verbose: bool = True,
 ) -> CalibrationResult[PinholeSplined]: ...
 
 
@@ -829,7 +833,6 @@ def calibrate_camera(
     camera_model_config: OpenCVConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
-    verbose: bool = True,
 ) -> CalibrationResult[OpenCV]: ...
 
 
@@ -839,7 +842,6 @@ def calibrate_camera(
     camera_model_config: CameraModelConfig,
     estimate_target_warp: bool = True,
     outlier_threshold_stddevs: float | None = DEFAULT_OUTLIER_THRESHOLD,
-    verbose: bool = True,
 ) -> CalibrationResult:
     """Calibrate a camera from a set of per-image frames.
 
@@ -854,33 +856,10 @@ def calibrate_camera(
             of the target to account for slight non-planarity.
         outlier_threshold_stddevs: Sigma threshold for outlier rejection.
             Pass None to disable.
-        verbose: Whether to emit log messages during calibration.
 
     Returns:
         Calibration result containing the optimised model and per-image diagnostics.
     """
-    if not verbose:
-        LOG.disabled = True
-
-    try:
-        return _calibrate_camera_inner(
-            target_points,
-            frames,
-            camera_model_config,
-            estimate_target_warp,
-            outlier_threshold_stddevs,
-        )
-    finally:
-        LOG.disabled = False
-
-
-def _calibrate_camera_inner(
-    target_points: np.ndarray,
-    frames: list[Frame],
-    camera_model_config: CameraModelConfig,
-    estimate_target_warp: bool,
-    outlier_threshold_stddevs: float | None,
-) -> CalibrationResult:
     assert target_points.ndim == 2 and target_points.shape[1] == 3, (
         f"Expected (N, 3) target_points, got {target_points.shape}"
     )
