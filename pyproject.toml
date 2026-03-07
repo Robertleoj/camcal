@@ -38,6 +38,7 @@ manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 before-all = """
 dnf install -y lapack-devel blas-devel curl zip unzip tar && \
+mkdir -p /host/home/runner/.cache/vcpkg && \
 git clone https://github.com/microsoft/vcpkg.git $HOME/vcpkg && \
 $HOME/vcpkg/bootstrap-vcpkg.sh -disableMetrics && \
 VCPKG_ROOT=$HOME/vcpkg $HOME/vcpkg/vcpkg install --no-print-usage
@@ -45,6 +46,7 @@ VCPKG_ROOT=$HOME/vcpkg $HOME/vcpkg/vcpkg install --no-print-usage
 
 [tool.cibuildwheel.linux.environment]
 VCPKG_ROOT = "$HOME/vcpkg"
+VCPKG_DEFAULT_BINARY_CACHE = "/host/home/runner/.cache/vcpkg"
 
 [tool.cibuildwheel.macos]
 before-all = """
