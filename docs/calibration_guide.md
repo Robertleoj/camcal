@@ -222,7 +222,7 @@ This looks about as I'd expect. What you should look out for:
 
 - **Histogram should be roughly normal.** If your histogram does not look like a normal distribution, something is going systematically wrong, and you need to debug it.
 - **2D residuals should be isotropic.** The 2D residual distribution in the bottom left should be radially symmetric - you should not be able to see much of a pattern. Again, if this is not the case, you need to figure out what's causing the irregularity.
-- **Sparse outliers.** You should have a sparse set of outliers outside your main residual cloud. You should not see a dense mass of outliers on the edges of the cloud - this indicates issues with the target point detections, and should be mitigated.
+- **Sparse outliers.** Ideally, you should have a sparse set of outliers outside your main residual cloud. You should not see a dense mass of outliers on the edges of the cloud - this indicates issues with the target point detections, and should be mitigated.
 
 The gaussian MAD $\sigma$ is a robust estimate of the standard deviation of the data - it represents the distribution better than a raw standard deviation. When it comes to this number, lower is better until we start overfitting.
 
