@@ -1,7 +1,7 @@
 from lensboy.calibration.calibrate import (
     CalibrationResult,
     Frame,
-    FrameInfo,
+    FrameDiagnostics,
     TargetWarp,
     WarpCoordinates,
     calibrate_camera,
@@ -18,7 +18,7 @@ __all__ = [
     "CameraModelConfig",
     "calibrate_camera",
     "Frame",
-    "FrameInfo",
+    "FrameDiagnostics",
     "CalibrationResult",
     "OpenCVConfig",
     "OpenCV",

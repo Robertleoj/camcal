@@ -478,7 +478,7 @@ def plot_distortion_grid(
 
 
 def plot_residuals(
-    frame_infos: list[lb.FrameInfo],
+    frame_diagnostics: list[lb.FrameDiagnostics],
     *,
     bins: int = 100,
     n_sigma: float = 6.0,
@@ -494,7 +494,7 @@ def plot_residuals(
     deviations.
 
     Args:
-        frame_infos: Per-frame reprojection diagnostics.
+        frame_diagnostics: Per-frame reprojection diagnostics.
         bins: Number of histogram bins.
         n_sigma: Number of fitted-Gaussian standard deviations for axis limits.
         axis_range: Fixed symmetric axis limit (±value) for the histogram and
@@ -504,7 +504,7 @@ def plot_residuals(
     """
     inlier_2d: list[np.ndarray] = []
     outlier_2d: list[np.ndarray] = []
-    for fi in frame_infos:
+    for fi in frame_diagnostics:
         inlier_2d.append(fi.residuals[fi.inlier_mask])
         outlier_2d.append(fi.residuals[~fi.inlier_mask])
 
@@ -672,7 +672,7 @@ def plot_residuals(
 
 def plot_residual_vectors(
     frames: list[lb.Frame],
-    frame_infos: list[lb.FrameInfo],
+    frame_diagnostics: list[lb.FrameDiagnostics],
     *,
     image_width: int,
     image_height: int,
@@ -689,7 +689,7 @@ def plot_residual_vectors(
 
     Args:
         frames: Detected calibration frames.
-        frame_infos: Matching per-frame reprojection diagnostics.
+        frame_diagnostics: Matching per-frame reprojection diagnostics.
         image_width: Sensor width in pixels, sets the x-axis limit.
         image_height: Sensor height in pixels, sets the y-axis limit.
         title: Plot title.
@@ -701,7 +701,7 @@ def plot_residual_vectors(
     """
     positions: list[np.ndarray] = []
     residuals: list[np.ndarray] = []
-    for frame, fi in zip(frames, frame_infos):
+    for frame, fi in zip(frames, frame_diagnostics):
         positions.append(frame.detected_points_in_image)
         residuals.append(fi.residuals)
 
@@ -783,7 +783,7 @@ def plot_residual_vectors(
 
 def plot_residual_grid(
     frames: list[lb.Frame],
-    frame_infos: list[lb.FrameInfo],
+    frame_diagnostics: list[lb.FrameDiagnostics],
     *,
     image_width: int,
     image_height: int,
@@ -801,7 +801,7 @@ def plot_residual_grid(
 
     Args:
         frames: Detected calibration frames.
-        frame_infos: Matching per-frame reprojection diagnostics.
+        frame_diagnostics: Matching per-frame reprojection diagnostics.
         image_width: Sensor width in pixels, sets the x-axis limit.
         image_height: Sensor height in pixels, sets the y-axis limit.
         grid_cells: Number of grid cells along the longer image axis.
@@ -811,7 +811,7 @@ def plot_residual_grid(
     """
     positions: list[np.ndarray] = []
     residuals: list[np.ndarray] = []
-    for frame, fi in zip(frames, frame_infos):
+    for frame, fi in zip(frames, frame_diagnostics):
         positions.append(frame.detected_points_in_image[fi.inlier_mask])
         residuals.append(fi.residuals[fi.inlier_mask])
 
@@ -1432,7 +1432,7 @@ def plot_undistortion(
 
 
 def plot_worst_residual_frames(
-    frame_infos: list[lb.FrameInfo],
+    frame_diagnostics: list[lb.FrameDiagnostics],
     frames: list[lb.Frame],
     images: list[np.ndarray],
     *,
@@ -1450,18 +1450,18 @@ def plot_worst_residual_frames(
     magnitude of the residual, coloured by magnitude.
 
     Args:
-        frame_infos: Per-frame reprojection diagnostics.
-        frames: Detected calibration frames (same order as ``frame_infos``).
+        frame_diagnostics: Per-frame reprojection diagnostics.
+        frames: Detected calibration frames (same order as ``frame_diagnostics``).
         images: Source images corresponding to each frame, shape (H, W) or (H, W, 3).
         n: Number of worst frames to display.
         scale: Multiplier applied to arrow lengths for visibility.
         title: Overall figure title.
         include_outliers: Whether to include outlier points. When False, only
-            inlier points (per ``FrameInfo.inlier_mask``) are shown and used
+            inlier points (per ``FrameDiagnostics.inlier_mask``) are shown and used
             for ranking.
     """
     per_frame_mags = []
-    for fi in frame_infos:
+    for fi in frame_diagnostics:
         mags = np.linalg.norm(fi.residuals, axis=1)
         if not include_outliers:
             mags = mags[fi.inlier_mask]
@@ -1490,7 +1490,7 @@ def plot_worst_residual_frames(
 
     for ax_row, idx in zip(axes, selected):
         ax = ax_row[0]
-        fi = frame_infos[idx]
+        fi = frame_diagnostics[idx]
         frame = frames[idx]
         img = to_color(images[idx])
 

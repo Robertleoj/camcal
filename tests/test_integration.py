@@ -105,7 +105,7 @@ def test_opencv_all_outliers_in_one_frame() -> None:
     )
 
     # The corrupted frame should have all points marked as outliers
-    assert not result.frame_infos[0].inlier_mask.any(), (
+    assert not result.frame_diagnostics[0].inlier_mask.any(), (
         "Expected all points in corrupted frame to be outliers"
     )
 
@@ -122,10 +122,10 @@ def _check_first_frame_projection(
     target_points: np.ndarray,
     frame: lb.Frame,
 ) -> None:
-    """Verify that manual projection matches the stored FrameInfo for frame 0."""
+    """Verify that manual projection matches the stored FrameDiagnostics for frame 0."""
     model = result.optimized_camera_model
     pose = result.optimized_cameras_T_target[0]
-    fi = result.frame_infos[0]
+    fi = result.frame_diagnostics[0]
 
     points_in_target = target_points[frame.target_point_indices]
     if result.target_warp is not None:

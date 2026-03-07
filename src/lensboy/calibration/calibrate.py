@@ -70,7 +70,7 @@ _IntrinsicsT = TypeVar("_IntrinsicsT", OpenCV, PinholeSplined)
 
 
 @dataclass
-class FrameInfo:
+class FrameDiagnostics:
     """Per-image reprojection diagnostics computed after calibration.
 
     Attributes:
@@ -185,13 +185,13 @@ class CalibrationResult(Generic[T]):
     Attributes:
         optimized_camera_model: The calibrated camera model.
         optimized_cameras_T_target: One pose per image (camera-from-target).
-        frame_infos: Per-image reprojection diagnostics, one per input image.
+        frame_diagnostics: Per-image reprojection diagnostics, one per input image.
         target_warp: Estimated target warp, or None if not estimated.
     """
 
     optimized_camera_model: T
     optimized_cameras_T_target: list[Pose]
-    frame_infos: list[FrameInfo]
+    frame_diagnostics: list[FrameDiagnostics]
     target_warp: TargetWarp | None = None
 
     def residual_sigma_map(self) -> float:
@@ -204,7 +204,7 @@ class CalibrationResult(Generic[T]):
             Estimated residual standard deviation in pixels.
         """
         inlier_vals = np.concatenate(
-            [fi.residuals[fi.inlier_mask] for fi in self.frame_infos]
+            [fi.residuals[fi.inlier_mask] for fi in self.frame_diagnostics]
         ).ravel()
         mu = float(np.median(inlier_vals))
         mad = float(np.median(np.abs(inlier_vals - mu)))
@@ -216,7 +216,7 @@ class CalibrationResult(Generic[T]):
         Returns:
             Total outlier count.
         """
-        return sum(int(np.count_nonzero(~fi.inlier_mask)) for fi in self.frame_infos)
+        return sum(int(np.count_nonzero(~fi.inlier_mask)) for fi in self.frame_diagnostics)
 
     def num_detections(self) -> int:
         """Count the total number of detections across all frames.
@@ -224,7 +224,7 @@ class CalibrationResult(Generic[T]):
         Returns:
             Total detection count (inliers + outliers).
         """
-        return sum(len(fi.residuals) for fi in self.frame_infos)
+        return sum(len(fi.residuals) for fi in self.frame_diagnostics)
 
 
 def _project_and_calculate_residuals(
@@ -336,15 +336,15 @@ def _opencv_calibrate_inner(
     return optimized_intrinsics, optimized_cameras_from_target, out_coeffs
 
 
-def _compute_frame_infos(
+def _compute_frame_diagnostics(
     intrinsics: OpenCV | PinholeSplined,
     cameras_from_target: list[Pose],
     original_frames: list[Frame],
     filtered_frames: list[Frame] | None,
     target_points: np.ndarray,
     target_warp: TargetWarp | None = None,
-) -> list[FrameInfo]:
-    frame_infos: list[FrameInfo] = []
+) -> list[FrameDiagnostics]:
+    frame_diagnostics: list[FrameDiagnostics] = []
     for i in range(len(cameras_from_target)):
         projected, residuals = _project_and_calculate_residuals(
             target_points,
@@ -362,16 +362,16 @@ def _compute_frame_infos(
         else:
             inlier_mask = np.ones(len(original_frames[i]), dtype=bool)
 
-        frame_infos.append(FrameInfo(projected, residuals, inlier_mask))
+        frame_diagnostics.append(FrameDiagnostics(projected, residuals, inlier_mask))
 
-    return frame_infos
+    return frame_diagnostics
 
 
-def _log_residual_stats(frame_infos: list[FrameInfo]) -> None:
+def _log_residual_stats(frame_diagnostics: list[FrameDiagnostics]) -> None:
     inlier_norms = np.concatenate(
         [
             np.linalg.norm(fi.residuals[fi.inlier_mask], axis=1)
-            for fi in frame_infos
+            for fi in frame_diagnostics
             if fi.inlier_mask.any()
         ]
     )
@@ -613,7 +613,7 @@ def _opencv_calibrate(
         deflection = target_warp.max_deflection(target_points)
         log(f"Target warp max deflection: {deflection:.4f} (target units)")
 
-    frame_infos = _compute_frame_infos(
+    frame_diagnostics = _compute_frame_diagnostics(
         state.intrinsics,
         state.cameras_from_target,
         frames,
@@ -622,11 +622,11 @@ def _opencv_calibrate(
         target_warp,
     )
 
-    _log_residual_stats(frame_infos)
+    _log_residual_stats(frame_diagnostics)
     return CalibrationResult(
         optimized_camera_model=state.intrinsics,
         optimized_cameras_T_target=state.cameras_from_target,
-        frame_infos=frame_infos,
+        frame_diagnostics=frame_diagnostics,
         target_warp=target_warp,
     )
 
@@ -792,7 +792,7 @@ def _calibrate_pinhole_splined(
         deflection = target_warp.max_deflection(target_points)
         log(f"Target warp max deflection: {deflection:.4f} (target units)")
 
-    frame_infos = _compute_frame_infos(
+    frame_diagnostics = _compute_frame_diagnostics(
         state.intrinsics,
         state.cameras_from_target,
         frames,
@@ -805,11 +805,11 @@ def _calibrate_pinhole_splined(
         state.intrinsics, seed_opencv_distortion_parameters=opencv_model.distortion_coeffs
     )
 
-    _log_residual_stats(frame_infos)
+    _log_residual_stats(frame_diagnostics)
     return CalibrationResult(
         optimized_camera_model=final_intrinsics,
         optimized_cameras_T_target=state.cameras_from_target,
-        frame_infos=frame_infos,
+        frame_diagnostics=frame_diagnostics,
         target_warp=target_warp,
     )
 
