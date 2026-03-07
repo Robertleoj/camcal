@@ -31,6 +31,7 @@ build-dir = "build"
 
 [tool.cibuildwheel]
 skip = ["*musllinux*", "*win*", "*i686"]
+dependency-versions = "pinned"
 
 [tool.cibuildwheel.linux]
 manylinux-x86_64-image = "manylinux_2_28"
