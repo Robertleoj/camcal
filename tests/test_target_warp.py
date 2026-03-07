@@ -7,7 +7,7 @@ import numpy as np
 import lensboy as lb
 from lensboy.calibration.calibrate import _make_warp_coordinates
 
-OPENCV_MODEL_PATH = Path(__file__).parent.parent / "data/camera_models/opencv.json"
+OPENCV_MODEL_PATH = Path(__file__).parent.parent / "data/test_datasets/opencv.json"
 
 
 def _make_synthetic_warp_dataset(

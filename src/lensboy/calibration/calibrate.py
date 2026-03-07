@@ -269,7 +269,7 @@ def _robust_sigma_xy(residuals: list[np.ndarray]) -> float:
 def _filter_outliers(
     frames: list,
     residuals: list[np.ndarray],
-    k: float = 3.5,
+    k: float,
     sigma_floor_px: float = 0.05,  # prevents collapse
 ) -> list:
     sigma = max(_robust_sigma_xy(residuals), sigma_floor_px)
