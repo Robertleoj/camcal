@@ -1,14 +1,19 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from timeit import default_timer
-from typing import Generic, TypeVar, overload
+from typing import TYPE_CHECKING, Generic, TypeVar, overload
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
 
 import cv2
 import numpy as np
 
 from lensboy import lensboy_bindings as lbb
 from lensboy._logging import log, warn
-from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
+from lensboy.camera_models.base_model import CameraModelConfig
 from lensboy.camera_models.opencv import OpenCV, OpenCVConfig
 from lensboy.camera_models.pinhole_splined import (
     PinholeSplined,
@@ -65,7 +70,6 @@ class Frame:
         return self.target_point_indices.shape[0]
 
 
-T = TypeVar("T", bound=CameraModel)
 _IntrinsicsT = TypeVar("_IntrinsicsT", OpenCV, PinholeSplined)
 
 
@@ -179,19 +183,23 @@ class TargetWarp:
 
 
 @dataclass
-class CalibrationResult(Generic[T]):
+class CalibrationResult(Generic[_IntrinsicsT]):
     """Output of camera calibration.
 
     Attributes:
-        optimized_camera_model: The calibrated camera model.
-        optimized_cameras_T_target: One pose per image (camera-from-target).
+        camera_model: The calibrated camera model.
+        cameras_from_target: One pose per image (camera-from-target).
         frame_diagnostics: Per-image reprojection diagnostics, one per input image.
+        frames: Input detection frames used for calibration.
+        target_points: 3D calibration target points, shape (M, 3).
         target_warp: Estimated target warp, or None if not estimated.
     """
 
-    optimized_camera_model: T
-    optimized_cameras_T_target: list[Pose]
+    camera_model: _IntrinsicsT
+    cameras_from_target: list[Pose]
     frame_diagnostics: list[FrameDiagnostics]
+    frames: list[Frame]
+    target_points: np.ndarray
     target_warp: TargetWarp | None = None
 
     def residual_sigma_map(self) -> float:
@@ -227,6 +235,220 @@ class CalibrationResult(Generic[T]):
             Total detection count (inliers + outliers).
         """
         return sum(len(fi.residuals) for fi in self.frame_diagnostics)
+
+    # -- Plot forwarding methods --
+    # These require the `analysis` extra (pip install lensboy[analysis]).
+
+    def plot_detection_coverage(
+        self,
+        *,
+        title: str = "Coverage",
+        s: float = 6.0,
+        grid_cells: int = 20,
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Plot detected point coverage across the image.
+
+        See ``lensboy.analysis.plot_detection_coverage``.
+        """
+        from lensboy.analysis.plots import plot_detection_coverage
+
+        return plot_detection_coverage(
+            self.frames,
+            image_width=self.camera_model.image_width,
+            image_height=self.camera_model.image_height,
+            title=title,
+            s=s,
+            grid_cells=grid_cells,
+            return_figure=return_figure,
+        )
+
+    def plot_distortion_grid(
+        self,
+        *,
+        grid_step_norm: float = 0.05,
+        fov_fraction: float | None = None,
+        ux_max: float | None = None,
+        uy_max: float | None = None,
+        cmap_name: str = "jet",
+        show_spline_knots: bool = False,
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Plot distortion grid for the calibrated model.
+
+        See ``lensboy.analysis.plot_distortion_grid``.
+        """
+        from lensboy.analysis.plots import plot_distortion_grid
+
+        return plot_distortion_grid(
+            self.camera_model,
+            grid_step_norm=grid_step_norm,
+            fov_fraction=fov_fraction,
+            ux_max=ux_max,
+            uy_max=uy_max,
+            cmap_name=cmap_name,
+            show_spline_knots=show_spline_knots,
+            return_figure=return_figure,
+        )
+
+    def plot_residuals(
+        self,
+        *,
+        bins: int = 100,
+        n_sigma: float = 6.0,
+        axis_range: float | None = None,
+        title: str = "Reprojection residuals",
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Plot reprojection residual histograms.
+
+        See ``lensboy.analysis.plot_residuals``.
+        """
+        from lensboy.analysis.plots import plot_residuals
+
+        return plot_residuals(
+            self.frame_diagnostics,
+            bins=bins,
+            n_sigma=n_sigma,
+            axis_range=axis_range,
+            title=title,
+            return_figure=return_figure,
+        )
+
+    def plot_residual_vectors(
+        self,
+        *,
+        title: str = "Residual vectors",
+        scale: float = 10.0,
+        scale_by_magnitude: bool = True,
+        color_by: str = "magnitude",
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Plot residual vectors at detection locations.
+
+        See ``lensboy.analysis.plot_residual_vectors``.
+        """
+        from lensboy.analysis.plots import plot_residual_vectors
+
+        return plot_residual_vectors(
+            self.frames,
+            self.frame_diagnostics,
+            image_width=self.camera_model.image_width,
+            image_height=self.camera_model.image_height,
+            title=title,
+            scale=scale,
+            scale_by_magnitude=scale_by_magnitude,
+            color_by=color_by,
+            return_figure=return_figure,
+        )
+
+    def plot_residual_grid(
+        self,
+        *,
+        grid_cells: int = 40,
+        arrow_scale: float = 100.0,
+        heatmap_max: float | None = None,
+        title: str = "Residual grid",
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Plot binned residual grid.
+
+        See ``lensboy.analysis.plot_residual_grid``.
+        """
+        from lensboy.analysis.plots import plot_residual_grid
+
+        return plot_residual_grid(
+            self.frames,
+            self.frame_diagnostics,
+            image_width=self.camera_model.image_width,
+            image_height=self.camera_model.image_height,
+            grid_cells=grid_cells,
+            arrow_scale=arrow_scale,
+            heatmap_max=heatmap_max,
+            title=title,
+            return_figure=return_figure,
+        )
+
+    def plot_target_and_poses(
+        self,
+        *,
+        triad_scale: float = 20.0,
+        title: str = "Target and camera poses",
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Plot 3D target points with camera poses.
+
+        See ``lensboy.analysis.plot_target_and_poses``.
+        """
+        from lensboy.analysis.plots import plot_target_and_poses
+
+        return plot_target_and_poses(
+            self.target_points,
+            self.cameras_from_target,
+            triad_scale=triad_scale,
+            title=title,
+            return_figure=return_figure,
+        )
+
+    def plot_target_warp(
+        self,
+        *,
+        grid_res: int = 300,
+        contour_levels: int = 15,
+        title: str = "Target warp",
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Plot estimated target warp.
+
+        See ``lensboy.analysis.plot_target_warp``.
+
+        Raises:
+            ValueError: If no target warp was estimated.
+        """
+        from lensboy.analysis.plots import plot_target_warp
+
+        if self.target_warp is None:
+            raise ValueError(
+                "No target warp was estimated in this calibration."
+            )
+        return plot_target_warp(
+            self.target_points,
+            self.target_warp,
+            grid_res=grid_res,
+            contour_levels=contour_levels,
+            title=title,
+            return_figure=return_figure,
+        )
+
+    def plot_worst_residual_frames(
+        self,
+        images: list[np.ndarray],
+        *,
+        n: int = 5,
+        scale: float = 10.0,
+        title: str = "Worst residual frames",
+        include_outliers: bool = True,
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Plot frames with largest residuals.
+
+        See ``lensboy.analysis.plot_worst_residual_frames``.
+
+        Args:
+            images: Source images corresponding to each frame.
+        """
+        from lensboy.analysis.plots import plot_worst_residual_frames
+
+        return plot_worst_residual_frames(
+            self.frame_diagnostics,
+            self.frames,
+            images,
+            n=n,
+            scale=scale,
+            title=title,
+            include_outliers=include_outliers,
+            return_figure=return_figure,
+        )
 
 
 def _project_and_calculate_residuals(
@@ -626,9 +848,11 @@ def _opencv_calibrate(
 
     _log_residual_stats(frame_diagnostics)
     return CalibrationResult(
-        optimized_camera_model=state.intrinsics,
-        optimized_cameras_T_target=state.cameras_from_target,
+        camera_model=state.intrinsics,
+        cameras_from_target=state.cameras_from_target,
         frame_diagnostics=frame_diagnostics,
+        frames=frames,
+        target_points=target_points,
         target_warp=target_warp,
     )
 
@@ -714,7 +938,7 @@ def _calibrate_pinhole_splined(
     end_time = default_timer()
     log(f"OpenCV seed model ready in {end_time - start_time:.1f}s")
 
-    opencv_model = opencv_calibration_result.optimized_camera_model
+    opencv_model = opencv_calibration_result.camera_model
 
     fov_deg_x, fov_deg_y = _compute_fov_from_opencv(opencv_model)
     log(f"Computed FOV from OpenCV model: {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
@@ -754,7 +978,7 @@ def _calibrate_pinhole_splined(
         fov_deg_y=fov_deg_y,
     )
 
-    cameras_from_target = opencv_calibration_result.optimized_cameras_T_target
+    cameras_from_target = opencv_calibration_result.cameras_from_target
 
     warp_coordinates = None
     if estimate_target_warp:
@@ -809,9 +1033,11 @@ def _calibrate_pinhole_splined(
 
     _log_residual_stats(frame_diagnostics)
     return CalibrationResult(
-        optimized_camera_model=final_intrinsics,
-        optimized_cameras_T_target=state.cameras_from_target,
+        camera_model=final_intrinsics,
+        cameras_from_target=state.cameras_from_target,
         frame_diagnostics=frame_diagnostics,
+        frames=frames,
+        target_points=target_points,
         target_warp=target_warp,
     )
 

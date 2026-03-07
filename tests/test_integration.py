@@ -123,8 +123,8 @@ def _check_first_frame_projection(
     frame: lb.Frame,
 ) -> None:
     """Verify that manual projection matches the stored FrameDiagnostics for frame 0."""
-    model = result.optimized_camera_model
-    pose = result.optimized_cameras_T_target[0]
+    model = result.camera_model
+    pose = result.cameras_from_target[0]
     fi = result.frame_diagnostics[0]
 
     points_in_target = target_points[frame.target_point_indices]
