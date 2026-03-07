@@ -192,6 +192,16 @@ class PinholeRemapped(CameraModel):
         y = (pts[:, 1] - self.cy) / self.fy
         return np.stack([x, y, np.ones_like(x)], axis=1)
 
+    @property
+    def fov_deg_x(self) -> float:
+        """Horizontal field of view in degrees."""
+        return float(2 * np.rad2deg(np.arctan(self.image_width / (2 * self.fx))))
+
+    @property
+    def fov_deg_y(self) -> float:
+        """Vertical field of view in degrees."""
+        return float(2 * np.rad2deg(np.arctan(self.image_height / (2 * self.fy))))
+
     def K(self) -> np.ndarray:
         """Return the 3x3 camera intrinsics matrix."""
         return np.array([[self.fx, 0, self.cx], [0, self.fy, self.cy], [0, 0, 1]])
