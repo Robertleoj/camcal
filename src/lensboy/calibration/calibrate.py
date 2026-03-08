@@ -590,6 +590,33 @@ class CalibrationResult(Generic[_IntrinsicsT]):
             return_figure=return_figure,
         )
 
+    def plot_per_image_rms(
+        self,
+        *,
+        title: str = "Per-image residual RMS",
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Stacked bar chart of per-image residual RMS split by inlier/outlier.
+
+        Each bar shows the RMS of all residuals in that image. The bottom (blue)
+        portion is the inlier-only RMS; the top (red) portion covers the remainder
+        up to the total RMS, indicating the outlier contribution.
+
+        Args:
+            title: Plot title.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
+        """
+        from lensboy.analysis.plots import plot_per_image_rms
+
+        return plot_per_image_rms(
+            self.frame_diagnostics,
+            title=title,
+            return_figure=return_figure,
+        )
+
 
 def _project_and_calculate_residuals(
     target_points: np.ndarray,

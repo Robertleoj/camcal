@@ -1868,3 +1868,77 @@ def plot_projection_diff(
         return fig
     plt.show()
     return None
+
+
+def plot_per_image_rms(
+    frame_diagnostics: list[lb.FrameDiagnostics],
+    *,
+    title: str = "Per-image residual RMS",
+    return_figure: bool = False,
+) -> Figure | None:
+    """Stacked bar chart of per-image residual RMS split by inlier/outlier.
+
+    Each horizontal bar shows the RMS of all residuals in that image. The left
+    (blue) portion is the inlier-only RMS; the right (red) portion covers the
+    remainder up to the total RMS, indicating the outlier contribution.
+
+    Args:
+        frame_diagnostics: Per-frame reprojection diagnostics.
+        title: Plot title.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
+    """
+    bg = "#111111"
+    fg = "white"
+    inlier_color = "#00d4ff"
+    outlier_color = "#ff4444"
+
+    n_frames = len(frame_diagnostics)
+    indices = np.arange(n_frames)
+    inlier_rms = np.zeros(n_frames)
+    total_rms = np.zeros(n_frames)
+
+    for i, fi in enumerate(frame_diagnostics):
+        norms = np.linalg.norm(fi.residuals, axis=1)
+        total_rms[i] = float(np.sqrt(np.mean(norms**2))) if len(norms) > 0 else 0.0
+        inlier_norms = norms[fi.inlier_mask]
+        inlier_rms[i] = (
+            float(np.sqrt(np.mean(inlier_norms**2))) if len(inlier_norms) > 0 else 0.0
+        )
+
+    outlier_top = total_rms - inlier_rms
+
+    fig, ax = plt.subplots(figsize=(6, max(4, n_frames * 0.25)))
+    fig.patch.set_facecolor(bg)
+    ax.set_facecolor(bg)
+
+    ax.barh(indices, inlier_rms, color=inlier_color, label="Inliers only")
+    ax.barh(indices, outlier_top, left=inlier_rms, color=outlier_color, label="Outliers included")
+
+    ax.set_ylim(n_frames - 0.4, -0.6)
+    ax.set_yticks(indices)
+    ax.set_ylabel("Image index", color=fg)
+    ax.set_xlabel("RMS residual [px]", color=fg)
+    ax.set_title(title, color=fg, fontsize=14, pad=35)
+
+    ax.tick_params(colors=fg)
+    for spine in ax.spines.values():
+        spine.set_color(fg)
+
+    legend = ax.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.0),
+        facecolor=bg,
+        edgecolor=fg,
+        ncol=2,
+    )
+    for text in legend.get_texts():
+        text.set_color(fg)
+
+    fig.tight_layout()
+    if return_figure:
+        return fig
+    plt.show()
+    return None
