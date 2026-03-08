@@ -85,9 +85,4 @@ For a quick code example, see the [quickstart notebook](examples/quickstart.ipyn
 
 Spline models use B-spline grids instead of polynomial coefficients, so they can fit lenses that OpenCV's model can't. This approach is inspired by [mrcal](https://mrcal.secretsauce.net/).
 
-The calibrated model converts to a pinhole model with undistortion maps, so you can use it with any standard pinhole pipeline:
-
-```python
-pinhole = spline_model.get_pinhole_model()
-undistorted = pinhole.undistort(image)
-```
+The calibrated model converts to a pinhole model with undistortion maps, so you can use it with any standard pinhole pipeline.
