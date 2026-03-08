@@ -1591,9 +1591,7 @@ def plot_worst_residual_frames(
         mags = np.linalg.norm(fi.residuals, axis=1)
         if not include_outliers:
             mags = mags[fi.inlier_mask]
-        per_frame_mags.append(
-            float(np.sqrt(np.mean(mags**2))) if len(mags) > 0 else 0.0
-        )
+        per_frame_mags.append(float(np.sqrt(np.mean(mags**2))) if len(mags) > 0 else 0.0)
 
     ranked = sorted(
         range(len(per_frame_mags)), key=lambda i: per_frame_mags[i], reverse=True
@@ -1629,9 +1627,15 @@ def plot_worst_residual_frames(
         subtitle = f"Frame {idx}  (max={worst:.2f} px, mean={mean:.2f} px)"
 
         _draw_frame_residuals(
-            ax, fig, frame, fi,
-            image=images[idx], w=w_i, h=h_i,
-            scale=scale, title=subtitle,
+            ax,
+            fig,
+            frame,
+            fi,
+            image=images[idx],
+            w=w_i,
+            h=h_i,
+            scale=scale,
+            title=subtitle,
         )
 
     plt.tight_layout()
@@ -1990,7 +1994,13 @@ def plot_per_image_rms(
 
     y_pos = np.arange(n_frames)
     ax.barh(y_pos, sorted_inlier, color=inlier_color, label="Inliers only")
-    ax.barh(y_pos, sorted_outlier, left=sorted_inlier, color=outlier_color, label="Outliers included")
+    ax.barh(
+        y_pos,
+        sorted_outlier,
+        left=sorted_inlier,
+        color=outlier_color,
+        label="Outliers included",
+    )
 
     ax.set_ylim(n_frames - 0.4, -0.6)
     ax.set_yticks(y_pos)
@@ -2063,21 +2073,30 @@ def plot_frame_residuals(
         w, h = image_width, image_height
 
     bg = "#111111"
-    fg = "white"
 
     mags = np.linalg.norm(frame_diagnostics.residuals, axis=1)
     n_outliers = int(np.count_nonzero(~frame_diagnostics.inlier_mask))
     rms = float(np.sqrt(np.mean(mags**2)))
     if title is None:
-        title = f"Frame residuals  (N={len(mags)}, outliers={n_outliers}, RMS={rms:.2f} px, scale={scale}x)"
+        title = (
+            f"Frame residuals  (N={len(mags)},"
+            f" outliers={n_outliers},"
+            f" RMS={rms:.2f} px, scale={scale}x)"
+        )
 
     fig, ax = plt.subplots(figsize=(14, 14 * h / w))
     fig.patch.set_facecolor(bg)
 
     _draw_frame_residuals(
-        ax, fig, frame, frame_diagnostics,
-        image=image, w=w, h=h,
-        scale=scale, title=title,
+        ax,
+        fig,
+        frame,
+        frame_diagnostics,
+        image=image,
+        w=w,
+        h=h,
+        scale=scale,
+        title=title,
     )
 
     plt.tight_layout()
