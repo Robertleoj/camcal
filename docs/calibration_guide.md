@@ -49,13 +49,13 @@ To focus my camera, I will point it at a high-contrast image, and position it at
 
 <img src="./media/calibration_docs/setup/focus_board.png" width=400> <img src="./media/calibration_docs/setup/focus_distance.png" width=400>
 
-**Lock everything down** - once the lens is tuned, make sure nothing can shift. Use set screws if your lens has them. For critical applications, apply a small amount of Loctite to the focus and zoom rings. Even a tiny rotation of the focus ring changes the calibration.
+**Lock everything down** - once the lens is tuned, make sure nothing can shift. Use set screws if your lens has them. For critical applications, apply a small amount of Loctite to all screw threads the lens has. Even a tiny rotation of the focus ring changes the calibration.
 
 My camera will be experiencing vibrations, and the end effector experiences the occasional impact, which will propagate to my camera. I need to be extra careful that my lens does not move under these conditions. I put Loctite on all the threads - including the focus thread. During calibration, I use a set screw to hold the focus in place, but the Loctite will dry and permanently lock the focus position. Between the set screw and the cured Loctite, the focus is absolutely locked down.
 
 <img src="./media/calibration_docs/setup/set_screw.png" width="500">
 
-A lens that drifts between calibration and deployment will silently degrade your results. It can be hard to detect when the camera is out in the field, so prevention is your best option, and first line of defense. If there is any mechanical movement after calibration, you'll need to recalibrate the camera.
+A lens that drifts after calibration will silently degrade your results. It can be hard to detect when the camera is out in the field, so prevention is your best option, and first line of defense. If there is any mechanical movement after calibration, you'll need to recalibrate the camera.
 
 ## 3. Choosing a Calibration Target
 
@@ -230,7 +230,7 @@ result.plot_residuals()
 
 This looks about as I'd expect. What you should look out for:
 
-- **Histogram should be roughly normal.** If your histogram does not look like a normal distribution, something is going systematically wrong, and you need to debug it.
+- **Histogram should be roughly Gaussian.** If your histogram does not look like a Gaussian distribution, something is going systematically wrong, and you need to debug it.
 - **2D residuals should be isotropic.** The 2D residual distribution in the bottom left should be radially symmetric - you should not be able to see much of a pattern. Again, if this is not the case, you need to figure out what's causing the irregularity.
 - **Sparse outliers.** Ideally, you should have a sparse set of outliers outside your main residual cloud. You should not see a dense mass of outliers on the edges of the cloud - this indicates issues with the target point detections, and should be mitigated.
 
@@ -244,7 +244,7 @@ Looking at this plot, you should see that the 2D distribution is not radially sy
 
 <img src="./media/calibration_docs/april_tag.png" width="200">
 
-However, different brightnesses can lead to it being detected slightly smaller or bigger, explaining the "arms" in the residual plot. This is a good reason you should opt for a checkerboard pattern instead of tags like this - they don't have this kind of variance.
+However, different brightness levels can lead to it being detected slightly smaller or bigger, explaining the "arms" in the residual plot. This is a good reason you should opt for a checkerboard pattern instead of tags like this - they don't have this kind of variance.
 
 Here is another residual plot from where I took my pictures too close to the board at angles that were too sharp.
 
@@ -262,7 +262,7 @@ result.plot_per_image_rms()
 
 <img src="./media/calibration_docs/first_model_per_frame_residuals.png" width="500">
 
-Looks like there are some frames with more outliers than others. Let's inspect the top three:
+Looks like there are some frames with more outliers than others. Let's inspect the top three frames with the highest error:
 
 ```python
 result.plot_worst_residual_frames(used_images, n=3)
@@ -284,16 +284,18 @@ This is how I found the problem - the detector clearly is struggling in the extr
 
 ### The residual grid
 
-The residual plot is a great sanity check, but it deletes all spatial information - do the residuals behave differently in different regions of the image?
+The residual plot is a great sanity check, but it omits all spatial information - do the residuals behave differently in different regions of the image?
 
-To analyze this, `lensboy` provides a residual grid plot. It bins the residuals in a grid over the image. Each grid cell is then colored according to the **mean norm of the residuals** in that bin, and shows the **mean residual** as a vector emanating from the center of the cell.
+`lensboy` provides a plot to answer this question. It bins the residuals in a grid over the image. Each grid cell is then colored according to the **mean norm of the residuals** in that bin, and shows the **mean residual** as a vector emanating from the center of the cell.
 
 This gives you information about two things:
 
-- **Are the residuals larger in some places than others?** If the residuals are systematically larger in some areas, this indicates underfitting or increased detection noise in those areas. Most commonly, it's the former, and you need to choose a more powerful model.
-- **Do the residuals have directional biases anywhere in the image?** If this is the case, it is again very likely your model underfits the lens, and you need to choose a more powerful model.
+- **Are the residuals larger in some places than others?**
+- **Do the residuals have directional biases anywhere in the image?**
 
-When looking at the residual grid, it is important to only focus on the areas where you have plenty of data, and expect the lens model to be well constrained. It will usually look particularly messy towards the edges where data is sparse, and this is usually expected - your data doesn't constrain the model well there, so it will not fit well there.
+Both issues are usually caused by either underfitting, or issues with the feature detector. If it's underfitting, you need to use a more flexible model. If it's detector noise, you have to change your imaging strategy.
+
+When looking at the residual grid, it is important to only focus on the areas where you have plenty of data, and expect the lens model to be well constrained. It will usually look particularly messy towards the edges where data is sparse, and this is expected - the model will not perform well in patches in the image where it's not well constrained.
 
 Let's look at the residual grid for the model we fit earlier:
 
@@ -345,7 +347,7 @@ Most of the time, you should enable target warp estimation.
 
 ### The distortion pattern
 
-`lensboy` provides a distortion grid plot to visualize the projection function that your intrinsics define. This doesn't provide much concrete information about the quality of the fit, but is useful for your intuitive understanding of how the distortion model of your camera works.
+`lensboy` provides a plot to visualize the projection function that your intrinsics define. This doesn't provide much concrete information about the quality of the fit, but is useful for your intuitive understanding of how the distortion model of your camera works.
 
 Let's look at this plot for our camera model:
 
@@ -438,7 +440,7 @@ result.plot_residuals()
 
 <img src="./media/calibration_docs/spline_30x20_residuals.png" width="1000">
 
-The fit is tighter, the MAD sigma going from 0.13px to 0.09. There are a bit more outliers, owing to the tighter distribution. Let's take a look at the residual grid:
+The fit is tighter, the MAD sigma going from 0.13px to 0.09px. There are a bit more outliers, owing to the tighter distribution. Let's take a look at the residual grid:
 
 ```python
 result.plot_residual_grid(heatmap_max=1.0)
@@ -476,7 +478,7 @@ After calibrating a good lens model, you'll obviously want to save, load, and us
 
 ### OpenCV models
 
-OpenCV-style models are particularly convenient because the parameters are widely supported across languages and frameworks. All models can be saved and loaded with `model.save(path)` and `OpenCV.load(path)` as json files.
+OpenCV-style models are particularly convenient because the parameters are widely supported across languages and frameworks. They can be saved and loaded with `model.save(path)` and `OpenCV.load(path)` as json files.
 
 You can then extract the standard OpenCV parameters and use them anywhere:
 
@@ -511,7 +513,7 @@ rays = model.normalize_points(pixel_coords)
 
 If your application only needs camera-frame rays from pixel coordinates (e.g. for PnP or ray-casting), you can use `PinholeSplined` directly and skip the undistortion step entirely.
 
-For applications that work with the images directly, you'll need to undistort your images to remove the spline distortion. To do this, you convert your `PinholeSplined` model into a `PinholeRemapped` model. A `PinholeRemapped` model consists of a vanilla pinhole model along with OpenCV-compatible undistortion maps that undistort your image to match the pinhole model.
+For applications that work with the images directly (such as stereo vision), you'll need to undistort your images to remove the spline distortion. To do this, you convert your `PinholeSplined` model into a `PinholeRemapped` model. A `PinholeRemapped` model consists of a vanilla pinhole model along with OpenCV-compatible undistortion maps that undistort your image to match the pinhole model.
 
 You can do this with `get_pinhole_model()`, which returns a matching `PinholeRemapped` model. Since I will be doing stereo vision, I'll take this route. Since the undistortion maps are pretty large, I'll save the spline model directly, and generate a `PinholeRemapped` as soon as I load it.
 
@@ -538,7 +540,7 @@ lba.plot_undistortion(pinhole_model, image=used_images[0])
 
 With these values, we throw away the edges of the distorted image in order to keep all of the information in the interior.
 
-Here is an example of an undistortion map that makes the opposite tradeoff, compressing the information in the interior to keep all the information of the distorted image:
+Here is an example of an undistortion map that makes the opposite tradeoff, compressing the information in the interior to keep all areas of the distorted image:
 
 ```python
 pinhole_model_wide = spline_model.get_pinhole_model_alpha(1.0)
