@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from timeit import default_timer
-from typing import TYPE_CHECKING, Generic, TypeVar, overload
+from typing import TYPE_CHECKING, Generic, Literal, TypeVar, overload
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -593,16 +593,20 @@ class CalibrationResult(Generic[_IntrinsicsT]):
     def plot_per_image_rms(
         self,
         *,
+        sort_by: Literal["inliers", "all"] | None = None,
         title: str = "Per-image residual RMS",
         return_figure: bool = False,
     ) -> Figure | None:
         """Stacked bar chart of per-image residual RMS split by inlier/outlier.
 
-        Each bar shows the RMS of all residuals in that image. The bottom (blue)
-        portion is the inlier-only RMS; the top (red) portion covers the remainder
-        up to the total RMS, indicating the outlier contribution.
+        Each bar shows the RMS of all residuals in that image. The left (blue)
+        portion is the inlier-only RMS; the right (red) portion covers the
+        remainder up to the total RMS, indicating the outlier contribution.
 
         Args:
+            sort_by: Sort bars by ``"inliers"`` (inlier-only RMS) or
+                ``"all"`` (total RMS including outliers). None keeps the
+                original image order.
             title: Plot title.
             return_figure: If True, return the figure instead of calling ``plt.show()``.
 
@@ -613,6 +617,7 @@ class CalibrationResult(Generic[_IntrinsicsT]):
 
         return plot_per_image_rms(
             self.frame_diagnostics,
+            sort_by=sort_by,
             title=title,
             return_figure=return_figure,
         )

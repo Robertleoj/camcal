@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import cv2
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -1928,6 +1930,7 @@ def plot_projection_diff(
 def plot_per_image_rms(
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
+    sort_by: Literal["inliers", "all"] | None = None,
     title: str = "Per-image residual RMS",
     return_figure: bool = False,
 ) -> Figure | None:
@@ -1939,6 +1942,9 @@ def plot_per_image_rms(
 
     Args:
         frame_diagnostics: Per-frame reprojection diagnostics.
+        sort_by: Sort bars by ``"inliers"`` (inlier-only RMS) or
+            ``"all"`` (total RMS including outliers). None keeps the
+            original image order.
         title: Plot title.
         return_figure: If True, return the figure instead of calling ``plt.show()``.
 
@@ -1965,15 +1971,28 @@ def plot_per_image_rms(
 
     outlier_top = total_rms - inlier_rms
 
+    if sort_by == "inliers":
+        order = np.argsort(inlier_rms)[::-1]
+    elif sort_by == "all":
+        order = np.argsort(total_rms)[::-1]
+    else:
+        order = indices
+
+    sorted_inlier = inlier_rms[order]
+    sorted_outlier = outlier_top[order]
+    sorted_labels = [str(i) for i in order]
+
     fig, ax = plt.subplots(figsize=(6, max(4, n_frames * 0.25)))
     fig.patch.set_facecolor(bg)
     ax.set_facecolor(bg)
 
-    ax.barh(indices, inlier_rms, color=inlier_color, label="Inliers only")
-    ax.barh(indices, outlier_top, left=inlier_rms, color=outlier_color, label="Outliers included")
+    y_pos = np.arange(n_frames)
+    ax.barh(y_pos, sorted_inlier, color=inlier_color, label="Inliers only")
+    ax.barh(y_pos, sorted_outlier, left=sorted_inlier, color=outlier_color, label="Outliers included")
 
     ax.set_ylim(n_frames - 0.4, -0.6)
-    ax.set_yticks(indices)
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(sorted_labels)
     ax.set_ylabel("Image index", color=fg)
     ax.set_xlabel("RMS residual [px]", color=fg)
     ax.set_title(title, color=fg, fontsize=14, pad=35)
