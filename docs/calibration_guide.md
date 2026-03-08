@@ -116,6 +116,7 @@ With your images collected, the next step is to detect the features in the image
 ```python
 import cv2
 import lensboy as lb
+import lensboy.analysis as lba
 
 images = [cv2.imread(p) for p in image_paths]
 
@@ -127,6 +128,7 @@ board = cv2.aruco.CharucoBoard(
 )
 
 target_points, frames, image_indices = lb.extract_frames_from_charuco(board, images)
+used_images = [images[i] for i in image_indices]
 ```
 
 The board definition must match the physical target you used - same number of squares, same dictionary, and correct square/marker sizes in whatever unit you want to work in (typically millimeters). The relevant details are usually printed on ChArUco boards.
@@ -136,7 +138,11 @@ Here is a visualization of the detected corners on a couple of the images:
 <img src="./media/calibration_docs/detection_1.png" width=1000>
 <img src="./media/calibration_docs/detection_2.png" width=1000>
 
-Let's use `plot_detection_coverage()` to see how well I did in terms of coverage:
+Let's see how well I did in terms of coverage:
+
+```python
+lba.plot_detection_coverage(frames, image_width=image_width, image_height=image_height)
+```
 
 <img src="./media/calibration_docs/coverage.png" width=1000>
 
@@ -214,7 +220,11 @@ The tools in this section primarily help you detect underfitting. We'll cover ov
 
 ### The residual plot
 
-Your first step after fitting an intrinsics model should almost always be to look at the residual distribution for which you can use `plot_residuals()`. Let's take a look at the residuals from the calibration we fit earlier:
+Your first step after fitting an intrinsics model should almost always be to look at the residual distribution. Let's take a look at the residuals from the calibration we fit earlier:
+
+```python
+result.plot_residuals()
+```
 
 <img src="./media/calibration_docs/first_model_residuals.png" width="1000">
 
@@ -244,11 +254,19 @@ The extreme distortion of the board in my images caused the detector to start fa
 
 ### Per-frame residuals
 
-It's important to understand where your camera model struggles the most. The most useful way to inspect this is to first look at the `plot_per_image_rms()` plot. It shows you the RMS error per frame, including and excluding outliers. Let's take a look at this plot for the current calibration:
+It's important to understand where your camera model struggles the most. The most useful way to inspect this is to look at the per-image RMS. It shows you the RMS error per frame, including and excluding outliers. Let's take a look:
+
+```python
+result.plot_per_image_rms()
+```
 
 <img src="./media/calibration_docs/first_model_per_frame_residuals.png" width="500">
 
-Looks like there are some frames with more outliers than others. Let's use `plot_worst_residual_frames()` to inspect the top three:
+Looks like there are some frames with more outliers than others. Let's inspect the top three:
+
+```python
+result.plot_worst_residual_frames(used_images, n=3)
+```
 
 <img src="./media/calibration_docs/first_model_worst_3_residuals.png" width="500">
 
@@ -268,7 +286,7 @@ This is how I found the problem - the detector clearly is struggling in the extr
 
 The residual plot is a great sanity check, but it deletes all spatial information - do the residuals behave differently in different regions of the image?
 
-To analyze this, `lensboy` provides `plot_residual_grid()`. It bins the residuals in a grid over the image. Each grid cell is then colored according to the **mean norm of the residuals** in that bin, and shows the **mean residual** as a vector emanating from the center of the cell.
+To analyze this, `lensboy` provides a residual grid plot. It bins the residuals in a grid over the image. Each grid cell is then colored according to the **mean norm of the residuals** in that bin, and shows the **mean residual** as a vector emanating from the center of the cell.
 
 This gives you information about two things:
 
@@ -279,15 +297,23 @@ When looking at the residual grid, it is important to only focus on the areas wh
 
 Let's look at the residual grid for the model we fit earlier:
 
+```python
+result.plot_residual_grid(heatmap_max=1.0)
+```
+
 <img src="./media/calibration_docs/first_model_residual_grid.png" width="1000">
 
 This looks _reasonable_. However, I still see a bit too much growth in residual norm and directional bias on the right side. I'd want to see if I can do better.
 
 ### Target warp
 
-As mentioned earlier, `lensboy` estimates the warp of near-planar targets by default. It uses a 5-parameter Legendre polynomial model, which has worked well for me across a variety of targets. It can be useful to visualize the estimated warp with `plot_target_warp()`.
+As mentioned earlier, `lensboy` estimates the warp of near-planar targets by default. It uses a 5-parameter Legendre polynomial model, which has worked well for me across a variety of targets. It can be useful to visualize the estimated warp.
 
 Let's take a look at the estimated warp for the model we fit earlier:
+
+```python
+result.plot_target_warp()
+```
 
 <img src="./media/calibration_docs/first_model_target_warp.png" width="1000">
 
@@ -295,9 +321,23 @@ The warp estimation has a bowl shape that I see often for charuco boards. The sp
 
 If we fit a model without enabling the target warp, and plot the residuals, we see that we get a wider residual distribution:
 
+```python
+result_no_warp = lb.calibrate_camera(
+    target_points,
+    frames,
+    config,
+    estimate_target_warp=False
+)
+result_no_warp.plot_residuals()
+```
+
 <img src="./media/calibration_docs/first_model_no_warp_residuals.png" width="1000">
 
 We have a higher MAD $\sigma$ - 0.18px vs the 0.13px we saw earlier. The smaller number of outliers is explained by the distribution being wider overall, causing a larger outlier threshold. We can also see more systematic issues in the residual grid:
+
+```python
+result_no_warp.plot_residual_grid(heatmap_max=1.0)
+```
 
 <img src="./media/calibration_docs/first_model_no_warp_residual_grid.png" width="1000">
 
@@ -305,9 +345,13 @@ Most of the time, you should enable target warp estimation.
 
 ### The distortion pattern
 
-`lensboy` provides the plot `plot_distortion_grid()` to visualize the projection function that your intrinsics define. This doesn't provide much concrete information about the quality of the fit, but is useful for your intuitive understanding of how the distortion model of your camera works.
+`lensboy` provides a distortion grid plot to visualize the projection function that your intrinsics define. This doesn't provide much concrete information about the quality of the fit, but is useful for your intuitive understanding of how the distortion model of your camera works.
 
 Let's look at this plot for our camera model:
+
+```python
+result.plot_distortion_grid(fov_fraction=0.7)
+```
 
 <img src="./media/calibration_docs/first_model_distortion_grid.png" width="1000">
 
@@ -330,7 +374,7 @@ To compare two different lens models, we can sample a grid on the image of the f
 
 A small complexity in this approach is that different camera models, even of the same camera, imply a different camera frame relative to the physical camera. We need to find the difference between these two camera frames to be able to fairly compare the models. This is explained in detail in [this mrcal article](https://mrcal.secretsauce.net/differencing.html), so I won't go into the details here. One result of this is that you need to choose a (possibly infinite) distance at which to compare the models.
 
-This model comparison is easily done with `lensboy` using the `plot_projection_diff()` plot. I'll start by splitting my dataset into two sets:
+This model comparison is easily done with `lensboy`. I'll start by splitting my dataset into two sets:
 
 ```python
 frames_a = frames[0::2]
@@ -344,7 +388,11 @@ model_a = lb.calibrate_camera(target_points, frames_a, config)
 model_b = lb.calibrate_camera(target_points, frames_b, config)
 ```
 
-Now that we have the two models, let's take a look at `plot_projection_diff()`:
+Now that we have the two models, let's compare them:
+
+```python
+lba.plot_projection_diff(model_a.camera_model, model_b.camera_model)
+```
 
 <img src="./media/calibration_docs/first_model_cross_validation.png" width="1000">
 
@@ -354,7 +402,7 @@ The left side shows the magnitude of the projection difference between the model
 
 The right side shows the pattern of the projection difference. In reality the differences are usually imperceptibly small, so they are exaggerated.
 
-One thing to look out for is the "fit circle". Its interior is the area of the image we use to find the difference between the implied camera frames of the models. This should only cover areas of the image where you expect good intrinsics. If it goes out of that area, this plot will not be realistic, and you need to adjust the `radius` argument to `plot_projection_diff()`.
+One thing to look out for is the "fit circle". Its interior is the area of the image we use to find the difference between the implied camera frames of the models. This should only cover areas of the image where you expect good intrinsics. If it goes out of that area, this plot will not be realistic, and you need to adjust the `radius` argument.
 
 Another very useful way to use this plot is when you're investigating whether your camera's intrinsics have drifted - that is, whether something changed mechanically in the camera. You can recalibrate the suspected camera, and look at the projection difference between the new and old calibration.
 
@@ -382,23 +430,41 @@ config = lb.PinholeSplinedConfig(
 result = lb.calibrate_camera(target_points, frames, config)
 ```
 
-Let's take a look at `plot_residuals()`:
+Let's take a look at the residuals:
+
+```python
+result.plot_residuals()
+```
 
 <img src="./media/calibration_docs/spline_30x20_residuals.png" width="1000">
 
-The fit is tighter, the MAD sigma going from 0.13px to 0.09. There are a bit more outliers, owing to the tighter distribution. Let's take a look at `plot_residual_grid()`:
+The fit is tighter, the MAD sigma going from 0.13px to 0.09. There are a bit more outliers, owing to the tighter distribution. Let's take a look at the residual grid:
+
+```python
+result.plot_residual_grid(heatmap_max=1.0)
+```
 
 <img src="./media/calibration_docs/spline_30x20_residual_grid.png" width="1000">
 
 This looks much better than our previous model. There is less directional bias and there is less pattern in the residual magnitudes. Specifically, we've reduced the amount of error in the right side of the image.
 
-Let's take a look at what this spline model's projection function looks like with `plot_distortion_grid()`. I'll show the spline knots by setting `show_spline_knots` to `True`:
+Let's take a look at what this spline model's projection function looks like. I'll show the spline knots by setting `show_spline_knots` to `True`:
+
+```python
+result.plot_distortion_grid(fov_fraction=0.7, show_spline_knots=True)
+```
 
 <img src="./media/calibration_docs/spline_30x20_distortion_grid.png" width="1000">
 
 The distortion looks very similar to our previous model. One thing to note is that the spline-based models can look a bit strange where they are underconstrained, such as in the top right corner for our model. This is nothing to worry about unless you require good intrinsics in those areas. In those cases, you need to constrain the distortion model with more data in those areas.
 
-Let's do a quick cross-validation and look at the projection diff with `plot_projection_diff()`:
+Let's do a quick cross-validation:
+
+```python
+result_a = lb.calibrate_camera(target_points, frames[0::2], config)
+result_b = lb.calibrate_camera(target_points, frames[1::2], config)
+lba.plot_projection_diff(result_a.camera_model, result_b.camera_model)
+```
 
 <img src="./media/calibration_docs/spline_30x20_cross_validation.png" width="1000">
 
@@ -462,13 +528,22 @@ undistorted_img = pinhole_model.undistort(img)
 K = pinhole_model.K()
 ```
 
-The `fx` and `fy` parameters control the focal length of the output pinhole model. Higher values zoom in, preserving detail in the center but cropping the edges of the field of view. Lower values preserve the full field of view but compress the center, reducing the effective resolution there. In the case of a wide-angle lens, this tradeoff is particularly pronounced. Let's use `plot_undistortion()` to see what our choice of `fx=1100, fy=1100` looks like:
+The `fx` and `fy` parameters control the focal length of the output pinhole model. Higher values zoom in, preserving detail in the center but cropping the edges of the field of view. Lower values preserve the full field of view but compress the center, reducing the effective resolution there. In the case of a wide-angle lens, this tradeoff is particularly pronounced. Let's see what our choice of `fx=1100, fy=1100` looks like:
+
+```python
+lba.plot_undistortion(pinhole_model, image=used_images[0])
+```
 
 <img src="./media/calibration_docs/undistortion_default.png" width="800">
 
 With these values, we throw away the edges of the distorted image in order to keep all of the information in the interior.
 
 Here is an example of an undistortion map that makes the opposite tradeoff, compressing the information in the interior to keep all the information of the distorted image:
+
+```python
+pinhole_model_wide = spline_model.get_pinhole_model_alpha(1.0)
+lba.plot_undistortion(pinhole_model_wide, image=used_images[0])
+```
 
 <img src="./media/calibration_docs/undistortion_all.png" width="800">
 
