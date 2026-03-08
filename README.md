@@ -77,7 +77,9 @@ pip install lensboy
 
 ## Getting started
 
-See the [quickstart notebook](examples/quickstart.ipynb) and the [calibration guide](docs/calibration_guide.md).
+Read the [calibration guide](https://github.com/Robertleoj/lensboy/blob/main/docs/calibration_guide.md) for a full walkthrough on how to get good calibrations with lensboy.
+
+For a quick code example, see the [quickstart notebook](examples/quickstart.ipynb).
 
 ## Spline models
 
