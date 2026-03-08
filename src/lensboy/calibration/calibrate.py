@@ -66,6 +66,9 @@ class Frame:
     def _to_cpp(self) -> tuple[list[int], list[np.ndarray]]:
         return (self.target_point_indices.tolist(), list(self.detected_points_in_image))
 
+    def __repr__(self) -> str:
+        return f"Frame({len(self)} detections)"
+
     def __len__(self):
         return self.target_point_indices.shape[0]
 
@@ -91,6 +94,19 @@ class FrameDiagnostics:
 
     # N
     inlier_mask: np.ndarray
+
+    def __repr__(self) -> str:
+        n = len(self.residuals)
+        n_inliers = int(np.count_nonzero(self.inlier_mask))
+        if n_inliers > 0:
+            mean_res = float(
+                np.mean(np.linalg.norm(self.residuals[self.inlier_mask], axis=1))
+            )
+        else:
+            mean_res = 0.0
+        return (
+            f"FrameDiagnostics({n_inliers}/{n} inliers, mean_residual={mean_res:.3f}px)"
+        )
 
 
 @dataclass
@@ -150,6 +166,14 @@ class TargetWarp:
     warp_coordinates: WarpCoordinates
     object_warp: tuple[float, float, float, float, float]
 
+    def __repr__(self) -> str:
+        c = self.object_warp
+        return (
+            f"TargetWarp(coeffs=["
+            f"{c[0]:.4f}, {c[1]:.4f}, {c[2]:.4f}, "
+            f"{c[3]:.4f}, {c[4]:.4f}])"
+        )
+
     def warp_target(self, target_points: np.ndarray) -> np.ndarray:
         """Apply the Legendre warp to 3D target points.
 
@@ -201,6 +225,26 @@ class CalibrationResult(Generic[_IntrinsicsT]):
     frames: list[Frame]
     target_points: np.ndarray
     target_warp: TargetWarp | None = None
+
+    def __repr__(self) -> str:
+        model = self.camera_model
+        sigma = self.residual_sigma_map()
+        n_out = self.num_outliers()
+        n_det = self.num_detections()
+        return (
+            f"CalibrationResult(\n"
+            f"  model={model!r},\n"
+            f"  frames={len(self.frames)}, "
+            f"detections={n_det}, outliers={n_out},\n"
+            f"  residual_sigma={sigma:.4f}px"
+            f"{',' if self.target_warp is not None else ''}\n"
+            + (
+                f"  target_warp={self.target_warp!r}\n"
+                if self.target_warp is not None
+                else ""
+            )
+            + ")"
+        )
 
     def residual_sigma_map(self) -> float:
         """Robust MAP estimate of residual standard deviation over inliers.

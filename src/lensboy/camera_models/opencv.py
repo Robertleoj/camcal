@@ -109,6 +109,15 @@ class OpenCV(CameraModel):
 
     distortion_coeffs: np.ndarray
 
+    def __repr__(self) -> str:
+        n_dist = int(np.count_nonzero(self.distortion_coeffs))
+        return (
+            f"OpenCV({self.image_width}x{self.image_height}, "
+            f"f=[{self.fx:.1f}, {self.fy:.1f}], "
+            f"c=[{self.cx:.1f}, {self.cy:.1f}], "
+            f"{n_dist} distortion coeffs)"
+        )
+
     def __post_init__(self):
         dc = np.asarray(self.distortion_coeffs, dtype=np.float64)
         assert dc.ndim == 1 and len(dc) <= 14, (
