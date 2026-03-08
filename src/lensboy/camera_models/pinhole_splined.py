@@ -80,6 +80,15 @@ class PinholeSplined(CameraModel):
 
     seed_opencv_distortion_parameters: np.ndarray | None = None
 
+    def __repr__(self) -> str:
+        return (
+            f"PinholeSplined({self.image_width}x{self.image_height}, "
+            f"f=[{self.fx:.1f}, {self.fy:.1f}], "
+            f"c=[{self.cx:.1f}, {self.cy:.1f}], "
+            f"knots={self.num_knots_x}x{self.num_knots_y}, "
+            f"fov=[{self.fov_deg_x:.1f}°, {self.fov_deg_y:.1f}°])"
+        )
+
     def __post_init__(self):
         assert self.dx_grid.ndim == 2, f"Expected 2D dx_grid, got {self.dx_grid.ndim}D"
         assert np.issubdtype(self.dx_grid.dtype, np.floating), (
@@ -236,7 +245,8 @@ class PinholeSplined(CameraModel):
     def _pinhole_parameters(self):
         return (self.fx, self.fy, self.cx, self.cy)
 
-    def _K(self):
+    def K(self) -> np.ndarray:
+        """Return the 3x3 camera intrinsics matrix."""
         return np.array(
             [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]]
         )
@@ -354,7 +364,7 @@ class PinholeSplined(CameraModel):
             raise ValueError("Require reference opencv distortion coefficients for this")
 
         dist = self.seed_opencv_distortion_parameters
-        K = self._K()
+        K = self.K()
 
         if image_size_wh is None:
             image_size_wh = (self.image_width, self.image_height)

@@ -17,7 +17,16 @@ class CameraModel(ABC):
     image_height: int
 
     @abstractmethod
-    def project_points(self, points_in_cam: np.ndarray) -> np.ndarray: ...
+    def project_points(self, points_in_cam: np.ndarray) -> np.ndarray:
+        """Project 3D camera-frame points to pixel coordinates.
+
+        Args:
+            points_in_cam: Shape (N, 3).
+
+        Returns:
+            Projected pixel coordinates, shape (N, 2).
+        """
+        ...
 
     @abstractmethod
     def normalize_points(self, pixel_coords: np.ndarray) -> np.ndarray:

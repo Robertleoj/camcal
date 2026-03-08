@@ -37,7 +37,7 @@ result = lb.calibrate_camera(
     ),
 )
 
-result.optimized_camera_model.save("camera.json")
+result.camera_model.save("camera.json")
 ```
 
 Swap the config for a spline model — same API, more flexible:

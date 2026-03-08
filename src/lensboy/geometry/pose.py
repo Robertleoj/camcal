@@ -38,6 +38,14 @@ class Pose:
             f"Expected floating dtype, got {self.matrix.dtype}"
         )
 
+    def __repr__(self) -> str:
+        t = self.translation
+        r = self.rotvec
+        return (
+            f"Pose(t=[{t[0]:.4f}, {t[1]:.4f}, {t[2]:.4f}], "
+            f"rotvec=[{r[0]:.4f}, {r[1]:.4f}, {r[2]:.4f}])"
+        )
+
     @staticmethod
     def from_rotvec_trans(
         *,

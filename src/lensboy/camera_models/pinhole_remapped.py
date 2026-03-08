@@ -123,6 +123,14 @@ class PinholeRemapped(CameraModel):
             input_image_height=data["input_image_height"],
         )
 
+    def __repr__(self) -> str:
+        return (
+            f"PinholeRemapped({self.image_width}x{self.image_height}, "
+            f"f=[{self.fx:.1f}, {self.fy:.1f}], "
+            f"c=[{self.cx:.1f}, {self.cy:.1f}], "
+            f"input={self.input_image_width}x{self.input_image_height})"
+        )
+
     def __post_init__(self):
         assert self.map_x.ndim == 2, f"Expected 2D map_x, got {self.map_x.ndim}D"
         assert np.issubdtype(self.map_x.dtype, np.floating), (
