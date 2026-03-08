@@ -593,7 +593,7 @@ class CalibrationResult(Generic[_IntrinsicsT]):
     def plot_per_image_rms(
         self,
         *,
-        sort_by: Literal["inliers", "all"] | None = None,
+        sort_by: Literal["inliers", "all"] | None = "all",
         title: str = "Per-image residual RMS",
         return_figure: bool = False,
     ) -> Figure | None:

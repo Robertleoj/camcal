@@ -1566,10 +1566,10 @@ def plot_worst_residual_frames(
 ) -> Figure | None:
     """Show the frames with the largest residuals, with residual vectors overlaid.
 
-    Frames are ranked by their single worst (max-magnitude) residual and the
-    top ``n`` are displayed in a single-column figure.  Each subplot shows the
-    image with quiver arrows from detected points in the direction and
-    magnitude of the residual, coloured by magnitude.
+    Frames are ranked by their RMS residual and the top ``n`` are displayed in
+    a single-column figure.  Each subplot shows the image with quiver arrows
+    from detected points in the direction and magnitude of the residual,
+    coloured by magnitude.
 
     Args:
         frame_diagnostics: Per-frame reprojection diagnostics.
@@ -1591,7 +1591,9 @@ def plot_worst_residual_frames(
         mags = np.linalg.norm(fi.residuals, axis=1)
         if not include_outliers:
             mags = mags[fi.inlier_mask]
-        per_frame_mags.append(float(np.max(mags)) if len(mags) > 0 else 0.0)
+        per_frame_mags.append(
+            float(np.sqrt(np.mean(mags**2))) if len(mags) > 0 else 0.0
+        )
 
     ranked = sorted(
         range(len(per_frame_mags)), key=lambda i: per_frame_mags[i], reverse=True
@@ -1930,7 +1932,7 @@ def plot_projection_diff(
 def plot_per_image_rms(
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
-    sort_by: Literal["inliers", "all"] | None = None,
+    sort_by: Literal["inliers", "all"] | None = "all",
     title: str = "Per-image residual RMS",
     return_figure: bool = False,
 ) -> Figure | None:
