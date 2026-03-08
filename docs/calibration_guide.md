@@ -384,14 +384,14 @@ frames_b = frames[1::2]
 Now let's fit two instances of the same model on the two sets:
 
 ```python
-model_a = lb.calibrate_camera(target_points, frames_a, config)
-model_b = lb.calibrate_camera(target_points, frames_b, config)
+result_a = lb.calibrate_camera(target_points, frames_a, config)
+result_b = lb.calibrate_camera(target_points, frames_b, config)
 ```
 
 Now that we have the two models, let's compare them:
 
 ```python
-lba.plot_projection_diff(model_a.camera_model, model_b.camera_model)
+lba.plot_projection_diff(result_a.camera_model, result_b.camera_model)
 ```
 
 <img src="./media/calibration_docs/first_model_cross_validation.png" width="1000">
