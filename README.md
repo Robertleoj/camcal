@@ -51,6 +51,12 @@ result = lb.calibrate_camera(
 )
 ```
 
+## Getting started
+
+Read the **[calibration guide](https://github.com/Robertleoj/lensboy/blob/main/docs/calibration_guide.md)** for a full walkthrough - calibrating a camera, verifying the results, and exporting for runtime use.
+
+If you just want to see `lensboy` in action, see [quickstart notebook](examples/quickstart.ipynb).
+
 ## Analysis tools
 
 Plots for residuals, distortion, detection coverage, and [model differencing](examples/model_differencing.ipynb). See the [example notebooks](examples/).
@@ -74,12 +80,6 @@ Minimal install, for loading and using models:
 ```bash
 pip install lensboy
 ```
-
-## Getting started
-
-Read the [calibration guide](https://github.com/Robertleoj/lensboy/blob/main/docs/calibration_guide.md) for a full walkthrough on how to get good calibrations with lensboy.
-
-For a quick code example, see the [quickstart notebook](examples/quickstart.ipynb).
 
 ## Spline models
 
