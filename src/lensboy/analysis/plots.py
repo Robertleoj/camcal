@@ -1459,13 +1459,105 @@ def plot_undistortion(
     return None
 
 
+def _draw_frame_residuals(
+    ax: plt.Axes,  # type: ignore[name-defined]
+    fig: Figure,
+    frame: lb.Frame,
+    fi: lb.FrameDiagnostics,
+    *,
+    image: np.ndarray | None = None,
+    w: int,
+    h: int,
+    scale: float,
+    title: str,
+) -> None:
+    """Draw residual vectors for a single frame onto *ax*."""
+    bg = "#111111"
+    fg = "white"
+    outlier_color = "#ff4444"
+    cmap = plt.colormaps["plasma"]
+
+    diag = np.sqrt(w**2 + h**2)
+    arrow_width = 10.0 / diag
+    marker_size = diag * 0.03
+    marker_lw = diag * 0.0005
+
+    pos = frame.detected_points_in_image
+    res = fi.residuals
+    mask = fi.inlier_mask
+    mags = np.linalg.norm(res, axis=1)
+
+    inlier_mags = mags[mask]
+    vmax = float(np.max(inlier_mags)) if len(inlier_mags) > 0 else 1.0
+    norm = mcolors.Normalize(vmin=0, vmax=vmax)
+
+    ax.set_facecolor(bg)
+
+    if image is not None:
+        img = to_color(image)
+        ax.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))  # type: ignore[arg-type]
+
+    # All residual arrows with colormap
+    q = ax.quiver(
+        pos[:, 0],
+        pos[:, 1],
+        res[:, 0] * scale,
+        res[:, 1] * scale,
+        mags,
+        cmap=cmap,
+        norm=norm,
+        angles="xy",
+        scale_units="xy",
+        scale=1.0,
+        width=arrow_width,
+        headwidth=2,
+        headlength=2,
+        headaxislength=1.5,
+    )
+
+    cbar: Colorbar = fig.colorbar(q, ax=ax, shrink=0.6)
+    cbar.set_label("residual [px]", color=fg)
+    cbar.ax.tick_params(colors=fg)
+
+    # Outlier markers
+    outlier_mask = ~mask
+    if np.any(outlier_mask):
+        ax.scatter(
+            pos[outlier_mask, 0],
+            pos[outlier_mask, 1],
+            s=marker_size,
+            facecolors=outlier_color,
+            edgecolors="white",
+            linewidths=marker_lw,
+            zorder=6,
+            label="Outlier",
+        )
+
+    ax.tick_params(colors=fg)
+    ax.xaxis.label.set_color(fg)
+    ax.yaxis.label.set_color(fg)
+    ax.title.set_color(fg)
+    for spine in ax.spines.values():
+        spine.set_color(fg)
+
+    if np.any(outlier_mask):
+        legend = ax.legend(loc="lower left", facecolor=bg, edgecolor=fg)
+        for text in legend.get_texts():
+            text.set_color(fg)
+
+    ax.set_title(title)
+    ax.set_xlim(0, w)
+    ax.set_ylim(h, 0)
+    ax.set_aspect("equal", adjustable="box")
+
+
 def plot_worst_residual_frames(
     frame_diagnostics: list[lb.FrameDiagnostics],
     frames: list[lb.Frame],
     images: list[np.ndarray],
     *,
     n: int = 5,
-    scale: float = 10.0,
+    scale: float = 100.0,
     title: str = "Worst residual frames",
     include_outliers: bool = True,
     return_figure: bool = False,
@@ -1506,7 +1598,6 @@ def plot_worst_residual_frames(
 
     bg = "#111111"
     fg = "white"
-    cmap = plt.colormaps["plasma"]
 
     h0, w0 = images[selected[0]].shape[:2]
     panel_w = 14
@@ -1518,62 +1609,26 @@ def plot_worst_residual_frames(
         squeeze=False,
     )
     fig.patch.set_facecolor(bg)
-    fig.suptitle(title, color=fg, fontsize=14)
+    fig.suptitle(f"{title}  (scale={scale}x)", color=fg, fontsize=14)
 
     for ax_row, idx in zip(axes, selected):
         ax = ax_row[0]
         fi = frame_diagnostics[idx]
         frame = frames[idx]
-        img = to_color(images[idx])
+        h_i, w_i = images[idx].shape[:2]
 
-        pos = frame.detected_points_in_image
-        res = fi.residuals
+        mags = np.linalg.norm(fi.residuals, axis=1)
         if not include_outliers:
-            mask = fi.inlier_mask
-            pos = pos[mask]
-            res = res[mask]
-        mags = np.linalg.norm(res, axis=1)
-        frame_norm = mcolors.Normalize(vmin=0, vmax=float(np.max(mags)))
+            mags = mags[fi.inlier_mask]
+        worst = float(np.max(mags)) if len(mags) > 0 else 0.0
+        mean = float(np.mean(mags)) if len(mags) > 0 else 0.0
+        subtitle = f"Frame {idx}  (max={worst:.2f} px, mean={mean:.2f} px)"
 
-        ax.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))  # type: ignore[arg-type]
-
-        ax.quiver(
-            pos[:, 0],
-            pos[:, 1],
-            res[:, 0] * scale,
-            res[:, 1] * scale,
-            mags,
-            cmap=cmap,
-            norm=frame_norm,
-            angles="xy",
-            scale_units="xy",
-            scale=1.0,
-            width=0.002,
-            headwidth=2,
-            headlength=2,
-            headaxislength=1.5,
+        _draw_frame_residuals(
+            ax, fig, frame, fi,
+            image=images[idx], w=w_i, h=h_i,
+            scale=scale, title=subtitle,
         )
-
-        ax.set_facecolor(bg)
-        ax.tick_params(colors=fg)
-        ax.xaxis.label.set_color(fg)
-        ax.yaxis.label.set_color(fg)
-        ax.title.set_color(fg)
-        for spine in ax.spines.values():
-            spine.set_color(fg)
-
-        worst = float(per_frame_mags[idx])
-        mean = float(np.mean(mags))
-        ax.set_title(f"Frame {idx}  (max={worst:.2f} px, mean={mean:.2f} px)")
-        ax.set_aspect("equal", adjustable="box")
-
-        cbar: Colorbar = fig.colorbar(
-            plt.cm.ScalarMappable(norm=frame_norm, cmap=cmap),  # type: ignore[arg-type]
-            ax=ax,
-            shrink=0.6,
-        )
-        cbar.set_label("residual [px]", color=fg)
-        cbar.ax.tick_params(colors=fg)
 
     plt.tight_layout()
     if return_figure:
@@ -1938,6 +1993,73 @@ def plot_per_image_rms(
         text.set_color(fg)
 
     fig.tight_layout()
+    if return_figure:
+        return fig
+    plt.show()
+    return None
+
+
+def plot_frame_residuals(
+    frame: lb.Frame,
+    frame_diagnostics: lb.FrameDiagnostics,
+    *,
+    image: np.ndarray | None = None,
+    image_width: int | None = None,
+    image_height: int | None = None,
+    scale: float = 100.0,
+    title: str | None = None,
+    return_figure: bool = False,
+) -> Figure | None:
+    """Residual vectors for a single calibration frame.
+
+    Shows quiver arrows from detected points coloured by residual magnitude.
+    Inlier and outlier points are distinguished: outlier arrows use a fixed
+    red colour and are drawn on top.
+
+    When ``image`` is provided it is used as the background; otherwise a blank
+    canvas is drawn using ``image_width`` and ``image_height``.
+
+    Args:
+        frame: Detected calibration frame.
+        frame_diagnostics: Matching reprojection diagnostics.
+        image: Optional source image, shape (H, W) or (H, W, 3).
+        image_width: Sensor width in pixels (required when ``image`` is None).
+        image_height: Sensor height in pixels (required when ``image`` is None).
+        scale: Multiplier applied to arrow lengths for visibility.
+        title: Plot title. Auto-generated if None.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
+    """
+    if image is not None:
+        h, w = image.shape[:2]
+    else:
+        if image_width is None or image_height is None:
+            raise ValueError(
+                "image_width and image_height are required when image is None"
+            )
+        w, h = image_width, image_height
+
+    bg = "#111111"
+    fg = "white"
+
+    mags = np.linalg.norm(frame_diagnostics.residuals, axis=1)
+    n_outliers = int(np.count_nonzero(~frame_diagnostics.inlier_mask))
+    rms = float(np.sqrt(np.mean(mags**2)))
+    if title is None:
+        title = f"Frame residuals  (N={len(mags)}, outliers={n_outliers}, RMS={rms:.2f} px, scale={scale}x)"
+
+    fig, ax = plt.subplots(figsize=(14, 14 * h / w))
+    fig.patch.set_facecolor(bg)
+
+    _draw_frame_residuals(
+        ax, fig, frame, frame_diagnostics,
+        image=image, w=w, h=h,
+        scale=scale, title=title,
+    )
+
+    plt.tight_layout()
     if return_figure:
         return fig
     plt.show()
