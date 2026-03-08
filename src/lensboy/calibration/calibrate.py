@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from timeit import default_timer
-from typing import TYPE_CHECKING, Generic, TypeVar, overload
+from typing import TYPE_CHECKING, Generic, Literal, TypeVar, overload
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -552,7 +552,7 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         images: list[np.ndarray],
         *,
         n: int = 5,
-        scale: float = 10.0,
+        scale: float = 100.0,
         title: str = "Worst residual frames",
         include_outliers: bool = True,
         return_figure: bool = False,
@@ -587,6 +587,77 @@ class CalibrationResult(Generic[_IntrinsicsT]):
             scale=scale,
             title=title,
             include_outliers=include_outliers,
+            return_figure=return_figure,
+        )
+
+    def plot_per_image_rms(
+        self,
+        *,
+        sort_by: Literal["inliers", "all"] | None = "all",
+        title: str = "Per-image residual RMS",
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Stacked bar chart of per-image residual RMS split by inlier/outlier.
+
+        Each bar shows the RMS of all residuals in that image. The left (blue)
+        portion is the inlier-only RMS; the right (red) portion covers the
+        remainder up to the total RMS, indicating the outlier contribution.
+
+        Args:
+            sort_by: Sort bars by ``"inliers"`` (inlier-only RMS) or
+                ``"all"`` (total RMS including outliers). None keeps the
+                original image order.
+            title: Plot title.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
+        """
+        from lensboy.analysis.plots import plot_per_image_rms
+
+        return plot_per_image_rms(
+            self.frame_diagnostics,
+            sort_by=sort_by,
+            title=title,
+            return_figure=return_figure,
+        )
+
+    def plot_frame_residuals(
+        self,
+        index: int,
+        images: list[np.ndarray] | None = None,
+        *,
+        scale: float = 100.0,
+        title: str | None = None,
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Residual vectors for a single calibration frame.
+
+        Shows quiver arrows from detected points coloured by residual magnitude,
+        with outliers highlighted in red. Optionally overlaid on the source image.
+
+        Args:
+            index: Frame index to plot.
+            images: Optional list of source images. If provided, ``images[index]``
+                is used as the background.
+            scale: Multiplier applied to arrow lengths for visibility.
+            title: Plot title. Auto-generated if None.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
+        """
+        from lensboy.analysis.plots import plot_frame_residuals
+
+        image = images[index] if images is not None else None
+        return plot_frame_residuals(
+            self.frames[index],
+            self.frame_diagnostics[index],
+            image=image,
+            image_width=self.camera_model.image_width,
+            image_height=self.camera_model.image_height,
+            scale=scale,
+            title=title,
             return_figure=return_figure,
         )
 

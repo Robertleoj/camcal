@@ -242,19 +242,27 @@ Here is another residual plot from where I took my pictures too close to the boa
 
 The extreme distortion of the board in my images caused the detector to start failing, causing the dense mass of outliers. After fixing my image taking strategy, the plot looked normal.
 
-### Worst frames
+### Per-frame residuals
 
-It's useful to inspect the frames with the largest residuals to understand where your model struggles. `lensboy` provides `plot_worst_residual_frames()` for this. Let's look at the 3 worst frames:
+It's important to understand where your camera model struggles the most. The most useful way to inspect this is to first look at the `plot_per_image_rms()` plot. It shows you the RMS error per frame, including and excluding outliers. Let's take a look at this plot for the current calibration:
+
+<img src="./media/calibration_docs/first_model_per_frame_residuals.png" width="500">
+
+Looks like there are some frames with more outliers than others. Let's use `plot_worst_residual_frames()` to inspect the top three:
 
 <img src="./media/calibration_docs/first_model_worst_3_residuals.png" width="500">
 
 Looking at these images, I see that the largest residuals are caused by the ChArUco detector struggling under the extreme distortion. I won't worry about this now, as it happens relatively sparsely in my dataset, and most of the detector errors are filtered out as outliers.
 
-Here are the worst 3 frames from the image set mentioned before, where I took my images too close at angles that were too sharp.
+Here is the same distribution from the image set mentioned before, where I took my images too close at angles that were too sharp.
 
-<img src="./media/calibration_docs/bad_detections_worst_3.png" width="500">
+<img src="./media/calibration_docs/bad_detections_per_frame_residuals.png" width="500">
 
-This plot is how I found the problem - the detector clearly is struggling in the extremely distorted parts of the board. Most of my images looked like this, which made most of my samples too noisy.
+We clearly have a problem here. Too many images have really bad residuals that are filtered out as outliers. let's take a look at the top three worst frames on this plot:
+
+<img src="./media/calibration_docs/bad_detections_worst_frame_residuals.png" width="500">
+
+This is how I found the problem - the detector clearly is struggling in the extremely distorted parts of the board. I was taking my pictures in a way that made it too hard for the detector to detect the feature points reliably, so I had to change my image taking strategy.
 
 ### The residual grid
 

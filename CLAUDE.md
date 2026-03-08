@@ -40,3 +40,5 @@ Keep comments minimal, only add comments when the code needs explaining why it's
 
 Follow the color scheme of the existing plots in the plots.py file.
 Making the type checker happy is less important in the plots if the plotting library APIs make it hard to make the types work. In this case the usage of `type: ignore` is fine.
+
+All plots should be exported, and if applicable, have a matching method on the CalibrationResult object in calibrate.py.
