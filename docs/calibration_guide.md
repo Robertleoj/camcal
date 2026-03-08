@@ -356,6 +356,8 @@ The OpenCV model from section 6 fits my lens reasonably well, but the residual g
 
 Spline-based models use B-spline grids to model distortion, and so can model more arbitrary distortion patterns. However, they are also more prone to overfitting due to their flexibility, and thus require more data to constrain properly.
 
+`lensboy`'s splined models are based on [mrcal splined lens models](https://mrcal.secretsauce.net/docs-2.2/splined-models.html), which provides a detailed explanation on how they work.
+
 We can configure a spline model in `lensboy` with `PinholeSplinedConfig`. You control how flexible the model is by tuning the spline grid density.
 
 I usually start with a 30x20 grid and then adjust the density based on the residual grid and cross-validation plots. Let's fit one:
