@@ -267,7 +267,7 @@ def plot_detection_coverage(
     )
 
 
-def plot_inlier_coverage(
+def _plot_inlier_coverage(
     frames: list[lb.Frame],
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
@@ -311,7 +311,7 @@ def plot_inlier_coverage(
     )
 
 
-def plot_outliers(
+def _plot_outliers(
     frames: list[lb.Frame],
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
@@ -352,7 +352,7 @@ def plot_outliers(
     )
 
 
-def plot_distortion_grid(
+def _plot_distortion_grid(
     model: lb.OpenCV | lb.PinholeSplined,
     *,
     grid_step_norm: float = 0.05,
@@ -648,7 +648,7 @@ def plot_distortion_grid(
     return None
 
 
-def plot_residuals(
+def _plot_residuals(
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
     bins: int = 100,
@@ -846,7 +846,7 @@ def plot_residuals(
     return None
 
 
-def plot_residual_vectors(
+def _plot_residual_vectors(
     frames: list[lb.Frame],
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
@@ -961,7 +961,7 @@ def plot_residual_vectors(
     return None
 
 
-def plot_residual_grid(
+def _plot_residual_grid(
     frames: list[lb.Frame],
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
@@ -1099,7 +1099,7 @@ def plot_residual_grid(
     return None
 
 
-def plot_target_and_poses(
+def _plot_target_and_poses(
     target_points: np.ndarray,
     cameras_T_target: list[lb.Pose],
     *,
@@ -1194,7 +1194,7 @@ def plot_target_and_poses(
     return None
 
 
-def plot_target_warp(
+def _plot_target_warp(
     target_points: np.ndarray,
     target_warp: lb.TargetWarp,
     *,
@@ -1719,7 +1719,7 @@ def _draw_frame_residuals(
     ax.set_aspect("equal", adjustable="box")
 
 
-def plot_worst_residual_frames(
+def _plot_worst_residual_frames(
     frame_diagnostics: list[lb.FrameDiagnostics],
     frames: list[lb.Frame],
     images: list[np.ndarray],
@@ -2099,7 +2099,7 @@ def plot_projection_diff(
     return None
 
 
-def plot_per_image_rms(
+def _plot_per_image_rms(
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
     sort_by: Literal["inliers", "all"] | None = "all",
@@ -2196,7 +2196,7 @@ def plot_per_image_rms(
     return None
 
 
-def plot_frame_residuals(
+def _plot_frame_residuals(
     frame: lb.Frame,
     frame_diagnostics: lb.FrameDiagnostics,
     *,

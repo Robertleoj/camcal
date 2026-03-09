@@ -339,9 +339,9 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             The figure if ``return_figure`` is True, otherwise None.
         """
-        from lensboy.analysis.plots import plot_inlier_coverage
+        from lensboy.analysis.plots import _plot_inlier_coverage
 
-        return plot_inlier_coverage(
+        return _plot_inlier_coverage(
             self.frames,
             self.frame_diagnostics,
             image_width=self.camera_model.image_width,
@@ -372,9 +372,9 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             The figure if ``return_figure`` is True, otherwise None.
         """
-        from lensboy.analysis.plots import plot_outliers
+        from lensboy.analysis.plots import _plot_outliers
 
-        return plot_outliers(
+        return _plot_outliers(
             self.frames,
             self.frame_diagnostics,
             image_width=self.camera_model.image_width,
@@ -413,9 +413,9 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             The figure if ``return_figure`` is True, otherwise None.
         """
-        from lensboy.analysis.plots import plot_distortion_grid
+        from lensboy.analysis.plots import _plot_distortion_grid
 
-        return plot_distortion_grid(
+        return _plot_distortion_grid(
             self.camera_model,
             grid_step_norm=grid_step_norm,
             fov_fraction=fov_fraction,
@@ -455,9 +455,9 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             The figure if ``return_figure`` is True, otherwise None.
         """
-        from lensboy.analysis.plots import plot_residuals
+        from lensboy.analysis.plots import _plot_residuals
 
-        return plot_residuals(
+        return _plot_residuals(
             self.frame_diagnostics,
             bins=bins,
             n_sigma=n_sigma,
@@ -492,9 +492,9 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             The figure if ``return_figure`` is True, otherwise None.
         """
-        from lensboy.analysis.plots import plot_residual_vectors
+        from lensboy.analysis.plots import _plot_residual_vectors
 
-        return plot_residual_vectors(
+        return _plot_residual_vectors(
             self.frames,
             self.frame_diagnostics,
             image_width=self.camera_model.image_width,
@@ -531,9 +531,9 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             The figure if ``return_figure`` is True, otherwise None.
         """
-        from lensboy.analysis.plots import plot_residual_grid
+        from lensboy.analysis.plots import _plot_residual_grid
 
-        return plot_residual_grid(
+        return _plot_residual_grid(
             self.frames,
             self.frame_diagnostics,
             image_width=self.camera_model.image_width,
@@ -565,9 +565,9 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             The figure if ``return_figure`` is True, otherwise None.
         """
-        from lensboy.analysis.plots import plot_target_and_poses
+        from lensboy.analysis.plots import _plot_target_and_poses
 
-        return plot_target_and_poses(
+        return _plot_target_and_poses(
             self.target_points,
             self.cameras_from_target,
             triad_scale=triad_scale,
@@ -601,11 +601,11 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Raises:
             ValueError: If no target warp was estimated.
         """
-        from lensboy.analysis.plots import plot_target_warp
+        from lensboy.analysis.plots import _plot_target_warp
 
         if self.target_warp is None:
             raise ValueError("No target warp was estimated in this calibration.")
-        return plot_target_warp(
+        return _plot_target_warp(
             self.target_points,
             self.target_warp,
             grid_res=grid_res,
@@ -644,9 +644,9 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             The figure if ``return_figure`` is True, otherwise None.
         """
-        from lensboy.analysis.plots import plot_worst_residual_frames
+        from lensboy.analysis.plots import _plot_worst_residual_frames
 
-        return plot_worst_residual_frames(
+        return _plot_worst_residual_frames(
             self.frame_diagnostics,
             self.frames,
             images,
@@ -680,9 +680,9 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             The figure if ``return_figure`` is True, otherwise None.
         """
-        from lensboy.analysis.plots import plot_per_image_rms
+        from lensboy.analysis.plots import _plot_per_image_rms
 
-        return plot_per_image_rms(
+        return _plot_per_image_rms(
             self.frame_diagnostics,
             sort_by=sort_by,
             title=title,
@@ -714,10 +714,10 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             The figure if ``return_figure`` is True, otherwise None.
         """
-        from lensboy.analysis.plots import plot_frame_residuals
+        from lensboy.analysis.plots import _plot_frame_residuals
 
         image = images[index] if images is not None else None
-        return plot_frame_residuals(
+        return _plot_frame_residuals(
             self.frames[index],
             self.frame_diagnostics[index],
             image=image,
