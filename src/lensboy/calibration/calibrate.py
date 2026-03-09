@@ -317,6 +317,73 @@ class CalibrationResult(Generic[_IntrinsicsT]):
             return_figure=return_figure,
         )
 
+    def plot_inlier_coverage(
+        self,
+        *,
+        title: str = "Inlier coverage",
+        s: float = 6.0,
+        grid_cells: int = 20,
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Scatter-plot inlier detections with empty grid cells highlighted.
+
+        Like ``plot_detection_coverage`` but only includes inlier points,
+        making coverage gaps caused by outlier rejection visible.
+
+        Args:
+            title: Plot title.
+            s: Marker size passed to ``ax.scatter``.
+            grid_cells: Number of grid cells along the longer image axis.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
+        """
+        from lensboy.analysis.plots import plot_inlier_coverage
+
+        return plot_inlier_coverage(
+            self.frames,
+            self.frame_diagnostics,
+            image_width=self.camera_model.image_width,
+            image_height=self.camera_model.image_height,
+            title=title,
+            s=s,
+            grid_cells=grid_cells,
+            return_figure=return_figure,
+        )
+
+    def plot_outliers(
+        self,
+        *,
+        title: str = "Outliers",
+        s: float = 12.0,
+        return_figure: bool = False,
+    ) -> Figure | None:
+        """Scatter-plot all outlier detections in the image.
+
+        Shows where rejected points are located, making it easy to spot
+        systematic detection problems in specific image regions.
+
+        Args:
+            title: Plot title.
+            s: Marker size passed to ``ax.scatter``.
+            return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+        Returns:
+            The figure if ``return_figure`` is True, otherwise None.
+        """
+        from lensboy.analysis.plots import plot_outliers
+
+        return plot_outliers(
+            self.frames,
+            self.frame_diagnostics,
+            image_width=self.camera_model.image_width,
+            image_height=self.camera_model.image_height,
+            title=title,
+            s=s,
+            return_figure=return_figure,
+        )
+
     def plot_distortion_grid(
         self,
         *,
