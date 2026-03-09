@@ -252,6 +252,18 @@ Here is another residual plot from where I took my pictures too close to the boa
 
 The extreme distortion of the board in my images caused the detector to start failing, causing the dense mass of outliers. After fixing my image taking strategy, the plot looked normal.
 
+### Inlier coverage
+
+Since `lensboy` detects and removes outliers, your _effective_ coverage might have deteriorated with the removal of outliers. You should check whether your coverage is still good with the outliers removed:
+
+```python
+result.plot_inlier_coverage()
+```
+
+<img src="./media/calibration_docs/first_model_inlier_coverage.png" width="1000">
+
+Looks like the outlier filtering did not seriously affect my coverage. If you see that you now have patches with bad coverage after the outlier filtering, you should go back and take more pictures.
+
 ### Per-frame residuals
 
 It's important to understand where your camera model struggles the most. The most useful way to inspect this is to look at the per-image RMS. It shows you the RMS error per frame, including and excluding outliers. Let's take a look:

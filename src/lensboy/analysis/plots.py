@@ -74,6 +74,160 @@ def draw_points(
     return _draw_points(canvas, points_in_image, color=color, r=r)
 
 
+def _plot_coverage(
+    *,
+    inliers: np.ndarray | None,
+    outliers: np.ndarray | None,
+    image_width: int,
+    image_height: int,
+    title: str,
+    s: float,
+    grid_cells: int,
+    return_figure: bool,
+) -> Figure | None:
+    """Shared coverage scatter-plot.
+
+    Draws inliers in cyan with a coverage grid (shading empty cells),
+    and outliers in red. Either or both may be None.
+
+    Args:
+        inliers: Inlier pixel coordinates, shape (N, 2), or None.
+        outliers: Outlier pixel coordinates, shape (M, 2), or None.
+        image_width: Sensor width in pixels.
+        image_height: Sensor height in pixels.
+        title: Plot title (count suffix is appended automatically).
+        s: Marker size passed to ``ax.scatter``.
+        grid_cells: Number of grid cells along the longer image axis.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
+    """
+    bg = "#111111"
+    fg = "white"
+    accent = "#00d4ff"
+    outlier_color = "#ff4444"
+    gap_color = "#3a0000"
+
+    fig, ax = plt.subplots(figsize=(20, 15))
+    fig.patch.set_facecolor(bg)
+    ax.set_facecolor(bg)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    n_inliers = 0
+    if inliers is not None and inliers.shape[0] > 0:
+        n_inliers = inliers.shape[0]
+
+        aspect = image_width / image_height
+        if aspect >= 1:
+            nx = grid_cells
+            ny = max(1, int(round(grid_cells / aspect)))
+        else:
+            ny = grid_cells
+            nx = max(1, int(round(grid_cells * aspect)))
+
+        cell_w = image_width / nx
+        cell_h = image_height / ny
+
+        counts, _, _ = np.histogram2d(
+            inliers[:, 0],
+            inliers[:, 1],
+            bins=[nx, ny],
+            range=[[0, image_width], [0, image_height]],
+        )
+
+        for ix in range(nx):
+            for iy in range(ny):
+                if counts[ix, iy] == 0:
+                    ax.add_patch(
+                        plt.Rectangle(  # type: ignore
+                            (ix * cell_w, iy * cell_h),
+                            cell_w,
+                            cell_h,
+                            facecolor=gap_color,
+                            edgecolor=None,
+                        )
+                    )
+
+        ax.scatter(inliers[:, 0], inliers[:, 1], s=s, color=accent)
+
+    n_outliers = 0
+    if outliers is not None and outliers.shape[0] > 0:
+        n_outliers = outliers.shape[0]
+        ax.scatter(outliers[:, 0], outliers[:, 1], s=s, color=outlier_color)
+
+    ax.add_patch(
+        plt.Rectangle(  # type: ignore
+            (0, 0),
+            image_width,
+            image_height,
+            facecolor="none",
+            edgecolor=fg,
+            linewidth=1.5,
+        )
+    )
+
+    if n_inliers > 0 and n_outliers > 0:
+        subtitle = f"(inliers={n_inliers}, outliers={n_outliers})"
+    else:
+        subtitle = f"(N={n_inliers + n_outliers})"
+    ax.set_title(f"{title}  {subtitle}", color=fg, fontsize=18)
+
+    pad = max(image_width, image_height) * 0.03
+    ax.set_xlim(-pad, image_width + pad)
+    ax.set_ylim(image_height + pad, 0)
+
+    ax.set_aspect("equal", adjustable="box")
+    if return_figure:
+        return fig
+    plt.show()
+    return None
+
+
+def _collect_points(detections: list[lb.Frame]) -> np.ndarray:
+    pts_list = []
+    for d in detections:
+        if d.detected_points_in_image is None:
+            continue
+        p = np.asarray(d.detected_points_in_image, dtype=float)
+        if p.size == 0:
+            continue
+        if p.ndim != 2 or p.shape[1] != 2:
+            raise ValueError(f"detected_points_in_image must be (K,2), got {p.shape}")
+        pts_list.append(p)
+    return np.concatenate(pts_list, axis=0) if pts_list else np.empty((0, 2), dtype=float)
+
+
+def _split_inlier_outlier(
+    frames: list[lb.Frame],
+    frame_diagnostics: list[lb.FrameDiagnostics],
+) -> tuple[np.ndarray, np.ndarray]:
+    inlier_list: list[np.ndarray] = []
+    outlier_list: list[np.ndarray] = []
+    for f, fd in zip(frames, frame_diagnostics):
+        pts = np.asarray(f.detected_points_in_image, dtype=float)
+        if pts.size == 0:
+            continue
+        inlier_list.append(pts[fd.inlier_mask])
+        outlier_mask = ~fd.inlier_mask
+        if np.any(outlier_mask):
+            outlier_list.append(pts[outlier_mask])
+    inliers = (
+        np.concatenate(inlier_list, axis=0)
+        if inlier_list
+        else np.empty((0, 2), dtype=float)
+    )
+    outliers = (
+        np.concatenate(outlier_list, axis=0)
+        if outlier_list
+        else np.empty((0, 2), dtype=float)
+    )
+    return inliers, outliers
+
+
 def plot_detection_coverage(
     detections: list[lb.Frame],
     *,
@@ -101,92 +255,104 @@ def plot_detection_coverage(
     Returns:
         The figure if ``return_figure`` is True, otherwise None.
     """
-    pts_list = []
-    for d in detections:
-        if d.detected_points_in_image is None:
-            continue
-        p = np.asarray(d.detected_points_in_image, dtype=float)
-        if p.size == 0:
-            continue
-        if p.ndim != 2 or p.shape[1] != 2:
-            raise ValueError(f"detected_points_in_image must be (K,2), got {p.shape}")
-        pts_list.append(p)
-
-    pts = np.concatenate(pts_list, axis=0) if pts_list else np.empty((0, 2), dtype=float)
-
-    bg = "#111111"
-    fg = "white"
-    accent = "#00d4ff"
-    gap_color = "#3a0000"
-
-    fig, ax = plt.subplots(figsize=(20, 15))
-    fig.patch.set_facecolor(bg)
-    ax.set_facecolor(bg)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-
-    if pts.shape[0] > 0:
-        aspect = image_width / image_height
-        if aspect >= 1:
-            nx = grid_cells
-            ny = max(1, int(round(grid_cells / aspect)))
-        else:
-            ny = grid_cells
-            nx = max(1, int(round(grid_cells * aspect)))
-
-        cell_w = image_width / nx
-        cell_h = image_height / ny
-
-        counts, _, _ = np.histogram2d(
-            pts[:, 0],
-            pts[:, 1],
-            bins=[nx, ny],
-            range=[[0, image_width], [0, image_height]],
-        )
-
-        for ix in range(nx):
-            for iy in range(ny):
-                if counts[ix, iy] == 0:
-                    ax.add_patch(
-                        plt.Rectangle(  # type: ignore
-                            (ix * cell_w, iy * cell_h),
-                            cell_w,
-                            cell_h,
-                            facecolor=gap_color,
-                            edgecolor=None,
-                        )
-                    )
-
-        ax.scatter(pts[:, 0], pts[:, 1], s=s, color=accent)
-
-    # Draw image border as a data-space rectangle
-    ax.add_patch(
-        plt.Rectangle(  # type: ignore
-            (0, 0),
-            image_width,
-            image_height,
-            facecolor="none",
-            edgecolor=fg,
-            linewidth=1.5,
-        )
+    return _plot_coverage(
+        inliers=_collect_points(detections),
+        outliers=None,
+        image_width=image_width,
+        image_height=image_height,
+        title=title,
+        s=s,
+        grid_cells=grid_cells,
+        return_figure=return_figure,
     )
 
-    ax.set_title(f"{title}  (N={pts.shape[0]})", color=fg, fontsize=18)
 
-    pad = max(image_width, image_height) * 0.03
-    ax.set_xlim(-pad, image_width + pad)
-    ax.set_ylim(image_height + pad, 0)
+def _plot_inlier_coverage(
+    frames: list[lb.Frame],
+    frame_diagnostics: list[lb.FrameDiagnostics],
+    *,
+    image_width: int,
+    image_height: int,
+    title: str = "Inlier coverage",
+    s: float = 6.0,
+    grid_cells: int = 20,
+    return_figure: bool = False,
+) -> Figure | None:
+    """Scatter-plot inlier detections with outliers highlighted in red.
 
-    ax.set_aspect("equal", adjustable="box")
-    if return_figure:
-        return fig
-    plt.show()
-    return None
+    Like ``plot_detection_coverage`` but uses the inlier mask to colour
+    inliers and outliers differently, and computes the coverage grid from
+    inliers only so that gaps caused by outlier rejection become visible.
+
+    Args:
+        frames: Detected calibration frames.
+        frame_diagnostics: Matching per-frame diagnostics (must be same length
+            as ``frames``).
+        image_width: Sensor width in pixels, sets the x-axis limit.
+        image_height: Sensor height in pixels, sets the y-axis limit.
+        title: Plot title.
+        s: Marker size passed to ``ax.scatter``.
+        grid_cells: Number of grid cells along the longer image axis.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
+    """
+    inlier_pts, outlier_pts = _split_inlier_outlier(frames, frame_diagnostics)
+    return _plot_coverage(
+        inliers=inlier_pts,
+        outliers=outlier_pts,
+        image_width=image_width,
+        image_height=image_height,
+        title=title,
+        s=s,
+        grid_cells=grid_cells,
+        return_figure=return_figure,
+    )
 
 
-def plot_distortion_grid(
+def _plot_outliers(
+    frames: list[lb.Frame],
+    frame_diagnostics: list[lb.FrameDiagnostics],
+    *,
+    image_width: int,
+    image_height: int,
+    title: str = "Outliers",
+    s: float = 12.0,
+    return_figure: bool = False,
+) -> Figure | None:
+    """Scatter-plot all outlier detections in the image.
+
+    Shows where rejected points are located, making it easy to spot
+    systematic detection problems in specific image regions.
+
+    Args:
+        frames: Detected calibration frames.
+        frame_diagnostics: Matching per-frame diagnostics (must be same length
+            as ``frames``).
+        image_width: Sensor width in pixels, sets the x-axis limit.
+        image_height: Sensor height in pixels, sets the y-axis limit.
+        title: Plot title.
+        s: Marker size passed to ``ax.scatter``.
+        return_figure: If True, return the figure instead of calling ``plt.show()``.
+
+    Returns:
+        The figure if ``return_figure`` is True, otherwise None.
+    """
+    _, outlier_pts = _split_inlier_outlier(frames, frame_diagnostics)
+    return _plot_coverage(
+        inliers=None,
+        outliers=outlier_pts,
+        image_width=image_width,
+        image_height=image_height,
+        title=title,
+        s=s,
+        grid_cells=0,
+        return_figure=return_figure,
+    )
+
+
+def _plot_distortion_grid(
     model: lb.OpenCV | lb.PinholeSplined,
     *,
     grid_step_norm: float = 0.05,
@@ -482,7 +648,7 @@ def plot_distortion_grid(
     return None
 
 
-def plot_residuals(
+def _plot_residuals(
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
     bins: int = 100,
@@ -680,7 +846,7 @@ def plot_residuals(
     return None
 
 
-def plot_residual_vectors(
+def _plot_residual_vectors(
     frames: list[lb.Frame],
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
@@ -795,7 +961,7 @@ def plot_residual_vectors(
     return None
 
 
-def plot_residual_grid(
+def _plot_residual_grid(
     frames: list[lb.Frame],
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
@@ -933,7 +1099,7 @@ def plot_residual_grid(
     return None
 
 
-def plot_target_and_poses(
+def _plot_target_and_poses(
     target_points: np.ndarray,
     cameras_T_target: list[lb.Pose],
     *,
@@ -1028,7 +1194,7 @@ def plot_target_and_poses(
     return None
 
 
-def plot_target_warp(
+def _plot_target_warp(
     target_points: np.ndarray,
     target_warp: lb.TargetWarp,
     *,
@@ -1553,7 +1719,7 @@ def _draw_frame_residuals(
     ax.set_aspect("equal", adjustable="box")
 
 
-def plot_worst_residual_frames(
+def _plot_worst_residual_frames(
     frame_diagnostics: list[lb.FrameDiagnostics],
     frames: list[lb.Frame],
     images: list[np.ndarray],
@@ -1933,7 +2099,7 @@ def plot_projection_diff(
     return None
 
 
-def plot_per_image_rms(
+def _plot_per_image_rms(
     frame_diagnostics: list[lb.FrameDiagnostics],
     *,
     sort_by: Literal["inliers", "all"] | None = "all",
@@ -2030,7 +2196,7 @@ def plot_per_image_rms(
     return None
 
 
-def plot_frame_residuals(
+def _plot_frame_residuals(
     frame: lb.Frame,
     frame_diagnostics: lb.FrameDiagnostics,
     *,
