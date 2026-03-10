@@ -53,7 +53,7 @@ def test_opencv_full14() -> None:
     assert sigma < 0.11, f"Residual sigma too high: {sigma:.3f}px"
     assert outlier_pct < 1.2, f"Too many outliers: {outlier_pct:.1f}%"
 
-    _check_first_frame_projection(result, target_points, frames[0])
+    _check_frame_projections(result, target_points, frames)
 
 
 def test_spline_30x20() -> None:
@@ -75,7 +75,7 @@ def test_spline_30x20() -> None:
     assert sigma < 0.09, f"Residual sigma too high: {sigma:.3f}px"
     assert outlier_pct < 1.6, f"Too many outliers: {outlier_pct:.1f}%"
 
-    _check_first_frame_projection(result, target_points, frames[0])
+    _check_frame_projections(result, target_points, frames)
 
 
 def test_opencv_all_outliers_in_one_frame() -> None:
@@ -117,24 +117,58 @@ def test_opencv_all_outliers_in_one_frame() -> None:
     assert outlier_pct < 1.2 + extra_outlier_pct, f"Too many outliers: {outlier_pct:.1f}%"
 
 
-def _check_first_frame_projection(
+def test_opencv_distortion_mask() -> None:
+    """Unselected distortion coefficients remain zero after calibration."""
+    target_points, frames, img_h, img_w = load_test_dataset()
+
+    masks = {
+        "NONE": lb.OpenCVConfig.NONE,
+        "STANDARD": lb.OpenCVConfig.STANDARD,
+        "RADIAL_6": lb.OpenCVConfig.RADIAL_6,
+        "TANGENTIAL": lb.OpenCVConfig.TANGENTIAL,
+        "THIN_PRISM": lb.OpenCVConfig.THIN_PRISM,
+    }
+
+    for name, mask in masks.items():
+        config = lb.OpenCVConfig(
+            image_height=img_h,
+            image_width=img_w,
+            initial_focal_length=1000,
+            included_distortion_coefficients=mask,
+        )
+        result = lb.calibrate_camera(target_points, frames, camera_model_config=config)
+        coeffs = result.camera_model.distortion_coeffs
+
+        disabled = ~mask
+        assert np.all(coeffs[disabled] == 0), (
+            f"{name}: expected zeros at disabled indices {np.where(disabled)[0]}, "
+            f"got {coeffs[disabled]}"
+        )
+
+
+def _check_frame_projections(
     result: lb.CalibrationResult,
     target_points: np.ndarray,
-    frame: lb.Frame,
+    frames: list[lb.Frame],
 ) -> None:
-    """Verify that manual projection matches the stored FrameDiagnostics for frame 0."""
     model = result.camera_model
-    pose = result.cameras_from_target[0]
-    fi = result.frame_diagnostics[0]
 
-    points_in_target = target_points[frame.target_point_indices]
-    if result.target_warp is not None:
-        points_in_target = result.target_warp.warp_target(points_in_target)
+    for i, frame in enumerate(frames):
+        pose = result.cameras_from_target[i]
+        fi = result.frame_diagnostics[i]
 
-    points_in_cam = pose.apply(points_in_target)
-    projected = model.project_points(points_in_cam)
+        points_in_target = target_points[frame.target_point_indices]
+        if result.target_warp is not None:
+            points_in_target = result.target_warp.warp_target(points_in_target)
 
-    np.testing.assert_allclose(projected, fi.projected_points, atol=1e-6)
+        points_in_cam = pose.apply(points_in_target)
+        projected = model.project_points(points_in_cam)
 
-    expected_residuals = projected - frame.detected_points_in_image
-    np.testing.assert_allclose(expected_residuals, fi.residuals, atol=1e-6)
+        np.testing.assert_allclose(
+            projected, fi.projected_points, atol=1e-6, err_msg=f"Frame {i}"
+        )
+
+        expected_residuals = projected - frame.detected_points_in_image
+        np.testing.assert_allclose(
+            expected_residuals, fi.residuals, atol=1e-6, err_msg=f"Frame {i}"
+        )

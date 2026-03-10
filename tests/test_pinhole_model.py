@@ -125,12 +125,21 @@ def test_get_pinhole_model() -> None:
     )
 
 
-def test_remap_table_consistency() -> None:
-    """Remap tables match spline.project(pinhole.normalize(pt)) at every pixel."""
-    spline_model = lb.PinholeSplined.load(DATA_DIR / "spline.json")
-    pinhole_model = spline_model.get_pinhole_model()
+def _check_remap_table(
+    spline_model: lb.PinholeSplined,
+    pinhole_model: lb.PinholeRemapped,
+    atol: float = 0.0005,
+) -> None:
+    """Verify that remap tables match spline.project(pinhole.normalize(pt)).
 
-    # Sample a grid of integer undistorted pixel coordinates
+    Samples a 50x50 grid of integer pixel positions in the undistorted image
+    and checks that the remap table entries agree with the model round-trip.
+
+    Args:
+        spline_model: The source distorted model.
+        pinhole_model: The undistorted pinhole model derived from it.
+        atol: Absolute tolerance in pixels.
+    """
     xs = np.linspace(0, pinhole_model.image_width - 1, 50, dtype=int)
     ys = np.linspace(0, pinhole_model.image_height - 1, 50, dtype=int)
     grid_x, grid_y = np.meshgrid(xs, ys)
@@ -138,7 +147,6 @@ def test_remap_table_consistency() -> None:
     rows = grid_y.ravel()
     undist_pts = np.column_stack([cols.astype(np.float64), rows.astype(np.float64)])
 
-    # What the remap tables say: direct lookup at integer pixel positions
     from_map = np.column_stack(
         [
             pinhole_model.map_x[rows, cols],
@@ -146,7 +154,6 @@ def test_remap_table_consistency() -> None:
         ]
     )
 
-    # What the models say: unproject through pinhole, project through spline
     bearings = pinhole_model.normalize_points(undist_pts)
     from_models = spline_model.project_points(bearings)
 
@@ -164,6 +171,18 @@ def test_remap_table_consistency() -> None:
     np.testing.assert_allclose(
         from_map,
         from_models,
-        atol=0.0005,
+        atol=atol,
         err_msg="Remap table does not match spline.project(pinhole.normalize(pt))",
     )
+
+
+def test_remap_tables() -> None:
+    """Remap tables are consistent with default get_pinhole_model()."""
+    spline_model = lb.PinholeSplined.load(DATA_DIR / "spline.json")
+    pinhole_model_default = spline_model.get_pinhole_model()
+    _check_remap_table(spline_model, pinhole_model_default)
+
+    pinhole_model_custom = spline_model.get_pinhole_model(
+        fx=500, fy=500, cx=1000, cy=500, image_size_wh=(2000, 1000)
+    )
+    _check_remap_table(spline_model, pinhole_model_custom)
