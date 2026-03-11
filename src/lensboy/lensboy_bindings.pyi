@@ -8,7 +8,7 @@ import numpy.typing
 import typing
 __all__: list[str] = ['PinholeSplinedConfig', 'PinholeSplinedIntrinsicsParameters', 'WarpCoordinates', 'add', 'calibrate_opencv', 'fine_tune_pinhole_splined', 'get_matching_spline_distortion_model', 'make_undistortion_maps_pinhole_splined', 'normalize_pinhole_splined_points', 'project_pinhole_splined_points', 'warp_target_points']
 class PinholeSplinedConfig:
-    def __init__(self, image_width: typing.SupportsInt, image_height: typing.SupportsInt, fov_deg_x: typing.SupportsFloat, fov_deg_y: typing.SupportsFloat, num_knots_x: typing.SupportsInt, num_knots_y: typing.SupportsInt) -> None:
+    def __init__(self, image_width: typing.SupportsInt | typing.SupportsIndex, image_height: typing.SupportsInt | typing.SupportsIndex, fov_deg_x: typing.SupportsFloat | typing.SupportsIndex, fov_deg_y: typing.SupportsFloat | typing.SupportsIndex, num_knots_x: typing.SupportsInt | typing.SupportsIndex, num_knots_y: typing.SupportsInt | typing.SupportsIndex) -> None:
         ...
     def __repr__(self) -> str:
         ...
@@ -16,37 +16,37 @@ class PinholeSplinedConfig:
     def fov_deg_x(self) -> float:
         ...
     @fov_deg_x.setter
-    def fov_deg_x(self, arg0: typing.SupportsFloat) -> None:
+    def fov_deg_x(self, arg0: typing.SupportsFloat | typing.SupportsIndex) -> None:
         ...
     @property
     def fov_deg_y(self) -> float:
         ...
     @fov_deg_y.setter
-    def fov_deg_y(self, arg0: typing.SupportsFloat) -> None:
+    def fov_deg_y(self, arg0: typing.SupportsFloat | typing.SupportsIndex) -> None:
         ...
     @property
     def image_height(self) -> int:
         ...
     @image_height.setter
-    def image_height(self, arg0: typing.SupportsInt) -> None:
+    def image_height(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
         ...
     @property
     def image_width(self) -> int:
         ...
     @image_width.setter
-    def image_width(self, arg0: typing.SupportsInt) -> None:
+    def image_width(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
         ...
     @property
     def num_knots_x(self) -> int:
         ...
     @num_knots_x.setter
-    def num_knots_x(self, arg0: typing.SupportsInt) -> None:
+    def num_knots_x(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
         ...
     @property
     def num_knots_y(self) -> int:
         ...
     @num_knots_y.setter
-    def num_knots_y(self, arg0: typing.SupportsInt) -> None:
+    def num_knots_y(self, arg0: typing.SupportsInt | typing.SupportsIndex) -> None:
         ...
 class PinholeSplinedIntrinsicsParameters:
     def __init__(self, pinhole_parameters: typing.Annotated[numpy.typing.ArrayLike, numpy.float64], dx_grid: typing.Annotated[numpy.typing.ArrayLike, numpy.float64], dy_grid: typing.Annotated[numpy.typing.ArrayLike, numpy.float64]) -> None:
@@ -72,7 +72,7 @@ class PinholeSplinedIntrinsicsParameters:
     def pinhole_parameters(self, arg0: typing.Annotated[numpy.typing.ArrayLike, numpy.float64]) -> None:
         ...
 class WarpCoordinates:
-    def __init__(self, target_from_warp_frame: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"], x_scale: typing.SupportsFloat, y_scale: typing.SupportsFloat) -> None:
+    def __init__(self, target_from_warp_frame: typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"], x_scale: typing.SupportsFloat | typing.SupportsIndex, y_scale: typing.SupportsFloat | typing.SupportsIndex) -> None:
         ...
     def __repr__(self) -> str:
         ...
@@ -86,25 +86,25 @@ class WarpCoordinates:
     def x_scale(self) -> float:
         ...
     @x_scale.setter
-    def x_scale(self, arg0: typing.SupportsFloat) -> None:
+    def x_scale(self, arg0: typing.SupportsFloat | typing.SupportsIndex) -> None:
         ...
     @property
     def y_scale(self) -> float:
         ...
     @y_scale.setter
-    def y_scale(self, arg0: typing.SupportsFloat) -> None:
+    def y_scale(self, arg0: typing.SupportsFloat | typing.SupportsIndex) -> None:
         ...
-def add(a: typing.SupportsInt, b: typing.SupportsInt) -> int:
+def add(a: typing.SupportsInt | typing.SupportsIndex, b: typing.SupportsInt | typing.SupportsIndex) -> int:
     """
     Add two integers together - test
     """
-def calibrate_opencv(intrinsics_initial_value: collections.abc.Sequence[typing.SupportsFloat], intrinsics_param_optimize_mask: collections.abc.Sequence[bool], cameras_from_target: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"]], target_points: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]], frames: collections.abc.Sequence[tuple[collections.abc.Sequence[typing.SupportsInt], collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]]]], warp_coordinates: WarpCoordinates | None = None, warp_coeffs_initial: typing.Annotated[collections.abc.Sequence[typing.SupportsFloat], "FixedSize(5)"] = [0.0, 0.0, 0.0, 0.0, 0.0]) -> dict:
+def calibrate_opencv(intrinsics_initial_value: collections.abc.Sequence[typing.SupportsFloat | typing.SupportsIndex], intrinsics_param_optimize_mask: collections.abc.Sequence[bool], cameras_from_target: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"]], target_points: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]], frames: collections.abc.Sequence[tuple[collections.abc.Sequence[typing.SupportsInt | typing.SupportsIndex], collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]]]], warp_coordinates: WarpCoordinates | None = None, warp_coeffs_initial: typing.Annotated[collections.abc.Sequence[typing.SupportsFloat | typing.SupportsIndex], "FixedSize(5)"] = [0.0, 0.0, 0.0, 0.0, 0.0]) -> dict:
     ...
-def fine_tune_pinhole_splined(model_config: PinholeSplinedConfig, intrinsics_parameters: PinholeSplinedIntrinsicsParameters, cameras_from_target: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"]], target_points: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]], frames: collections.abc.Sequence[tuple[collections.abc.Sequence[typing.SupportsInt], collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]]]], warp_coordinates: WarpCoordinates | None = None, warp_coeffs_initial: typing.Annotated[collections.abc.Sequence[typing.SupportsFloat], "FixedSize(5)"] = [0.0, 0.0, 0.0, 0.0, 0.0]) -> dict:
+def fine_tune_pinhole_splined(model_config: PinholeSplinedConfig, intrinsics_parameters: PinholeSplinedIntrinsicsParameters, cameras_from_target: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[6, 1]"]], target_points: collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[3, 1]"]], frames: collections.abc.Sequence[tuple[collections.abc.Sequence[typing.SupportsInt | typing.SupportsIndex], collections.abc.Sequence[typing.Annotated[numpy.typing.ArrayLike, numpy.float64, "[2, 1]"]]]], warp_coordinates: WarpCoordinates | None = None, warp_coeffs_initial: typing.Annotated[collections.abc.Sequence[typing.SupportsFloat | typing.SupportsIndex], "FixedSize(5)"] = [0.0, 0.0, 0.0, 0.0, 0.0]) -> dict:
     ...
-def get_matching_spline_distortion_model(opencv_distortion_params: collections.abc.Sequence[typing.SupportsFloat], model_config: PinholeSplinedConfig) -> dict:
+def get_matching_spline_distortion_model(opencv_distortion_params: collections.abc.Sequence[typing.SupportsFloat | typing.SupportsIndex], model_config: PinholeSplinedConfig) -> dict:
     ...
-def make_undistortion_maps_pinhole_splined(model_config: PinholeSplinedConfig, intrinsics: PinholeSplinedIntrinsicsParameters, pinhole_parameters: typing.Annotated[numpy.typing.ArrayLike, numpy.float64], image_size_wh: tuple[typing.SupportsInt, typing.SupportsInt]) -> tuple:
+def make_undistortion_maps_pinhole_splined(model_config: PinholeSplinedConfig, intrinsics: PinholeSplinedIntrinsicsParameters, pinhole_parameters: typing.Annotated[numpy.typing.ArrayLike, numpy.float64], image_size_wh: tuple[typing.SupportsInt | typing.SupportsIndex, typing.SupportsInt | typing.SupportsIndex]) -> tuple:
     ...
 def normalize_pinhole_splined_points(model_config: PinholeSplinedConfig, intrinsics: PinholeSplinedIntrinsicsParameters, pixel_coords: typing.Annotated[numpy.typing.ArrayLike, numpy.float64]) -> numpy.typing.NDArray[numpy.float64]:
     ...
