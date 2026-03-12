@@ -1,1 +1,1 @@
-<meta http-equiv="refresh" content="0; url=calibration-guide.html">
+<meta http-equiv="refresh" content="0; url=calibration_guide.html">

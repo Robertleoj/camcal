@@ -1833,14 +1833,15 @@ def plot_projection_diff(
     heatmap_max: float | None = None,
     diff_scale: float | None = None,
     grid_lines: int = 60,
+    show_grid: bool = False,
     return_figure: bool = False,
 ) -> Figure | None:
     """Compare two camera models by aligning them and plotting the residual.
 
     The two models are aligned by finding the rotation (and optionally
     translation) that best matches their viewing directions. The plot
-    shows a per-pixel difference heatmap and an exaggerated deformation
-    grid side by side.
+    shows a per-pixel difference heatmap and, optionally, an exaggerated
+    deformation grid side by side.
 
     Args:
         model_a: First camera model.
@@ -1855,6 +1856,8 @@ def plot_projection_diff(
             If None, chosen automatically.
         grid_lines: Approximate number of grid lines along the longer
             image axis.
+        show_grid: If True, show the exaggerated deformation grid panel
+            alongside the heatmap.
         return_figure: If True, return the figure instead of calling ``plt.show()``.
 
     Returns:
@@ -1886,12 +1889,19 @@ def plot_projection_diff(
 
     panel_w = 10
     aspect = h / w
-    fig, (ax_heat, ax_grid) = plt.subplots(
-        1, 2, figsize=(2 * panel_w, panel_w * aspect), constrained_layout=True
+    nrows = 2 if show_grid else 1
+    fig, axes = plt.subplots(
+        nrows, 1, figsize=(panel_w, nrows * panel_w * aspect), constrained_layout=True
     )
+    if nrows == 1:
+        ax_heat = axes
+        ax_grid = None
+    else:
+        ax_heat, ax_grid = axes
 
     fig.patch.set_facecolor(bg)
-    for ax in [ax_heat, ax_grid]:
+    all_axes = [ax_heat] if ax_grid is None else [ax_heat, ax_grid]
+    for ax in all_axes:
         ax.set_facecolor(bg)
         ax.tick_params(colors=fg)
         ax.xaxis.label.set_color(fg)
@@ -1950,148 +1960,155 @@ def plot_projection_diff(
     dist_str = "at infinity" if distance is None else f"at distance {distance}"
     ax_heat.set_title(f"Projection difference {dist_str}")
 
-    # --- Right panel: exaggerated deformation grid ---
-    # Subsample the dense grid for the deformation visual
-    pixels_a_2d = pixels_a.reshape(ny_dense, nx_dense, 2)
-    diff_2d = diff.reshape(ny_dense, nx_dense, 2)
-    diff_norm_2d = diff_norm.reshape(ny_dense, nx_dense)
+    # --- Bottom panel: exaggerated deformation grid ---
+    if ax_grid is not None:
+        # Subsample the dense grid for the deformation visual
+        pixels_a_2d = pixels_a.reshape(ny_dense, nx_dense, 2)
+        diff_2d = diff.reshape(ny_dense, nx_dense, 2)
+        diff_norm_2d = diff_norm.reshape(ny_dense, nx_dense)
 
-    row_stride = max(1, ny_dense // grid_lines)
-    col_stride = max(1, nx_dense // grid_lines)
-    pixels_a_sub = pixels_a_2d[::row_stride, ::col_stride]
-    diff_sub = diff_2d[::row_stride, ::col_stride]
-    diff_norm_sub = diff_norm_2d[::row_stride, ::col_stride]
-    gny, gnx = pixels_a_sub.shape[:2]
-    pixels_a_grid = pixels_a_sub.reshape(-1, 2)
-    diff_grid = diff_sub.reshape(-1, 2)
+        row_stride = max(1, ny_dense // grid_lines)
+        col_stride = max(1, nx_dense // grid_lines)
+        pixels_a_sub = pixels_a_2d[::row_stride, ::col_stride]
+        diff_sub = diff_2d[::row_stride, ::col_stride]
+        diff_norm_sub = diff_norm_2d[::row_stride, ::col_stride]
+        gny, gnx = pixels_a_sub.shape[:2]
+        pixels_a_grid = pixels_a_sub.reshape(-1, 2)
+        diff_grid = diff_sub.reshape(-1, 2)
 
-    # Compute exaggeration factor if not given
-    grid_diff_norms = diff_norm_sub.ravel()
-    if diff_scale is None:
-        # Use only points within heatmap_max
-        visible = grid_diff_norms[grid_diff_norms <= heatmap_max]
-        median_visible = float(np.median(visible)) if len(visible) > 0 else 1.0
-        target_displacement = min(w, h) / 40
-        raw_scale = target_displacement / median_visible
-        # Round to 1-2 significant digits
-        magnitude = 10 ** np.floor(np.log10(raw_scale))
-        diff_scale = float(round(raw_scale / magnitude) * magnitude)
+        # Compute exaggeration factor if not given
+        grid_diff_norms = diff_norm_sub.ravel()
+        if diff_scale is None:
+            # Use only points within heatmap_max
+            visible = grid_diff_norms[grid_diff_norms <= heatmap_max]
+            median_visible = float(np.median(visible)) if len(visible) > 0 else 1.0
+            target_displacement = min(w, h) / 40
+            raw_scale = target_displacement / median_visible
+            # Round to 1-2 significant digits
+            magnitude = 10 ** np.floor(np.log10(raw_scale))
+            diff_scale = float(round(raw_scale / magnitude) * magnitude)
 
-    # Exaggerate: start from A grid, add scaled diff
-    exaggerated = pixels_a_grid + diff_grid * diff_scale
+        # Exaggerate: start from A grid, add scaled diff
+        exaggerated = pixels_a_grid + diff_grid * diff_scale
 
-    # Reshape to (gny, gnx)
-    gx = exaggerated[:, 0].reshape(gny, gnx)
-    gy = exaggerated[:, 1].reshape(gny, gnx)
+        # Reshape to (gny, gnx)
+        gx = exaggerated[:, 0].reshape(gny, gnx)
+        gy = exaggerated[:, 1].reshape(gny, gnx)
 
-    grid_diff_norm = diff_norm_sub
+        grid_diff_norm = diff_norm_sub
 
-    # Source positions for diagonal-gradient coloring
-    src_ax = pixels_a_grid[:, 0].reshape(gny, gnx)
-    src_ay = pixels_a_grid[:, 1].reshape(gny, gnx)
+        # Source positions for diagonal-gradient coloring
+        src_ax = pixels_a_grid[:, 0].reshape(gny, gnx)
+        src_ay = pixels_a_grid[:, 1].reshape(gny, gnx)
 
-    cmap = plt.colormaps["jet"]
-    lw = 1.0
+        cmap = plt.colormaps["jet"]
+        lw = 1.0
 
-    def _add_masked_line(
-        xs: np.ndarray,
-        ys: np.ndarray,
-        sx: np.ndarray,
-        sy: np.ndarray,
-        norms: np.ndarray,
-    ) -> None:
-        pts = np.column_stack([xs, ys])
-        segs = np.stack([pts[:-1], pts[1:]], axis=1)
-        # Color by diagonal gradient
-        t = ((sx / max(w - 1, 1)) + (sy / max(h - 1, 1))) / 2.0
-        mid_t = (t[:-1] + t[1:]) / 2.0
-        colors = cmap(mid_t)
-        # Hide segments conservatively — cubic heatmap interpolation can
-        # overshoot ~30% above the raw sample values.
-        seg_norm = np.maximum(norms[:-1], norms[1:])
-        colors[seg_norm > heatmap_max * 0.7, 3] = 0.0
-        ax_grid.add_collection(LineCollection(segs, colors=colors, linewidths=lw))  # type: ignore
+        def _add_masked_line(
+            xs: np.ndarray,
+            ys: np.ndarray,
+            sx: np.ndarray,
+            sy: np.ndarray,
+            norms: np.ndarray,
+        ) -> None:
+            pts = np.column_stack([xs, ys])
+            segs = np.stack([pts[:-1], pts[1:]], axis=1)
+            # Color by diagonal gradient
+            t = ((sx / max(w - 1, 1)) + (sy / max(h - 1, 1))) / 2.0
+            mid_t = (t[:-1] + t[1:]) / 2.0
+            colors = cmap(mid_t)
+            # Hide segments conservatively — cubic heatmap interpolation can
+            # overshoot ~30% above the raw sample values.
+            seg_norm = np.maximum(norms[:-1], norms[1:])
+            colors[seg_norm > heatmap_max * 0.7, 3] = 0.0
+            ax_grid.add_collection(LineCollection(segs, colors=colors, linewidths=lw))  # type: ignore
 
-    # Horizontal grid lines (rows)
-    for row in range(gny):
-        _add_masked_line(gx[row], gy[row], src_ax[row], src_ay[row], grid_diff_norm[row])
+        # Horizontal grid lines (rows)
+        for row in range(gny):
+            _add_masked_line(
+                gx[row], gy[row], src_ax[row], src_ay[row], grid_diff_norm[row]
+            )
 
-    # Vertical grid lines (columns)
-    for col in range(gnx):
-        _add_masked_line(
-            gx[:, col],
-            gy[:, col],
-            src_ax[:, col],
-            src_ay[:, col],
-            grid_diff_norm[:, col],
-        )
+        # Vertical grid lines (columns)
+        for col in range(gnx):
+            _add_masked_line(
+                gx[:, col],
+                gy[:, col],
+                src_ax[:, col],
+                src_ay[:, col],
+                grid_diff_norm[:, col],
+            )
 
-    # Rectangle corner markers (indexed into the deformed grid)
-    mask_threshold = heatmap_max * 0.7
-    rect_step_idx = 4
-    corner_len_idx = 2
-    mid_row, mid_col = gny // 2, gnx // 2
-    n_rects = max(1, min(mid_row, mid_col) // rect_step_idx)
-    rect_lw = 2.5
-    rect_border_lw = rect_lw * 3
-    for i in range(1, n_rects + 1):
-        dr = i * rect_step_idx
-        dc = min(round(dr * (gnx / gny)), mid_col)
-        for row_idx, col_idx, sr, sc in [
-            (mid_row - dr, mid_col - dc, 1, 1),
-            (mid_row - dr, mid_col + dc, 1, -1),
-            (mid_row + dr, mid_col - dc, -1, 1),
-            (mid_row + dr, mid_col + dc, -1, -1),
-        ]:
-            if not (0 <= row_idx < gny and 0 <= col_idx < gnx):
-                continue
-            # Skip corners in masked regions
-            if grid_diff_norm[row_idx, col_idx] > mask_threshold:
-                continue
-            # Horizontal arm
-            end_col = col_idx + sc * corner_len_idx
-            end_col = max(0, min(end_col, gnx - 1))
-            h_cols = list(range(col_idx, end_col + sc, sc))
-            # Trim arm at masked points
-            h_cols = [c for c in h_cols if grid_diff_norm[row_idx, c] <= mask_threshold]
-            hx = [float(gx[row_idx, c]) for c in h_cols]
-            hy = [float(gy[row_idx, c]) for c in h_cols]
-            # Vertical arm
-            end_row = row_idx + sr * corner_len_idx
-            end_row = max(0, min(end_row, gny - 1))
-            v_rows = list(range(row_idx, end_row + sr, sr))
-            v_rows = [r for r in v_rows if grid_diff_norm[r, col_idx] <= mask_threshold]
-            vx = [float(gx[r, col_idx]) for r in v_rows]
-            vy = [float(gy[r, col_idx]) for r in v_rows]
-            for color, lw_r in [
-                ("black", rect_border_lw),
-                ("white", rect_lw),
+        # Rectangle corner markers (indexed into the deformed grid)
+        mask_threshold = heatmap_max * 0.7
+        rect_step_idx = 4
+        corner_len_idx = 2
+        mid_row, mid_col = gny // 2, gnx // 2
+        n_rects = max(1, min(mid_row, mid_col) // rect_step_idx)
+        rect_lw = 2.5
+        rect_border_lw = rect_lw * 3
+        for i in range(1, n_rects + 1):
+            dr = i * rect_step_idx
+            dc = min(round(dr * (gnx / gny)), mid_col)
+            for row_idx, col_idx, sr, sc in [
+                (mid_row - dr, mid_col - dc, 1, 1),
+                (mid_row - dr, mid_col + dc, 1, -1),
+                (mid_row + dr, mid_col - dc, -1, 1),
+                (mid_row + dr, mid_col + dc, -1, -1),
             ]:
-                if len(hx) >= 2:
-                    ax_grid.plot(
-                        hx,
-                        hy,
-                        color=color,
-                        linewidth=lw_r,
-                        solid_capstyle="butt",
-                        zorder=10,
-                    )
-                if len(vx) >= 2:
-                    ax_grid.plot(
-                        vx,
-                        vy,
-                        color=color,
-                        linewidth=lw_r,
-                        solid_capstyle="butt",
-                        zorder=10,
-                    )
+                if not (0 <= row_idx < gny and 0 <= col_idx < gnx):
+                    continue
+                # Skip corners in masked regions
+                if grid_diff_norm[row_idx, col_idx] > mask_threshold:
+                    continue
+                # Horizontal arm
+                end_col = col_idx + sc * corner_len_idx
+                end_col = max(0, min(end_col, gnx - 1))
+                h_cols = list(range(col_idx, end_col + sc, sc))
+                # Trim arm at masked points
+                h_cols = [
+                    c for c in h_cols if grid_diff_norm[row_idx, c] <= mask_threshold
+                ]
+                hx = [float(gx[row_idx, c]) for c in h_cols]
+                hy = [float(gy[row_idx, c]) for c in h_cols]
+                # Vertical arm
+                end_row = row_idx + sr * corner_len_idx
+                end_row = max(0, min(end_row, gny - 1))
+                v_rows = list(range(row_idx, end_row + sr, sr))
+                v_rows = [
+                    r for r in v_rows if grid_diff_norm[r, col_idx] <= mask_threshold
+                ]
+                vx = [float(gx[r, col_idx]) for r in v_rows]
+                vy = [float(gy[r, col_idx]) for r in v_rows]
+                for color, lw_r in [
+                    ("black", rect_border_lw),
+                    ("white", rect_lw),
+                ]:
+                    if len(hx) >= 2:
+                        ax_grid.plot(
+                            hx,
+                            hy,
+                            color=color,
+                            linewidth=lw_r,
+                            solid_capstyle="butt",
+                            zorder=10,
+                        )
+                    if len(vx) >= 2:
+                        ax_grid.plot(
+                            vx,
+                            vy,
+                            color=color,
+                            linewidth=lw_r,
+                            solid_capstyle="butt",
+                            zorder=10,
+                        )
 
-    ax_grid.set_xlim(0, w)
-    ax_grid.set_ylim(h, 0)
-    ax_grid.set_aspect("equal", adjustable="box")
-    ax_grid.set_xlabel("x [px]")
-    ax_grid.set_ylabel("y [px]")
-    ax_grid.set_title(f"Deformation grid ({diff_scale:.0f}x exaggerated)")
+        ax_grid.set_xlim(0, w)
+        ax_grid.set_ylim(h, 0)
+        ax_grid.set_aspect("equal", adjustable="box")
+        ax_grid.set_xlabel("x [px]")
+        ax_grid.set_ylabel("y [px]")
+        ax_grid.set_title(f"Deformation grid ({diff_scale:.0f}x exaggerated)")
 
     if return_figure:
         return fig

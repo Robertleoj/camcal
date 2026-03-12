@@ -410,11 +410,9 @@ lba.plot_projection_diff(result_a.camera_model, result_b.camera_model)
 
 <img src="media/calibration_docs/first_model_cross_validation.png" width="1000">
 
-The left side shows the magnitude of the projection difference between the models. This looks pretty reasonable! The models differ by less than 0.1 pixel in most of the image, so the model is not overfitting.
+The plot shows the magnitude of the projection difference between the models. This looks pretty reasonable! The models differ by less than 0.1 pixel in most of the image, so the model is not overfitting.
 
 > **Rule of thumb:** Be concerned if there are widespread differences of more than 2x the MAD $\sigma$ from the residual plot.
-
-The right side shows the pattern of the projection difference. In reality the differences are usually imperceptibly small, so they are exaggerated.
 
 One thing to look out for is the "fit circle". Its interior is the area of the image we use to find the difference between the implied camera frames of the models. This should only cover areas of the image where you expect good intrinsics. If it goes out of that area, this plot will not be realistic, and you need to adjust the `radius` argument.
 

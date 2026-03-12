@@ -53,7 +53,7 @@ result = lb.calibrate_camera(
 
 ## Getting started
 
-Read the **[calibration guide](https://robertleoj.github.io/lensboy/calibration-guide.html)** for a full walkthrough - calibrating a camera, verifying the results, and exporting for runtime use.
+Read the **[calibration guide](https://robertleoj.github.io/lensboy/calibration_guide.html)** for a full walkthrough - calibrating a camera, verifying the results, and exporting for runtime use.
 
 If you just want to see `lensboy` in action, see [quickstart notebook](examples/quickstart.ipynb).
 
