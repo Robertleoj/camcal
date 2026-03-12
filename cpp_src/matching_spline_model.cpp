@@ -221,13 +221,21 @@ py::dict get_matching_spline_distortion_model(
                     (static_cast<double>(model_config.num_knots_y) - 3.0) *
                     inv_y_span;
 
+            // Clamp to the interior range where the 4x4 support patch
+            // has unique knot indices. Outside this range, clamping would
+            // cause duplicate parameter block pointers which Ceres forbids.
             const double eps = 1e-12;
+            const double x_min = 1.0;
+            const double y_min = 1.0;
             const double x_max =
                 static_cast<double>(model_config.num_knots_x) - 2.0;
             const double y_max =
                 static_cast<double>(model_config.num_knots_y) - 2.0;
-            x_spline = std::min(std::max(x_spline, 1.0), x_max - eps);
-            y_spline = std::min(std::max(y_spline, 1.0), y_max - eps);
+
+            if (x_spline < x_min || x_spline > x_max - eps ||
+                y_spline < y_min || y_spline > y_max - eps) {
+                continue;
+            }
 
             const uint32_t ix = static_cast<uint32_t>(std::floor(x_spline));
             const uint32_t iy = static_cast<uint32_t>(std::floor(y_spline));

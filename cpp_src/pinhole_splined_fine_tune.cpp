@@ -76,6 +76,16 @@ struct SplineMap {
         iy = (int)gy;
     }
 
+    // Check whether the 4x4 support patch for cell (ix, iy) has all
+    // unique knot indices. Near edges, clamping causes duplicates which
+    // Ceres forbids in a single residual block.
+    inline bool has_unique_support(
+        int ix,
+        int iy
+    ) const {
+        return ix >= 1 && ix <= Nx - 3 && iy >= 1 && iy <= Ny - 3;
+    }
+
     inline void support_indices_4x4(
         int ix,
         int iy,
@@ -334,6 +344,12 @@ static inline void BuildProblem(
 
             int ix, iy;
             map.cell_index(cam6.data(), pw, ix, iy);
+
+            // Skip observations whose 4x4 support patch would have
+            // duplicate knot indices from boundary clamping.
+            if (!map.has_unique_support(ix, iy)) {
+                continue;
+            }
 
             std::array<int, 16> flat{};
             map.support_indices_4x4(ix, iy, flat);

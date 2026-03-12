@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -e
-shopt -s globstar
 
 cd "$(git rev-parse --show-toplevel)"
 
@@ -14,5 +13,5 @@ echo "=== pyright ==="
 pyright -p .
 
 echo "=== clang-format ==="
-clang-format-19 -i cpp_src/**/*.{cpp,hpp}
+find cpp_src -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-19 -i {} +
 
