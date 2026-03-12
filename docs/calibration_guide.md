@@ -17,7 +17,7 @@ This is a practical guide on how to calibrate a camera using `lensboy`. I'll wal
 
 Throughout the guide, I'll be calibrating this camera as an example:
 
-<img src="media/calibration_docs/setup/lucid_1.png" width="250"> <img src="media/calibration_docs/setup/lucid_2.png" width="250"> <img src="media/calibration_docs/setup/lucid_3.png" width="250">
+<img src="media/calibration_docs/setup/lucid_1.png" width="32%"> <img src="media/calibration_docs/setup/lucid_2.png" width="32%"> <img src="media/calibration_docs/setup/lucid_3.png" width="32%">
 
 In my use case, I mount two of these next to each other to perform close-range stereo vision that requires sub-millimeter accuracy. They will be placed on the end-effector of the masonry robots we make at [Monumental](https://www.monumental.co/), and are used to scan the bricks the robot places. It's a crucial part of the robot, and needs to be as precise and reliable as possible.
 
@@ -29,7 +29,7 @@ A camera is a sensor that captures a detailed projection of the 3D world onto a 
 
 Each camera is unique - the exact mapping depends on the physical properties of your specific lens and sensor assembly. All camera lenses introduce some level of nonlinear distortion, which must be modeled.
 
-<img src="media/calibration_docs/projection_diagram.png" width="800">
+<img src="media/calibration_docs/projection_diagram.png" width="100%">
 
 **Camera intrinsics calibration** is the process of finding the parameters of a mathematical function that describes this 3D-to-2D mapping. Once you have this function, you can:
 
@@ -47,13 +47,13 @@ Before you calibrate, your lens needs to be in its final mechanical state. Calib
 
 To focus my camera, I will point it at a high-contrast image, and position it at my working distance, a bit over 165mm. I will then use the variance of the Laplacian to measure how sharp my image is, and tune it to get the highest value.
 
-<img src="media/calibration_docs/setup/focus_board.png" width=400> <img src="media/calibration_docs/setup/focus_distance.png" width=400>
+<img src="media/calibration_docs/setup/focus_board.png" width="49%"> <img src="media/calibration_docs/setup/focus_distance.png" width="49%">
 
 **Lock everything down** - once the lens is tuned, make sure nothing can shift. Use set screws if your lens has them. For critical applications, apply a small amount of Loctite to all screw threads the lens has. Even a tiny rotation of the focus ring changes the calibration.
 
 My camera will be experiencing vibrations, and the end effector experiences the occasional impact, which will propagate to my camera. I need to be extra careful that my lens does not move under these conditions. I put Loctite on all the threads - including the focus thread. During calibration, I use a set screw to hold the focus in place, but the Loctite will dry and permanently lock the focus position. Between the set screw and the cured Loctite, the focus is absolutely locked down.
 
-<img src="media/calibration_docs/setup/set_screw.png" width="500">
+<img src="media/calibration_docs/setup/set_screw.png" width="60%">
 
 A lens that drifts after calibration will silently degrade your results. It can be hard to detect when the camera is out in the field, so prevention is your best option, and first line of defense. If there is any mechanical movement after calibration, you'll need to recalibrate the camera.
 
@@ -63,7 +63,7 @@ The calibration target is a physical object with known geometry that you image f
 
 **ChArUco boards** are a good default choice. A ChArUco board combines a checkerboard pattern with ArUco markers. The ArUco markers let each corner be uniquely identified even when the board is partially occluded, while the checkerboard corners provide sub-pixel accurate detections. `lensboy` wraps OpenCV's ChArUco board detection in a convenient utility function.
 
-<img src="media/calibration_docs/charuco_example.png" width="500">
+<img src="media/calibration_docs/charuco_example.png" width="60%">
 
 **Why checkerboard corners?** Checkerboard corners are where four squares meet, forming a saddle point in image intensity. This saddle-point geometry is very stable for sub-pixel detection - the corner location is well-defined regardless of lighting angle, slight blur, or exposure variation. Other targets (like grids of circles or dots) rely on detecting quad or blob edges, which are more sensitive to light bleed and threshold effects.
 
@@ -73,7 +73,7 @@ A great default is to buy a ChArUco target from [calib.io](https://calib.io/) (n
 
 I will be using a 600mm x 400mm ChArUco board from calib.io with a 9 x 14 grid for my camera.
 
-<img src="media/calibration_docs/setup/charuco.png" width="1000">
+<img src="media/calibration_docs/setup/charuco.png" width="100%">
 
 ## 4. Collecting Calibration Data
 
@@ -93,19 +93,19 @@ I recommend mounting your camera on a tripod, and move it around to capture your
 
 I've converged on a pretty simple pattern that I'll use again for my camera. I use 6 main positions for my camera and take 10 images in each, rotating the camera up and down. In the centered positions, I take 5 images where the board covers the left edge of the image, 5 where it covers the right edge. These are the positions:
 
-<img src="media/calibration_docs/setup/upper_left.png" width=400> <img src="media/calibration_docs/setup/upper_center.png" width=400>
+<img src="media/calibration_docs/setup/upper_left.png" width="49%"> <img src="media/calibration_docs/setup/upper_center.png" width="49%">
 
-<img src="media/calibration_docs/setup/upper_right.png" width=400><img src="media/calibration_docs/setup/bottom_left.png" width=400>
+<img src="media/calibration_docs/setup/upper_right.png" width="49%"> <img src="media/calibration_docs/setup/bottom_left.png" width="49%">
 
-<img src="media/calibration_docs/setup/bottom_center.png" width=400> <img src="media/calibration_docs/setup/bottom_right.png" width=400>
+<img src="media/calibration_docs/setup/bottom_center.png" width="49%"> <img src="media/calibration_docs/setup/bottom_right.png" width="49%">
 
 Here are some examples of the images from each position:
 
-<img src="media/calibration_docs/setup/top_left_img.jpg" width=400> <img src="media/calibration_docs/setup/top_img.jpg" width=400>
+<img src="media/calibration_docs/setup/top_left_img.jpg" width="49%"> <img src="media/calibration_docs/setup/top_img.jpg" width="49%">
 
-<img src="media/calibration_docs/setup/top_right_img.jpg" width=400><img src="media/calibration_docs/setup/bottom_left_img.jpg" width=400>
+<img src="media/calibration_docs/setup/top_right_img.jpg" width="49%"> <img src="media/calibration_docs/setup/bottom_left_img.jpg" width="49%">
 
-<img src="media/calibration_docs/setup/bottom_img.jpg" width=400> <img src="media/calibration_docs/setup/bottom_right_img.jpg" width=400>
+<img src="media/calibration_docs/setup/bottom_img.jpg" width="49%"> <img src="media/calibration_docs/setup/bottom_right_img.jpg" width="49%">
 
 These are all angled close-ups with varying angles, and I end up with good coverage. This has worked well for me for a while.
 
@@ -135,8 +135,8 @@ The board definition must match the physical target you used - same number of sq
 
 Here is a visualization of the detected corners on a couple of the images:
 
-<img src="media/calibration_docs/detection_1.png" width=1000>
-<img src="media/calibration_docs/detection_2.png" width=1000>
+<img src="media/calibration_docs/detection_1.png" width="100%">
+<img src="media/calibration_docs/detection_2.png" width="100%">
 
 Let's see how well I did in terms of coverage:
 
@@ -144,7 +144,7 @@ Let's see how well I did in terms of coverage:
 lba.plot_detection_coverage(frames, image_width=image_width, image_height=image_height)
 ```
 
-<img src="media/calibration_docs/coverage.png" width=1000>
+<img src="media/calibration_docs/coverage.png" width="100%">
 
 Looks like I did okay, though the density could be better on the right of the image.
 
@@ -226,7 +226,7 @@ Your first step after fitting an intrinsics model should almost always be to loo
 result.plot_residuals()
 ```
 
-<img src="media/calibration_docs/first_model_residuals.png" width="1000">
+<img src="media/calibration_docs/first_model_residuals.png" width="100%">
 
 This looks about as I'd expect. What you should look out for:
 
@@ -238,17 +238,17 @@ The gaussian MAD $\sigma$ is a robust estimate of the standard deviation of the 
 
 To show you an example of a plot where something is going wrong, here is a residual plot from where I attempted to calibrate a camera using april tags instead of a charuco board:
 
-<img src="media/calibration_docs/april_tags_residuals.png" width="1000">
+<img src="media/calibration_docs/april_tags_residuals.png" width="100%">
 
 Looking at this plot, you should see that the 2D distribution is not radially symmetric - it has these four "arms" reaching out. It turned out that this is because april tags are individual squares that are detected using quad detection:
 
-<img src="media/calibration_docs/april_tag.png" width="200">
+<img src="media/calibration_docs/april_tag.png" width="25%">
 
 However, different brightness levels can lead to it being detected slightly smaller or bigger, explaining the "arms" in the residual plot. This is a good reason you should opt for a checkerboard pattern instead of tags like this - they don't have this kind of variance.
 
 Here is another residual plot from where I took my pictures too close to the board at angles that were too sharp.
 
-<img src="media/calibration_docs/bad_detections_residuals.png" width="1000">
+<img src="media/calibration_docs/bad_detections_residuals.png" width="100%">
 
 The extreme distortion of the board in my images caused the detector to start failing, causing the dense mass of outliers. After fixing my image taking strategy, the plot looked normal.
 
@@ -260,7 +260,7 @@ Since `lensboy` detects and removes outliers, your _effective_ coverage might ha
 result.plot_inlier_coverage()
 ```
 
-<img src="media/calibration_docs/first_model_inlier_coverage.png" width="1000">
+<img src="media/calibration_docs/first_model_inlier_coverage.png" width="100%">
 
 Looks like the outlier filtering did not seriously affect my coverage. If you see that you now have patches with bad coverage after the outlier filtering, you should go back and take more pictures.
 
@@ -272,7 +272,7 @@ It's important to understand where your camera model struggles the most. The mos
 result.plot_per_image_rms()
 ```
 
-<img src="media/calibration_docs/first_model_per_frame_residuals.png" width="500">
+<img src="media/calibration_docs/first_model_per_frame_residuals.png" width="60%">
 
 Looks like there are some frames with more outliers than others. Let's inspect the top three frames with the highest error:
 
@@ -280,17 +280,17 @@ Looks like there are some frames with more outliers than others. Let's inspect t
 result.plot_worst_residual_frames(used_images, n=3)
 ```
 
-<img src="media/calibration_docs/first_model_worst_3_residuals.png" width="1000">
+<img src="media/calibration_docs/first_model_worst_3_residuals.png" width="100%">
 
 Looking at these images, I see that the largest residuals are caused by the ChArUco detector struggling under the extreme distortion. I won't worry about this now, as it happens relatively sparsely in my dataset, and most of the detector errors are filtered out as outliers.
 
 Here is the same distribution from the image set mentioned before, where I took my images too close at angles that were too sharp.
 
-<img src="media/calibration_docs/bad_detections_per_frame_residuals.png" width="500">
+<img src="media/calibration_docs/bad_detections_per_frame_residuals.png" width="60%">
 
 We clearly have a problem here. Too many images have really bad residuals that are filtered out as outliers. let's take a look at the top three worst frames on this plot:
 
-<img src="media/calibration_docs/bad_detections_worst_frame_residuals.png" width="1000">
+<img src="media/calibration_docs/bad_detections_worst_frame_residuals.png" width="100%">
 
 This is how I found the problem - the detector clearly is struggling in the extremely distorted parts of the board. I was taking my pictures in a way that made it too hard for the detector to detect the feature points reliably, so I had to change my image taking strategy.
 
@@ -315,7 +315,7 @@ Let's look at the residual grid for the model we fit earlier:
 result.plot_residual_grid(heatmap_max=1.0)
 ```
 
-<img src="media/calibration_docs/first_model_residual_grid.png" width="1000">
+<img src="media/calibration_docs/first_model_residual_grid.png" width="100%">
 
 This looks _reasonable_. However, I still see a bit too much growth in residual norm and directional bias on the right side. I'd want to see if I can do better.
 
@@ -329,7 +329,7 @@ Let's take a look at the estimated warp for the model we fit earlier:
 result.plot_target_warp()
 ```
 
-<img src="media/calibration_docs/first_model_target_warp.png" width="1000">
+<img src="media/calibration_docs/first_model_target_warp.png" width="100%">
 
 The warp estimation has a bowl shape that I see often for charuco boards. The spread is small (about 0.5mm), but still enough to matter. I haven't found any issues in my calibrations from looking at this plot, but I do find it interesting and informative. It would also be a red flag if the warp was estimated with an unreasonably large max deflection.
 
@@ -345,7 +345,7 @@ result_no_warp = lb.calibrate_camera(
 result_no_warp.plot_residuals()
 ```
 
-<img src="media/calibration_docs/first_model_no_warp_residuals.png" width="1000">
+<img src="media/calibration_docs/first_model_no_warp_residuals.png" width="100%">
 
 We have a higher MAD $\sigma$ - 0.18px vs the 0.13px we saw earlier. The smaller number of outliers is explained by the distribution being wider overall, causing a larger outlier threshold. We can also see more systematic issues in the residual grid:
 
@@ -353,7 +353,7 @@ We have a higher MAD $\sigma$ - 0.18px vs the 0.13px we saw earlier. The smaller
 result_no_warp.plot_residual_grid(heatmap_max=1.0)
 ```
 
-<img src="media/calibration_docs/first_model_no_warp_residual_grid.png" width="1000">
+<img src="media/calibration_docs/first_model_no_warp_residual_grid.png" width="100%">
 
 Most of the time, you should enable target warp estimation.
 
@@ -367,7 +367,7 @@ Let's look at this plot for our camera model:
 result.plot_distortion_grid(fov_fraction=0.7)
 ```
 
-<img src="media/calibration_docs/first_model_distortion_grid.png" width="1000">
+<img src="media/calibration_docs/first_model_distortion_grid.png" width="100%">
 
 The left side shows a grid at the $z=1$ plane in camera frame, and the right shows how that grid is transformed into image space. We can clearly see that my wide-angle lens introduces a large amount of distortion.
 
@@ -408,7 +408,7 @@ Now that we have the two models, let's compare them:
 lba.plot_projection_diff(result_a.camera_model, result_b.camera_model)
 ```
 
-<img src="media/calibration_docs/first_model_cross_validation.png" width="1000">
+<img src="media/calibration_docs/first_model_cross_validation.png" width="100%">
 
 The plot shows the magnitude of the projection difference between the models. This looks pretty reasonable! The models differ by less than 0.1 pixel in most of the image, so the model is not overfitting.
 
@@ -448,7 +448,7 @@ Let's take a look at the residuals:
 result.plot_residuals()
 ```
 
-<img src="media/calibration_docs/spline_30x20_residuals.png" width="1000">
+<img src="media/calibration_docs/spline_30x20_residuals.png" width="100%">
 
 The fit is tighter, the MAD sigma going from 0.13px to 0.09px. There are a bit more outliers, owing to the tighter distribution. Let's take a look at the residual grid:
 
@@ -456,7 +456,7 @@ The fit is tighter, the MAD sigma going from 0.13px to 0.09px. There are a bit m
 result.plot_residual_grid(heatmap_max=1.0)
 ```
 
-<img src="media/calibration_docs/spline_30x20_residual_grid.png" width="1000">
+<img src="media/calibration_docs/spline_30x20_residual_grid.png" width="100%">
 
 This looks much better than our previous model. There is less directional bias and there is less pattern in the residual magnitudes. Specifically, we've reduced the amount of error in the right side of the image.
 
@@ -466,7 +466,7 @@ Let's take a look at what this spline model's projection function looks like. I'
 result.plot_distortion_grid(fov_fraction=0.7, show_spline_knots=True)
 ```
 
-<img src="media/calibration_docs/spline_30x20_distortion_grid.png" width="1000">
+<img src="media/calibration_docs/spline_30x20_distortion_grid.png" width="100%">
 
 The distortion looks very similar to our previous model. One thing to note is that the spline-based models can look a bit strange where they are underconstrained, such as in the top right corner for our model. This is nothing to worry about unless you require good intrinsics in those areas. In those cases, you need to constrain the distortion model with more data in those areas.
 
@@ -478,7 +478,7 @@ result_b = lb.calibrate_camera(target_points, frames[1::2], config)
 lba.plot_projection_diff(result_a.camera_model, result_b.camera_model)
 ```
 
-<img src="media/calibration_docs/spline_30x20_cross_validation.png" width="1000">
+<img src="media/calibration_docs/spline_30x20_cross_validation.png" width="100%">
 
 Interesting - the differences are a bit larger than what we saw for the previous model. It indicates that we might be approaching overfitting. However, I'll follow my rule of thumb - most of the difference in the image is smaller than ~0.2px, so I would happily use this model.
 
@@ -546,7 +546,7 @@ The `fx` and `fy` parameters control the focal length of the output pinhole mode
 lba.plot_undistortion(pinhole_model, image=used_images[0])
 ```
 
-<img src="media/calibration_docs/undistortion_default.png" width="800">
+<img src="media/calibration_docs/undistortion_default.png" width="100%">
 
 With these values, we throw away the edges of the distorted image in order to keep all of the information in the interior.
 
@@ -557,7 +557,7 @@ pinhole_model_wide = spline_model.get_pinhole_model_alpha(1.0)
 lba.plot_undistortion(pinhole_model_wide, image=used_images[0])
 ```
 
-<img src="media/calibration_docs/undistortion_all.png" width="800">
+<img src="media/calibration_docs/undistortion_all.png" width="100%">
 
 Notice how the center of the distorted image is dramatically compressed in the undistorted image.
 
