@@ -1,0 +1,28 @@
+site_name: lensboy
+site_description: A practical guide to camera calibration with lensboy
+site_url: https://robertleoj.github.io/camcal/
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: deep purple
+    accent: amber
+  features:
+    - content.code.copy
+    - navigation.sections
+
+markdown_extensions:
+  - attr_list
+  - md_in_html
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - Calibration Guide: calibration-guide.md

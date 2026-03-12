@@ -567,4 +567,4 @@ Notice how the center of the distorted image is dramatically compressed in the u
 
 Intrinsics can make or break a vision application. Bad intrinsics cause subtle, systematic errors that propagate through everything downstream - localization, stereo, measurements - and they are notoriously hard to trace back to the calibration. You can spend days debugging a system only to find that the root cause was a slightly off calibration. It is just easier to work when you can trust your intrinsics, so it's worth getting them right.
 
-To see concrete code examples, see the [example notebooks](../examples/)
+To see concrete code examples, see the [example notebooks](https://github.com/Robertleoj/camcal/tree/main/examples/)
