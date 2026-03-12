@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://pypi.org/project/lensboy/"><img alt="PyPI" src="https://img.shields.io/pypi/v/lensboy"></a>
   <a href="https://pypi.org/project/lensboy/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/lensboy"></a>
-  <a href="https://github.com/Robertleoj/camcal/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Robertleoj/camcal"></a>
+  <a href="https://github.com/Robertleoj/lensboy/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Robertleoj/lensboy"></a>
 </p>
 
 Camera calibration for vision engineers. Maximally powerful, minimally complex.
@@ -53,7 +53,7 @@ result = lb.calibrate_camera(
 
 ## Getting started
 
-Read the **[calibration guide](https://robertleoj.github.io/camcal/calibration-guide/)** for a full walkthrough - calibrating a camera, verifying the results, and exporting for runtime use.
+Read the **[calibration guide](https://robertleoj.github.io/lensboy/calibration-guide/)** for a full walkthrough - calibrating a camera, verifying the results, and exporting for runtime use.
 
 If you just want to see `lensboy` in action, see [quickstart notebook](examples/quickstart.ipynb).
 

@@ -1,6 +1,6 @@
 site_name: lensboy
 site_description: A practical guide to camera calibration with lensboy
-site_url: https://robertleoj.github.io/camcal/
+site_url: https://robertleoj.github.io/lensboy/
 
 theme:
   name: material
