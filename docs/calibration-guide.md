@@ -73,7 +73,7 @@ A great default is to buy a ChArUco target from [calib.io](https://calib.io/) (n
 
 I will be using a 600mm x 400mm ChArUco board from calib.io with a 9 x 14 grid for my camera.
 
-<img src="../media/calibration_docs/setup/charuco.png" width="500">
+<img src="../media/calibration_docs/setup/charuco.png" width="1000">
 
 ## 4. Collecting Calibration Data
 
@@ -280,7 +280,7 @@ Looks like there are some frames with more outliers than others. Let's inspect t
 result.plot_worst_residual_frames(used_images, n=3)
 ```
 
-<img src="../media/calibration_docs/first_model_worst_3_residuals.png" width="500">
+<img src="../media/calibration_docs/first_model_worst_3_residuals.png" width="1000">
 
 Looking at these images, I see that the largest residuals are caused by the ChArUco detector struggling under the extreme distortion. I won't worry about this now, as it happens relatively sparsely in my dataset, and most of the detector errors are filtered out as outliers.
 
@@ -290,7 +290,7 @@ Here is the same distribution from the image set mentioned before, where I took 
 
 We clearly have a problem here. Too many images have really bad residuals that are filtered out as outliers. let's take a look at the top three worst frames on this plot:
 
-<img src="../media/calibration_docs/bad_detections_worst_frame_residuals.png" width="500">
+<img src="../media/calibration_docs/bad_detections_worst_frame_residuals.png" width="1000">
 
 This is how I found the problem - the detector clearly is struggling in the extremely distorted parts of the board. I was taking my pictures in a way that made it too hard for the detector to detect the feature points reliably, so I had to change my image taking strategy.
 
