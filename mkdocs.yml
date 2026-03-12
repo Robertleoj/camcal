@@ -1,6 +1,10 @@
 site_name: lensboy
 site_description: A practical guide to camera calibration with lensboy
 site_url: https://robertleoj.github.io/lensboy/
+repo_url: https://github.com/Robertleoj/lensboy
+repo_name: Robertleoj/lensboy
+
+use_directory_urls: false
 
 theme:
   name: material
