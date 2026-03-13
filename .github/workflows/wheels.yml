@@ -27,7 +27,7 @@ jobs:
 
       - name: Pre-download virtualenv (avoid GitHub rate limits)
         run: |
-          VENV_VERSION=20.26.6
+          VENV_VERSION=20.27.1
           if [ "$RUNNER_OS" = "macOS" ]; then
             CACHE_DIR="$HOME/Library/Caches/cibuildwheel"
           else
