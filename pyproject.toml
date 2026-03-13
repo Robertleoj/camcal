@@ -5,7 +5,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "lensboy"
-version = "2.1.4"
+version = "2.1.5"
 description = "lensboy for camera calibrations"
 authors = [{ name = "Robert Leo", email = "robert.leo.jonsson@gmail.com" }]
 
@@ -32,7 +32,6 @@ build-dir = "build"
 
 [tool.cibuildwheel]
 skip = ["*musllinux*", "*win*", "*i686"]
-dependency-versions = "pinned"
 
 [tool.cibuildwheel.linux]
 manylinux-x86_64-image = "manylinux_2_28"
