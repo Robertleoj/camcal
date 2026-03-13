@@ -27,7 +27,7 @@ jobs:
 
       - name: Pre-download virtualenv (avoid GitHub rate limits)
         run: |
-          VENV_VERSION=20.27.1
+          VENV_VERSION=21.1.0
           if [ "$RUNNER_OS" = "macOS" ]; then
             CACHE_DIR="$HOME/Library/Caches/cibuildwheel"
           else
@@ -38,7 +38,7 @@ jobs:
             "https://github.com/pypa/get-virtualenv/blob/${VENV_VERSION}/public/virtualenv.pyz?raw=true"
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.22
+        uses: pypa/cibuildwheel@v3.4.0
         env:
           CIBW_ENABLE: cpython-prerelease
 
