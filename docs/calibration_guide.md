@@ -1,6 +1,7 @@
 # A Practical Guide to Camera Calibration
 
 In this guide, I'll walk through all the steps to get a quality camera calibration, using a real-world example. By the end you'll know how to collect good calibration data, pick the right model for your lens, and, most importantly, end up with a calibration that you know you can trust.
+
 ## Table of Contents
 
 1. [What is Camera Calibration?](#1-what-is-camera-calibration)
@@ -170,7 +171,6 @@ For my first experiment, I'll use the 6 radial parameters $k_1,\ldots,k_6$, the 
 config = lb.OpenCVConfig(
     image_height=image_height,
     image_width=image_width,
-    initial_focal_length=1000,
     included_distortion_coefficients=(
         lb.OpenCVConfig.RADIAL_6
         | lb.OpenCVConfig.TANGENTIAL
@@ -180,8 +180,6 @@ config = lb.OpenCVConfig(
 
 result = lb.calibrate_camera(target_points, frames, config)
 ```
-
-For `initial_focal_length`, a rough estimate is fine - the optimizer will refine it. If you know your sensor width and lens focal length in mm, you can compute it as `focal_length_mm * image_width / sensor_width_mm`.
 
 The logs of the solver were
 
@@ -435,7 +433,6 @@ I usually start with a 30x20 grid and then adjust the density based on the resid
 config = lb.PinholeSplinedConfig(
     image_height=image_height,
     image_width=image_width,
-    initial_focal_length=1000,
     num_knots_x=30,
     num_knots_y=20,
 )
