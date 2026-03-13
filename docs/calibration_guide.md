@@ -1,7 +1,6 @@
 # A Practical Guide to Camera Calibration
 
-This is a practical guide on how to calibrate a camera using `lensboy`. I'll walk through all the steps you need to get a quality calibration.
-
+In this guide, I'll walk through all the steps to get a quality camera calibration, using a real-world example. By the end you'll know how to collect good calibration data, pick the right model for your lens, and, most importantly, end up with a calibration that you know you can trust.
 ## Table of Contents
 
 1. [What is Camera Calibration?](#1-what-is-camera-calibration)
