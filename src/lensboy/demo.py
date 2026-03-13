@@ -8,10 +8,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from lensboy._logging import progress
 from lensboy.calibration.calibrate import TargetWarp, WarpCoordinates
 from lensboy.camera_models.opencv import OpenCV
 from lensboy.geometry.pose import Pose
-from lensboy._logging import progress
 
 _DATA_PATH = Path(__file__).parent / "_demo_calibration.json"
 
@@ -52,9 +52,7 @@ def _fill_triangle(
 
     pts_dst = np.stack([xx + x0, yy + y0], axis=1).astype(np.float32)
 
-    A = cv2.getAffineTransform(
-        dst_tri.astype(np.float32), src_tri.astype(np.float32)
-    )
+    A = cv2.getAffineTransform(dst_tri.astype(np.float32), src_tri.astype(np.float32))
     pts_src = cv2.transform(pts_dst[None, :, :], A)[0]
 
     map_x[yy + y0, xx + x0] = pts_src[:, 0]
@@ -168,9 +166,7 @@ def make_synthetic_images() -> list[np.ndarray]:
     xs = np.linspace(-margin, board_width + margin, n_cols)
     ys = np.linspace(-margin, board_height + margin, n_rows)
     gx, gy = np.meshgrid(xs, ys)
-    grid_flat = np.column_stack(
-        [gx.ravel(), gy.ravel(), np.zeros(n_rows * n_cols)]
-    )
+    grid_flat = np.column_stack([gx.ravel(), gy.ravel(), np.zeros(n_rows * n_cols)])
 
     if "target_warp" in data:
         warp = _deserialize_warp(data["target_warp"])
@@ -197,9 +193,7 @@ def make_synthetic_images() -> list[np.ndarray]:
         pixels = model.project_points(points_in_cam)
         dst_grid = pixels.reshape(n_rows, n_cols, 2).astype(np.float32)
 
-        img = _warp_grid_piecewise_linear(
-            texture, src_grid, dst_grid, (img_h, img_w)
-        )
+        img = _warp_grid_piecewise_linear(texture, src_grid, dst_grid, (img_h, img_w))
         images.append(img)
 
     return images

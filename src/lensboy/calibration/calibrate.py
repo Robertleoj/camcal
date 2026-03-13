@@ -1001,9 +1001,9 @@ def _solve_pnp_all_frames(
                 poses.append(
                     Pose.from_rotvec_trans(rotvec=rvec.flatten(), trans=tvec.flatten())
                 )
-                projected = cv2.projectPoints(
-                    obj_pts, rvec, tvec, K, dist_coeffs
-                )[0].reshape(-1, 2)
+                projected = cv2.projectPoints(obj_pts, rvec, tvec, K, dist_coeffs)[
+                    0
+                ].reshape(-1, 2)
                 total_squared_error += float(np.sum((projected - img_pts) ** 2))
                 total_points += len(obj_pts)
                 continue

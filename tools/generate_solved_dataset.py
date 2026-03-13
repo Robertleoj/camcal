@@ -45,9 +45,7 @@ def main():
         30,
         cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_100),
     )
-    target_points, frames, _image_indices = lb.extract_frames_from_charuco(
-        board, imgs
-    )
+    target_points, frames, _image_indices = lb.extract_frames_from_charuco(board, imgs)
 
     img_h, img_w = imgs[0].shape[:2]
     config = lb.OpenCVConfig(
@@ -55,9 +53,7 @@ def main():
         image_width=img_w,
         included_distortion_coefficients=lb.OpenCVConfig.FULL_14,
     )
-    result = lb.calibrate_camera(
-        target_points, frames, camera_model_config=config
-    )
+    result = lb.calibrate_camera(target_points, frames, camera_model_config=config)
 
     calibration: dict = {
         "board": {

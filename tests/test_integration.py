@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-import pytest
 import numpy as np
+import pytest
 
 import lensboy as lb
 
@@ -195,9 +195,7 @@ def _check_frame_projections(
 # ---------------------------------------------------------------------------
 
 
-def _make_planar_grid(
-    cols: int = 12, rows: int = 9, spacing: float = 30.0
-) -> np.ndarray:
+def _make_planar_grid(cols: int = 12, rows: int = 9, spacing: float = 30.0) -> np.ndarray:
     """Create a planar calibration grid centred at the origin.
 
     Returns:
@@ -326,9 +324,24 @@ _SYNTHETIC_MODELS = [
             fy=1350.0,
             cx=1544.0,
             cy=1032.0,
-            distortion_coeffs=np.array([1.5, 0.4, -0.0001, 0.0, 0.008,
-                                        1.8, 0.78, 0.06, 0.0, 0.0,
-                                        0.0002, 0.0, 0.0005, -0.0003]),
+            distortion_coeffs=np.array(
+                [
+                    1.5,
+                    0.4,
+                    -0.0001,
+                    0.0,
+                    0.008,
+                    1.8,
+                    0.78,
+                    0.06,
+                    0.0,
+                    0.0,
+                    0.0002,
+                    0.0,
+                    0.0005,
+                    -0.0003,
+                ]
+            ),
         ),
         id="full14_distortion_3088x2064_f1350",
     ),
