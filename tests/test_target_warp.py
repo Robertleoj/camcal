@@ -103,7 +103,6 @@ def test_warp_recovery_opencv() -> None:
     config = lb.OpenCVConfig(
         image_height=model.image_height,
         image_width=model.image_width,
-        initial_focal_length=float(model.fx),
         included_distortion_coefficients=lb.OpenCVConfig.FULL_14,
     )
     result = lb.calibrate_camera(

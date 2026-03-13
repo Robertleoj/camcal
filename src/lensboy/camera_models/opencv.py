@@ -29,7 +29,8 @@ class OpenCVConfig(CameraModelConfig):
     Attributes:
         image_height: Image height in pixels.
         image_width: Image width in pixels.
-        initial_focal_length: Initial focal length guess in pixels.
+        initial_focal_length: Initial focal length guess in pixels, or None to
+            estimate automatically from the calibration data.
         included_distortion_coefficients: Boolean mask selecting which of the 14
             OpenCV distortion coefficients to optimise, shape (14,).
     """
@@ -37,7 +38,7 @@ class OpenCVConfig(CameraModelConfig):
     image_height: int
     image_width: int
 
-    initial_focal_length: float
+    initial_focal_length: float | None = None
     included_distortion_coefficients: np.ndarray = field(
         default_factory=lambda: OpenCVConfig.STANDARD
     )
@@ -72,7 +73,15 @@ class OpenCVConfig(CameraModelConfig):
         return mask
 
     def get_initial_value(self) -> OpenCV:
-        """Construct the initial OpenCV model from this config."""
+        """Construct the initial OpenCV model from this config.
+
+        Raises:
+            ValueError: If initial_focal_length is None.
+        """
+        if self.initial_focal_length is None:
+            raise ValueError(
+                "initial_focal_length must be set before calling get_initial_value()"
+            )
         return OpenCV(
             image_height=self.image_height,
             image_width=self.image_width,

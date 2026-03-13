@@ -19,18 +19,19 @@ class PinholeSplinedConfig(CameraModelConfig):
     Attributes:
         image_height: Image height in pixels.
         image_width: Image width in pixels.
-        initial_focal_length: Initial focal length guess in pixels.
         num_knots_x: Number of spline knots along the x axis.
         num_knots_y: Number of spline knots along the y axis.
+        initial_focal_length: Initial focal length guess in pixels, or None to
+            estimate automatically from the calibration data.
     """
 
     image_height: int
     image_width: int
 
-    initial_focal_length: float
-
     num_knots_x: int
     num_knots_y: int
+
+    initial_focal_length: float | None = None
 
 
 @dataclass

@@ -967,15 +967,30 @@ def _run_with_outlier_filtering(
     return state
 
 
-def _initialize_poses_with_pnp(
-    initial_intrinsics: OpenCV,
+def _solve_pnp_all_frames(
+    K: np.ndarray,
     target_points: np.ndarray,
     frames: list[Frame],
-) -> list[Pose]:
-    K = initial_intrinsics.K()
-    dist_coeffs = np.zeros(5, dtype=np.float64)
+) -> tuple[list[Pose], float]:
+    """Run solvePnP for all frames and return poses with mean reprojection error.
 
+    Each failed frame is penalised as 10x the average error of successful frames.
+    If all frames fail, the returned error is inf.
+
+    Args:
+        K: Camera intrinsics matrix, shape (3, 3).
+        target_points: Calibration target 3D points, shape (N, 3).
+        frames: Detected calibration frames.
+
+    Returns:
+        Tuple of (poses, penalised mean squared error per point).
+    """
+    dist_coeffs = np.zeros(5, dtype=np.float64)
     poses = []
+    total_squared_error = 0.0
+    total_points = 0
+    num_failed = 0
+
     for frame in frames:
         obj_pts = target_points[frame.target_point_indices].astype(np.float64)
         img_pts = frame.detected_points_in_image.astype(np.float64)
@@ -986,12 +1001,79 @@ def _initialize_poses_with_pnp(
                 poses.append(
                     Pose.from_rotvec_trans(rotvec=rvec.flatten(), trans=tvec.flatten())
                 )
+                projected = cv2.projectPoints(
+                    obj_pts, rvec, tvec, K, dist_coeffs
+                )[0].reshape(-1, 2)
+                total_squared_error += float(np.sum((projected - img_pts) ** 2))
+                total_points += len(obj_pts)
                 continue
 
         warn("PnP init failed for frame, using fallback pose")
         poses.append(Pose.from_tz(100))
+        num_failed += 1
 
-    return poses
+    if total_points == 0:
+        return poses, float("inf")
+
+    mean_error = total_squared_error / total_points
+    penalty = 10.0 * mean_error * num_failed
+    return poses, mean_error + penalty
+
+
+def _get_initial_state_with_pnp(
+    config: OpenCVConfig,
+    target_points: np.ndarray,
+    frames: list[Frame],
+) -> tuple[OpenCV, list[Pose]]:
+    """Estimate initial intrinsics and poses using PnP.
+
+    If ``config.initial_focal_length`` is set, uses that value directly.
+    Otherwise, sweeps log-spaced candidate focal lengths and picks the one
+    with the lowest total reprojection error.
+
+    Args:
+        config: Camera model configuration.
+        target_points: Calibration target 3D points, shape (N, 3).
+        frames: Detected calibration frames.
+
+    Returns:
+        Tuple of (initial intrinsics, initial poses).
+    """
+    cx = config.image_width / 2.0
+    cy = config.image_height / 2.0
+
+    if config.initial_focal_length is not None:
+        intrinsics = config.get_initial_value()
+        poses, _ = _solve_pnp_all_frames(intrinsics.K(), target_points, frames)
+        return intrinsics, poses
+
+    max_dim = max(config.image_width, config.image_height)
+    candidates = np.geomspace(0.2 * max_dim, 5.0 * max_dim, num=30)
+
+    best_focal = float(candidates[0])
+    best_error = float("inf")
+    best_poses: list[Pose] = []
+
+    for f in candidates:
+        K = np.array([[f, 0, cx], [0, f, cy], [0, 0, 1]])
+        poses, error = _solve_pnp_all_frames(K, target_points, frames)
+        if error < best_error:
+            best_error = error
+            best_focal = float(f)
+            best_poses = poses
+
+    log(f"Auto-estimated initial focal length: {best_focal:.1f} px")
+
+    intrinsics = OpenCV(
+        image_height=config.image_height,
+        image_width=config.image_width,
+        fx=best_focal,
+        fy=best_focal,
+        cx=cx,
+        cy=cy,
+        distortion_coeffs=np.zeros(14, dtype=np.float64),
+    )
+    return intrinsics, best_poses
 
 
 _PLANARITY_RATIO_THRESHOLD = 0.1
@@ -1075,10 +1157,9 @@ def _opencv_calibrate(
     assert np.issubdtype(target_points.dtype, np.floating), (
         f"Expected floating dtype for target_points, got {target_points.dtype}"
     )
-    initial_intrinsics = config.get_initial_value()
     log("Computing initial poses with PnP...")
-    initial_cameras_from_target = _initialize_poses_with_pnp(
-        initial_intrinsics, target_points, frames
+    initial_intrinsics, initial_cameras_from_target = _get_initial_state_with_pnp(
+        config, target_points, frames
     )
 
     warp_coordinates = None
