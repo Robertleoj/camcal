@@ -51,11 +51,13 @@ To focus my camera, I will point it at a high-contrast image, and position it at
 
 **Lock everything down** - once the lens is tuned, make sure nothing can shift. Use set screws if your lens has them. For critical applications, apply a small amount of Loctite to all screw threads the lens has. Even a tiny rotation of the focus ring changes the calibration.
 
-My camera will be experiencing vibrations, and the end effector experiences the occasional impact, which will propagate to my camera. I need to be extra careful that my lens does not move under these conditions. I put Loctite on all the threads - including the focus thread. During calibration, I use a set screw to hold the focus in place, but the Loctite will dry and permanently lock the focus position. Between the set screw and the cured Loctite, the focus is absolutely locked down.
+> **Important:** Let the loctite cure before calibrating! Otherwise your lens can easily shift slightly after calibration.
+
+My camera will be experiencing vibrations, and the end effector experiences the occasional impact, which will propagate to my camera. I need to be extra careful that my lens does not move under these conditions.
+
+I put Loctite on all the threads, including the focus thread. I then focus the camera, and use a set screw to hold the focus in place. Then I let the loctite cure, completely locking down the lens, including the focus. I learned the hard way that I **will** experience intrinsics drift if I don't take every one of these precautions.
 
 <img src="media/calibration_docs/setup/set_screw.png" width="60%">
-
-A lens that drifts after calibration will silently degrade your results. It can be hard to detect when the camera is out in the field, so prevention is your best option, and first line of defense. If there is any mechanical movement after calibration, you'll need to recalibrate the camera.
 
 ## 3. Choosing a Calibration Target
 
