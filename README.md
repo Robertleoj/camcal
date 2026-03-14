@@ -33,7 +33,7 @@ target_points, frames, image_indices = lb.extract_frames_from_charuco(board, img
 result = lb.calibrate_camera(
     target_points, frames,
     camera_model_config=lb.OpenCVConfig(
-        image_height=h, image_width=w, initial_focal_length=1000,
+        image_height=h, image_width=w,
     ),
 )
 
@@ -46,7 +46,7 @@ Swap the config for a spline model — same API, more flexible:
 result = lb.calibrate_camera(
     target_points, frames,
     camera_model_config=lb.PinholeSplinedConfig(
-        image_height=h, image_width=w, initial_focal_length=1000,
+        image_height=h, image_width=w,
     ),
 )
 ```

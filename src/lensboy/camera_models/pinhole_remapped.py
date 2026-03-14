@@ -16,8 +16,7 @@ class PinholeRemapped(CameraModel):
 
     Stores precomputed remap tables (map_x, map_y) that map each output pixel
     back to its location in the original distorted image. Use undistort() to
-    remap images and project_points_undistorted() to project into the
-    undistorted image.
+    remap images and project_points() to project into the undistorted image.
 
     Attributes:
         image_width: Output (undistorted) image width in pixels.

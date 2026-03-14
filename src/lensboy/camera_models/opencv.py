@@ -104,8 +104,8 @@ class OpenCV(CameraModel):
         fy: Focal length along y in pixels.
         cx: Principal point x in pixels.
         cy: Principal point y in pixels.
-        distortion_coeffs: OpenCV distortion vector, shape (N,) with N <= 14.
-            Padded with zeros to length 14 if shorter.
+        distortion_coeffs: OpenCV distortion vector, shape (14,).
+            Inputs shorter than 14 are zero-padded on construction.
     """
 
     image_width: int

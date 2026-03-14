@@ -86,13 +86,8 @@ class FrameDiagnostics:
         inlier_mask: Boolean mask indicating inlier points, shape (N,).
     """
 
-    # N x 2
     projected_points: np.ndarray
-
-    # N x 2
     residuals: np.ndarray
-
-    # N
     inlier_mask: np.ndarray
 
     def __repr__(self) -> str:
@@ -122,8 +117,8 @@ class WarpCoordinates:
     """Maps target points into a planar frame scaled to [-1, 1] for warp estimation.
 
     Attributes:
-        target_from_warp_frame: The target should be coplanar with the xy plane
-            of this frame.
+        target_from_warp_frame: Pose placing the warp frame in target coordinates.
+            The target must be coplanar with its xy plane.
         x_scale: Half-extent of the target along the warp x-axis, in target units.
         y_scale: Half-extent of the target along the warp y-axis, in target units.
     """
@@ -267,11 +262,7 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         return 1.4826 * mad
 
     def num_outliers(self) -> int:
-        """Count the total number of outlier detections across all frames.
-
-        Returns:
-            Total outlier count.
-        """
+        """Count the total number of outlier detections across all frames."""
         return sum(
             int(np.count_nonzero(~fi.inlier_mask))
             for fi in self.frame_diagnostics
@@ -279,11 +270,7 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         )
 
     def num_detections(self) -> int:
-        """Count the total number of detections across all frames.
-
-        Returns:
-            Total detection count (inliers + outliers).
-        """
+        """Count the total number of detections (inliers + outliers) across all frames."""
         return sum(len(fi.residuals) for fi in self.frame_diagnostics if fi is not None)
 
     # -- Plot forwarding methods --
