@@ -21,7 +21,14 @@ PYBIND11_MODULE(
     m.doc() = "lensboy for camera calibration";
     py::class_<lensboy::PinholeSplinedConfig>(m, "PinholeSplinedConfig")
         .def(
-            py::init<uint32_t, uint32_t, double, double, uint32_t, uint32_t, double>(),
+            py::init<
+                uint32_t,
+                uint32_t,
+                double,
+                double,
+                uint32_t,
+                uint32_t,
+                double>(),
             py::arg("image_width"),
             py::arg("image_height"),
             py::arg("fov_deg_x"),

@@ -186,7 +186,9 @@ static inline void normalized_to_stereographic(
 
 // Compute stereographic half-range from FOV in radians.
 // At the edge: theta = fov/2, so stereo_half = 2*tan(fov/4).
-inline double stereo_half_range(double fov_rad) {
+inline double stereo_half_range(
+    double fov_rad
+) {
     return 2.0 * std::tan(fov_rad / 4.0);
 }
 

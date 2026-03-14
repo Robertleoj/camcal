@@ -1,10 +1,10 @@
-from lensboy.calibration.calibrate import (
+from lensboy.calibration.calibrate import calibrate_camera
+from lensboy.calibration.type_defs import (
     CalibrationResult,
     Frame,
     FrameDiagnostics,
     TargetWarp,
     WarpCoordinates,
-    calibrate_camera,
 )
 from lensboy.camera_models.base_model import CameraModel, CameraModelConfig
 from lensboy.camera_models.opencv import OpenCV, OpenCVConfig

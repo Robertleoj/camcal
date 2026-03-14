@@ -374,18 +374,26 @@ static inline void BuildProblem(
                     const int k2 = row * nx + (cx + 1);
                     const int k3 = row * nx + (cx + 2);
                     problem.AddResidualBlock(
-                        new ceres::AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
-                            new KnotSmoothness{sqrt_lambda}
-                        ),
+                        new ceres::
+                            AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                                new KnotSmoothness{sqrt_lambda}
+                            ),
                         nullptr,
-                        dx_blocks[k0], dx_blocks[k1], dx_blocks[k2], dx_blocks[k3]
+                        dx_blocks[k0],
+                        dx_blocks[k1],
+                        dx_blocks[k2],
+                        dx_blocks[k3]
                     );
                     problem.AddResidualBlock(
-                        new ceres::AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
-                            new KnotSmoothness{sqrt_lambda}
-                        ),
+                        new ceres::
+                            AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                                new KnotSmoothness{sqrt_lambda}
+                            ),
                         nullptr,
-                        dy_blocks[k0], dy_blocks[k1], dy_blocks[k2], dy_blocks[k3]
+                        dy_blocks[k0],
+                        dy_blocks[k1],
+                        dy_blocks[k2],
+                        dy_blocks[k3]
                     );
                 }
             }
@@ -398,18 +406,26 @@ static inline void BuildProblem(
                     const int k2 = (cy + 1) * nx + col;
                     const int k3 = (cy + 2) * nx + col;
                     problem.AddResidualBlock(
-                        new ceres::AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
-                            new KnotSmoothness{sqrt_lambda}
-                        ),
+                        new ceres::
+                            AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                                new KnotSmoothness{sqrt_lambda}
+                            ),
                         nullptr,
-                        dx_blocks[k0], dx_blocks[k1], dx_blocks[k2], dx_blocks[k3]
+                        dx_blocks[k0],
+                        dx_blocks[k1],
+                        dx_blocks[k2],
+                        dx_blocks[k3]
                     );
                     problem.AddResidualBlock(
-                        new ceres::AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
-                            new KnotSmoothness{sqrt_lambda}
-                        ),
+                        new ceres::
+                            AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                                new KnotSmoothness{sqrt_lambda}
+                            ),
                         nullptr,
-                        dy_blocks[k0], dy_blocks[k1], dy_blocks[k2], dy_blocks[k3]
+                        dy_blocks[k0],
+                        dy_blocks[k1],
+                        dy_blocks[k2],
+                        dy_blocks[k3]
                     );
                 }
             }
