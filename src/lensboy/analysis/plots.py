@@ -608,11 +608,22 @@ def plot_distortion_grid(
         Ny = model.num_knots_y
         kx_indices = np.arange(Nx)
         ky_indices = np.arange(Ny)
-        knot_xn = -fov_x_half + (kx_indices - 1) * 2 * fov_x_half / (Nx - 3)
-        knot_yn = -fov_y_half + (ky_indices - 1) * 2 * fov_y_half / (Ny - 3)
-        knot_xn_grid, knot_yn_grid = np.meshgrid(knot_xn, knot_yn)
-        knot_xn_flat = knot_xn_grid.ravel()
-        knot_yn_flat = knot_yn_grid.ravel()
+        # Knots are evenly spaced in stereographic space; convert to normalized
+        fov_x_rad = np.deg2rad(model.fov_deg_x)
+        fov_y_rad = np.deg2rad(model.fov_deg_y)
+        stereo_x_half = 2 * np.tan(fov_x_rad / 4)
+        stereo_y_half = 2 * np.tan(fov_y_rad / 4)
+        knot_xs = -stereo_x_half + (kx_indices - 1) * 2 * stereo_x_half / (Nx - 3)
+        knot_ys = -stereo_y_half + (ky_indices - 1) * 2 * stereo_y_half / (Ny - 3)
+        knot_xs_grid, knot_ys_grid = np.meshgrid(knot_xs, knot_ys)
+        knot_xs_flat = knot_xs_grid.ravel()
+        knot_ys_flat = knot_ys_grid.ravel()
+        # Stereographic to normalized: r_s -> theta = 2*arctan(r_s/2), r_n = tan(theta)
+        r_s = np.sqrt(knot_xs_flat**2 + knot_ys_flat**2 + 1e-30)
+        theta = 2 * np.arctan(r_s / 2)
+        scale = np.tan(theta) / r_s
+        knot_xn_flat = knot_xs_flat * scale
+        knot_yn_flat = knot_ys_flat * scale
 
         ax0.scatter(
             knot_xn_flat,

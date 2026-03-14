@@ -162,6 +162,34 @@ inline int clamp_int(
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+// Convert normalized pinhole coordinates to stereographic projection.
+// Given p = (x, y) in normalized space:
+//   r = |p|, theta = arctan(r), p_stereo = (p / r) * 2 * tan(theta / 2)
+template <typename T>
+static inline void normalized_to_stereographic(
+    const T& x_normalized,
+    const T& y_normalized,
+    T& x_stereo,
+    T& y_stereo
+) {
+    using std::atan;
+    using std::sqrt;
+    using std::tan;
+
+    const T r_sq = x_normalized * x_normalized + y_normalized * y_normalized;
+    const T r = sqrt(r_sq + T(1e-30));  // avoid division by zero
+    const T theta = atan(r);
+    const T scale = T(2) * tan(theta / T(2)) / r;
+    x_stereo = x_normalized * scale;
+    y_stereo = y_normalized * scale;
+}
+
+// Compute stereographic half-range from FOV in radians.
+// At the edge: theta = fov/2, so stereo_half = 2*tan(fov/4).
+inline double stereo_half_range(double fov_rad) {
+    return 2.0 * std::tan(fov_rad / 4.0);
+}
+
 template <typename T>
 static inline void cubic_bspline_basis_uniform(
     const T& u,
@@ -291,29 +319,26 @@ void project_pinhole_splined(
     const double fov_rad_x = config->fov_deg_x * M_PI / 180.0;
     const double fov_rad_y = config->fov_deg_y * M_PI / 180.0;
 
-    // We define the spline domain over the normalized pinhole plane such that
-    // x_normalized in [-tan(fov_x/2), +tan(fov_x/2)] maps across the interior
-    // of the spline grid (with clamping outside).
-    const double half_x_range = std::tan(fov_rad_x / 2.0);
-    const double half_y_range = std::tan(fov_rad_y / 2.0);
-
-    const T x_range_start = T(-half_x_range);
-    const T x_range_end = T(+half_x_range);
-    const T y_range_start = T(-half_y_range);
-    const T y_range_end = T(+half_y_range);
+    // Spline domain is in stereographic space
+    const double half_x_range = stereo_half_range(fov_rad_x);
+    const double half_y_range = stereo_half_range(fov_rad_y);
 
     const T fx = pinhole_parameters[0];
     const T fy = pinhole_parameters[1];
     const T cx = pinhole_parameters[2];
     const T cy = pinhole_parameters[3];
 
-    const T inv_x_span = T(1) / (x_range_end - x_range_start);
-    const T inv_y_span = T(1) / (y_range_end - y_range_start);
+    // Convert normalized coords to stereographic for spline lookup
+    T x_stereo, y_stereo;
+    normalized_to_stereographic(x_normalized, y_normalized, x_stereo, y_stereo);
+
+    const T inv_x_span = T(1) / T(2.0 * half_x_range);
+    const T inv_y_span = T(1) / T(2.0 * half_y_range);
 
     const T x_spline =
-        T(1) + (x_normalized - x_range_start) * T(Nx - 3) * inv_x_span;
+        T(1) + (x_stereo + T(half_x_range)) * T(Nx - 3) * inv_x_span;
     const T y_spline =
-        T(1) + (y_normalized - y_range_start) * T(Ny - 3) * inv_y_span;
+        T(1) + (y_stereo + T(half_y_range)) * T(Ny - 3) * inv_y_span;
 
     // --- evaluate spline surfaces
     const T dx = eval_bspline2d_uniform_cubic_clamped(

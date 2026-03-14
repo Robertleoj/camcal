@@ -1359,9 +1359,9 @@ def _calibrate_pinhole_splined(
         log(f"Spline FOV (user-specified): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
     else:
         fov_deg_x, fov_deg_y = _compute_fov_from_opencv(
-            opencv_model, padding_fraction=0.05
+            opencv_model, padding_fraction=0.10
         )
-        log(f"Spline FOV (+5% padding): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
+        log(f"Spline FOV (+10% padding): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
 
     cpp_config = lbb.PinholeSplinedConfig(
         config.image_width,

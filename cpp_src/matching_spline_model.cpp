@@ -147,13 +147,13 @@ py::dict get_matching_spline_distortion_model(
     const double fov_rad_x = model_config.fov_deg_x * M_PI / 180.0;
     const double fov_rad_y = model_config.fov_deg_y * M_PI / 180.0;
 
-    const double half_x_range = std::tan(fov_rad_x / 2.0);
-    const double half_y_range = std::tan(fov_rad_y / 2.0);
+    // Sampling range in normalized (pinhole) space
+    const double half_x_pinhole = std::tan(fov_rad_x / 2.0);
+    const double half_y_pinhole = std::tan(fov_rad_y / 2.0);
 
-    const double x_range_start = -half_x_range;
-    const double x_range_end = +half_x_range;
-    const double y_range_start = -half_y_range;
-    const double y_range_end = +half_y_range;
+    // Spline domain is in stereographic space
+    const double half_x_stereo = stereo_half_range(fov_rad_x);
+    const double half_y_stereo = stereo_half_range(fov_rad_y);
 
     const uint32_t num_samples_x = model_config.num_knots_x * 5;
     const uint32_t num_samples_y = model_config.num_knots_y * 5;
@@ -180,8 +180,8 @@ py::dict get_matching_spline_distortion_model(
         }
     }
 
-    const double inv_x_span = 1.0 / (x_range_end - x_range_start);
-    const double inv_y_span = 1.0 / (y_range_end - y_range_start);
+    const double inv_x_span = 1.0 / (2.0 * half_x_stereo);
+    const double inv_y_span = 1.0 / (2.0 * half_y_stereo);
 
     for (size_t y_sample_idx = 0; y_sample_idx < num_samples_y;
          ++y_sample_idx) {
@@ -194,10 +194,11 @@ py::dict get_matching_spline_distortion_model(
                 static_cast<double>(y_sample_idx) /
                 (static_cast<double>(num_samples_y) - 1);
 
+            // Sample in normalized (pinhole) space
             const double x_normalized =
-                x_range_start + (x_range_end - x_range_start) * x_proportion;
+                -half_x_pinhole + 2.0 * half_x_pinhole * x_proportion;
             const double y_normalized =
-                y_range_start + (y_range_end - y_range_start) * y_proportion;
+                -half_y_pinhole + 2.0 * half_y_pinhole * y_proportion;
 
             Vec2<double> normalized_point(x_normalized, y_normalized);
 
@@ -208,16 +209,22 @@ py::dict get_matching_spline_distortion_model(
                 opencv_distorted_point
             );
 
-            // spline coords in knot index space
+            // Convert to stereographic for spline lookup
+            double x_stereo, y_stereo;
+            normalized_to_stereographic(
+                x_normalized, y_normalized, x_stereo, y_stereo
+            );
+
+            // Spline coords in knot index space (stereographic domain)
             double x_spline =
                 1.0 +
-                (x_normalized - x_range_start) *
+                (x_stereo + half_x_stereo) *
                     (static_cast<double>(model_config.num_knots_x) - 3.0) *
                     inv_x_span;
 
             double y_spline =
                 1.0 +
-                (y_normalized - y_range_start) *
+                (y_stereo + half_y_stereo) *
                     (static_cast<double>(model_config.num_knots_y) - 3.0) *
                     inv_y_span;
 
@@ -324,10 +331,10 @@ py::dict get_matching_spline_distortion_model(
     out["x_knots"] = x_array;
     out["y_knots"] = y_array;
 
-    out["x_range_start"] = x_range_start;
-    out["x_range_end"] = x_range_end;
-    out["y_range_start"] = y_range_start;
-    out["y_range_end"] = y_range_end;
+    out["x_range_start"] = -half_x_stereo;
+    out["x_range_end"] = half_x_stereo;
+    out["y_range_start"] = -half_y_stereo;
+    out["y_range_end"] = half_y_stereo;
 
     return out;
 }

@@ -32,8 +32,8 @@ struct SplineMap {
 
         const double fov_rad_x = cfg.fov_deg_x * M_PI / 180.0;
         const double fov_rad_y = cfg.fov_deg_y * M_PI / 180.0;
-        this->half_x = std::tan(fov_rad_x / 2.0);
-        this->half_y = std::tan(fov_rad_y / 2.0);
+        this->half_x = stereo_half_range(fov_rad_x);
+        this->half_y = stereo_half_range(fov_rad_y);
 
         this->x_scale = (Nx - 3) / (2.0 * this->half_x);
         this->y_scale = (Ny - 3) / (2.0 * this->half_y);
@@ -57,8 +57,11 @@ struct SplineMap {
         x_n = pc[0] * inv_z;
         y_n = pc[1] * inv_z;
 
-        const double x_s_raw = 1.0 + (x_n + this->half_x) * this->x_scale;
-        const double y_s_raw = 1.0 + (y_n + this->half_y) * this->y_scale;
+        double x_s, y_s;
+        normalized_to_stereographic(x_n, y_n, x_s, y_s);
+
+        const double x_s_raw = 1.0 + (x_s + this->half_x) * this->x_scale;
+        const double y_s_raw = 1.0 + (y_s + this->half_y) * this->y_scale;
 
         constexpr double eps = 1e-12;
         gx = std::max(0.0, std::min(x_s_raw, Nx - 1.0 - eps));
@@ -170,8 +173,11 @@ struct ReprojectionErrorSplined {
         const T x_n = pc[0] * inv_z;
         const T y_n = pc[1] * inv_z;
 
-        const T x_s = T(1.0) + (x_n + T(map.half_x)) * T(map.x_scale);
-        const T y_s = T(1.0) + (y_n + T(map.half_y)) * T(map.y_scale);
+        T x_st, y_st;
+        normalized_to_stereographic(x_n, y_n, x_st, y_st);
+
+        const T x_s = T(1.0) + (x_st + T(map.half_x)) * T(map.x_scale);
+        const T y_s = T(1.0) + (y_st + T(map.half_y)) * T(map.y_scale);
         constexpr double eps = 1e-12;
         const T gx = clamp_T(x_s, T(0.0), T(map.Nx - 1.0 - eps));
         const T gy = clamp_T(y_s, T(0.0), T(map.Ny - 1.0 - eps));
