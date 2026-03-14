@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import lensboy as lb
+from lensboy.geometry.pose import Pose
 
 DATASET_PATH = Path(__file__).parent.parent / "data/test_datasets/wide_angle_charuco.npz"
 
@@ -219,6 +220,7 @@ def _generate_synthetic_frames(
     target_points: np.ndarray,
     num_frames: int = 40,
     noise_sigma: float = 0.1,
+    margin: int = 20,
 ) -> list[lb.Frame]:
     """Project a target grid through a known camera model to create frames.
 
@@ -228,6 +230,7 @@ def _generate_synthetic_frames(
         target_points: 3D target coordinates, shape (N, 3).
         num_frames: Number of synthetic views to generate.
         noise_sigma: Gaussian noise added to pixel detections in pixels.
+        margin: Minimum distance from image border for accepted detections in pixels.
 
     Returns:
         Synthetic detection frames.
@@ -252,7 +255,6 @@ def _generate_synthetic_frames(
         points_in_cam = pose.apply(target_points)
         projected = model.project_points(points_in_cam)
 
-        margin = 20
         in_bounds = (
             (projected[:, 0] >= margin)
             & (projected[:, 0] < model.image_width - margin)
@@ -760,3 +762,202 @@ def test_pnp_failure() -> None:
 
     sigma = result.residual_sigma_map()
     assert sigma < 0.11, f"Residual sigma too high: {sigma:.3f}px"
+
+
+def _generate_edge_frames(
+    rng: np.random.Generator,
+    model: lb.OpenCV,
+    target_points: np.ndarray,
+    target_width: float,
+    target_height: float,
+    samples_per_edge: int = 20,
+    noise_sigma: float = 0.1,
+) -> list[lb.Frame]:
+    """Generate synthetic frames with observations at the absolute image edges.
+
+    Positions cameras so that a specific edge of the target grid aligns with
+    each image border, with random tilt rotations to compress points toward
+    the border.
+
+    Args:
+        rng: Numpy random generator.
+        model: Ground-truth camera model.
+        target_points: 3D target coordinates, shape (N, 3).
+        target_width: Physical width of the target grid.
+        target_height: Physical height of the target grid.
+        samples_per_edge: Number of camera poses per image edge.
+        noise_sigma: Gaussian noise added to pixel detections in pixels.
+
+    Returns:
+        Synthetic detection frames with observations near image borders.
+    """
+    all_indices = np.arange(len(target_points))
+
+    half_fov_x = np.radians(model.fov_deg_x) / 2
+    half_fov_y = np.radians(model.fov_deg_y) / 2
+
+    u_max = np.tan(half_fov_x)
+    u_min = -u_max
+    v_max = np.tan(half_fov_y)
+    v_min = -v_max
+
+    upper_right = np.array([u_max, v_min, 1.0])
+    lower_right = np.array([u_max, v_max, 1.0])
+    upper_left = np.array([u_min, v_min, 1.0])
+    lower_left = np.array([u_min, v_max, 1.0])
+
+    rot_bound_lower = 60
+    rot_bound_higher = 100
+    dist_bound_lower = 100.0
+    dist_bound_higher = 500.0
+
+    poses: list[Pose] = []
+
+    # right edge (midpoint of right edge of grid centered at origin)
+    target_from_edge = Pose.identity().tx(target_width / 2)
+    for edge_interp, dist, rot in zip(
+        rng.uniform(0, 1, samples_per_edge),
+        rng.uniform(dist_bound_lower, dist_bound_higher, samples_per_edge),
+        np.radians(rng.uniform(-rot_bound_higher, rot_bound_lower, samples_per_edge)),
+    ):
+        ray = upper_right * edge_interp + lower_right * (1 - edge_interp)
+        camera_from_edge = Pose.from_trans(dist * ray).rx(np.pi).ry(rot)
+        poses.append(camera_from_edge @ target_from_edge.inverse())
+
+    # left edge
+    target_from_edge = Pose.identity().tx(-target_width / 2)
+    for edge_interp, dist, rot in zip(
+        rng.uniform(0, 1, samples_per_edge),
+        rng.uniform(dist_bound_lower, dist_bound_higher, samples_per_edge),
+        np.radians(rng.uniform(rot_bound_lower, rot_bound_higher, samples_per_edge)),
+    ):
+        ray = upper_left * edge_interp + lower_left * (1 - edge_interp)
+        camera_from_edge = Pose.from_trans(dist * ray).rx(np.pi).ry(rot)
+        poses.append(camera_from_edge @ target_from_edge.inverse())
+
+    # top edge
+    target_from_edge = Pose.identity().ty(target_height / 2)
+    for edge_interp, dist, rot in zip(
+        rng.uniform(0, 1, samples_per_edge),
+        rng.uniform(dist_bound_lower, dist_bound_higher, samples_per_edge),
+        np.radians(rng.uniform(rot_bound_lower, rot_bound_higher, samples_per_edge)),
+    ):
+        ray = upper_left * edge_interp + upper_right * (1 - edge_interp)
+        camera_from_edge = Pose.from_trans(dist * ray).rx(np.pi).rx(rot)
+        poses.append(camera_from_edge @ target_from_edge.inverse())
+
+    # bottom edge
+    target_from_edge = Pose.identity().ty(-target_height / 2)
+    for edge_interp, dist, rot in zip(
+        rng.uniform(0, 1, samples_per_edge),
+        rng.uniform(dist_bound_lower, dist_bound_higher, samples_per_edge),
+        np.radians(rng.uniform(-rot_bound_higher, rot_bound_lower, samples_per_edge)),
+    ):
+        ray = lower_left * edge_interp + lower_right * (1 - edge_interp)
+        camera_from_edge = Pose.from_trans(dist * ray).rx(np.pi).rx(rot)
+        poses.append(camera_from_edge @ target_from_edge.inverse())
+
+    # Project poses into frames
+    w, h = model.image_width, model.image_height
+    frames: list[lb.Frame] = []
+    for pose in poses:
+        points_in_cam = pose.apply(target_points)
+        if not (points_in_cam[:, 2] > 0).all():
+            continue
+        projected = model.project_points(points_in_cam)
+
+        in_bounds = (
+            (projected[:, 0] >= 0)
+            & (projected[:, 0] < w)
+            & (projected[:, 1] >= 0)
+            & (projected[:, 1] < h)
+        )
+        if in_bounds.sum() < 6:
+            continue
+
+        noise = rng.normal(scale=noise_sigma, size=(in_bounds.sum(), 2))
+        frames.append(
+            lb.Frame(
+                target_point_indices=all_indices[in_bounds],
+                detected_points_in_image=projected[in_bounds] + noise,
+            )
+        )
+
+    return frames
+
+
+def test_spline_edge_observations() -> None:
+    """Calibrate a spline model when many observations are at the absolute image edge.
+
+    Uses the extreme distortion model and positions cameras using the model's FOV
+    so that the dense target grid extends right to the image borders. The spline
+    fine-tuner should handle edge observations gracefully.
+    """
+    ground_truth = lb.OpenCV(
+        image_width=3088,
+        image_height=2064,
+        fx=1354.5124985080904,
+        fy=1354.3181984440832,
+        cx=1514.104403863959,
+        cy=1076.8896015546975,
+        distortion_coeffs=np.array(
+            [
+                1.721749851751697,
+                0.4929049527387092,
+                -0.00012249059620334055,
+                6.571195104303754e-05,
+                0.010826498817585985,
+                2.040924560626435,
+                0.9497700975338902,
+                0.0744348380132027,
+                -6.852182482012876e-05,
+                -8.155006688534965e-06,
+                0.00021009345380118726,
+                -4.392347849675705e-06,
+                0.0005388341393511124,
+                -0.0003861499673898091,
+            ]
+        ),
+    )
+
+    rng = np.random.default_rng(42)
+    target_points = _make_planar_grid(cols=30, rows=20, spacing=12.0)
+    target_width = (30 - 1) * 12.0
+    target_height = (20 - 1) * 12.0
+
+    edge_frames = _generate_edge_frames(
+        rng, ground_truth, target_points, target_width, target_height
+    )
+    center_frames = _generate_synthetic_frames(
+        rng, ground_truth, target_points, num_frames=30, margin=0
+    )
+
+    frames = center_frames + edge_frames
+    assert len(frames) >= 30, f"Too few valid frames ({len(frames)})"
+
+    # Count how many detections are within 5px of the image border
+    all_detections = np.vstack([f.detected_points_in_image for f in frames])
+    near_edge = (
+        (all_detections[:, 0] < 5)
+        | (all_detections[:, 0] > ground_truth.image_width - 5)
+        | (all_detections[:, 1] < 5)
+        | (all_detections[:, 1] > ground_truth.image_height - 5)
+    )
+    print(
+        f"Edge observations (<5px from border): {near_edge.sum()}/{len(all_detections)}"
+    )
+
+    config = lb.PinholeSplinedConfig(
+        image_height=ground_truth.image_height,
+        image_width=ground_truth.image_width,
+        num_knots_x=30,
+        num_knots_y=20,
+    )
+    result = lb.calibrate_camera(target_points, frames, camera_model_config=config)
+
+    sigma = result.residual_sigma_map()
+    outlier_pct = result.num_outliers() / result.num_detections() * 100
+
+    print(f"sigma={sigma:.4f}px, outliers={outlier_pct:.1f}%")
+    assert sigma < 0.15, f"Residual sigma too high: {sigma:.3f}px"
+    assert outlier_pct < 5.0, f"Too many outliers: {outlier_pct:.1f}%"

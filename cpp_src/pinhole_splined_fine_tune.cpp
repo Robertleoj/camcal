@@ -12,6 +12,7 @@
 #include "./cameramodels.hpp"
 #include "./ceres_geometry.hpp"
 #include "./pybind_utils.hpp"
+#include "./type_defs.hpp"
 
 namespace lensboy {
 
@@ -26,16 +27,16 @@ struct SplineMap {
     explicit SplineMap(
         const PinholeSplinedConfig& cfg
     ) {
-        Nx = (int)cfg.num_knots_x;
-        Ny = (int)cfg.num_knots_y;
+        this->Nx = static_cast<int>(cfg.num_knots_x);
+        this->Ny = static_cast<int>(cfg.num_knots_y);
 
         const double fov_rad_x = cfg.fov_deg_x * M_PI / 180.0;
         const double fov_rad_y = cfg.fov_deg_y * M_PI / 180.0;
-        half_x = std::tan(fov_rad_x / 2.0);
-        half_y = std::tan(fov_rad_y / 2.0);
+        this->half_x = std::tan(fov_rad_x / 2.0);
+        this->half_y = std::tan(fov_rad_y / 2.0);
 
-        x_scale = (Nx - 3) / (2.0 * half_x);
-        y_scale = (Ny - 3) / (2.0 * half_y);
+        this->x_scale = (Nx - 3) / (2.0 * this->half_x);
+        this->y_scale = (Ny - 3) / (2.0 * this->half_y);
     }
 
     inline void project_to_spline_coords(
@@ -56,8 +57,8 @@ struct SplineMap {
         x_n = pc[0] * inv_z;
         y_n = pc[1] * inv_z;
 
-        const double x_s_raw = 1.0 + (x_n + half_x) * x_scale;
-        const double y_s_raw = 1.0 + (y_n + half_y) * y_scale;
+        const double x_s_raw = 1.0 + (x_n + this->half_x) * this->x_scale;
+        const double y_s_raw = 1.0 + (y_n + this->half_y) * this->y_scale;
 
         constexpr double eps = 1e-12;
         gx = std::max(0.0, std::min(x_s_raw, Nx - 1.0 - eps));
@@ -72,14 +73,14 @@ struct SplineMap {
     ) const {
         double gx, gy, xn, yn;
         project_to_spline_coords(cam6, pw, gx, gy, xn, yn);
-        ix = (int)gx;
-        iy = (int)gy;
+        ix = static_cast<int>(gx);
+        iy = static_cast<int>(gy);
     }
 
     // Check whether the 4x4 support patch for cell (ix, iy) has all
     // unique knot indices. Near edges, clamping causes duplicates which
     // Ceres forbids in a single residual block.
-    inline bool has_unique_support(
+    inline bool is_inside_fov(
         int ix,
         int iy
     ) const {
@@ -173,8 +174,8 @@ struct ReprojectionErrorSplined {
         const T gx = clamp_T(x_s, T(0.0), T(map.Nx - 1.0 - eps));
         const T gy = clamp_T(y_s, T(0.0), T(map.Ny - 1.0 - eps));
 
-        const T u = gx - T((double)ix0);
-        const T v = gy - T((double)iy0);
+        const T u = gx - T(static_cast<double>(ix0));
+        const T v = gy - T(static_cast<double>(iy0));
 
         T wx[4], wy[4];
         cubic_bspline_basis_uniform(u, wx);
@@ -260,8 +261,8 @@ static inline void BuildProblem(
     const std::vector<double>& dy0,
     double sqrt_lambda
 ) {
-    const int nx = (int)cfg.num_knots_x;
-    const int ny = (int)cfg.num_knots_y;
+    const int nx = static_cast<int>(cfg.num_knots_x);
+    const int ny = static_cast<int>(cfg.num_knots_y);
     const int n_knots = nx * ny;
 
     // pinhole_parameters constant
@@ -293,6 +294,20 @@ static inline void BuildProblem(
         problem.SetParameterBlockConstant(const_cast<double*>(pt.data()));
     }
 
+    // Filter out observations that project outside the calibrated FOV.
+    std::vector<std::vector<size_t>> valid_observation_indices(frames.size());
+    for (size_t cam_idx = 0; cam_idx < frames.size(); cam_idx++) {
+        auto& ids = std::get<0>(frames[cam_idx]);
+        auto& cam6 = cameras_from_target[cam_idx];
+        for (size_t oi = 0; oi < ids.size(); oi++) {
+            int ix, iy;
+            map.cell_index(cam6.data(), target_points[ids[oi]], ix, iy);
+            if (map.is_inside_fov(ix, iy)) {
+                valid_observation_indices[cam_idx].push_back(oi);
+            }
+        }
+    }
+
     // Determine which knots are at the corners of a cell that contains at
     // least one observation. For cell (ix, iy) that means the 2x2 corner
     // knots: (ix, iy), (ix+1, iy), (ix, iy+1), (ix+1, iy+1).
@@ -300,7 +315,7 @@ static inline void BuildProblem(
     for (size_t cam_idx = 0; cam_idx < frames.size(); cam_idx++) {
         auto& ids = std::get<0>(frames[cam_idx]);
         auto& cam6 = cameras_from_target[cam_idx];
-        for (size_t oi = 0; oi < ids.size(); oi++) {
+        for (size_t oi : valid_observation_indices[cam_idx]) {
             const auto& pw = target_points[ids[oi]];
             int ix, iy;
             map.cell_index(cam6.data(), pw, ix, iy);
@@ -336,7 +351,7 @@ static inline void BuildProblem(
         auto& obs = std::get<1>(frames[cam_idx]);
         auto& cam6 = cameras_from_target[cam_idx];
 
-        for (size_t oi = 0; oi < obs.size(); oi++) {
+        for (size_t oi : valid_observation_indices[cam_idx]) {
             const int pt_idx = ids[oi];
             const auto& pw = target_points[pt_idx];
             const double ox = obs[oi](0, 0);
@@ -344,12 +359,6 @@ static inline void BuildProblem(
 
             int ix, iy;
             map.cell_index(cam6.data(), pw, ix, iy);
-
-            // Skip observations whose 4x4 support patch would have
-            // duplicate knot indices from boundary clamping.
-            if (!map.has_unique_support(ix, iy)) {
-                continue;
-            }
 
             std::array<int, 16> flat{};
             map.support_indices_4x4(ix, iy, flat);
@@ -403,13 +412,13 @@ py::dict fine_tune_pinhole_splined(
     auto dxb = intrinsics_parameters.dx_grid.request();
     auto dyb = intrinsics_parameters.dy_grid.request();
     require(
-        (uint32_t)dxb.shape[0] == model_config.num_knots_y &&
-            (uint32_t)dxb.shape[1] == model_config.num_knots_x,
+        static_cast<uint32_t>(dxb.shape[0]) == model_config.num_knots_y &&
+            static_cast<uint32_t>(dxb.shape[1]) == model_config.num_knots_x,
         "dx_grid must have shape (num_knots_y, num_knots_x)"
     );
     require(
-        (uint32_t)dyb.shape[0] == model_config.num_knots_y &&
-            (uint32_t)dyb.shape[1] == model_config.num_knots_x,
+        static_cast<uint32_t>(dyb.shape[0]) == model_config.num_knots_y &&
+            static_cast<uint32_t>(dyb.shape[1]) == model_config.num_knots_x,
         "dy_grid must have shape (num_knots_y, num_knots_x)"
     );
 
@@ -419,11 +428,10 @@ py::dict fine_tune_pinhole_splined(
     double* dxp = static_cast<double*>(dxb.ptr);
     double* dyp = static_cast<double*>(dyb.ptr);
 
-    const int nx = (int)model_config.num_knots_x;
-    const int ny = (int)model_config.num_knots_y;
+    const int nx = static_cast<int>(model_config.num_knots_x);
+    const int ny = static_cast<int>(model_config.num_knots_y);
     const int n_knots = nx * ny;
 
-    // freeze “initial” prior anchors (true initial values)
     std::vector<double> dx0(n_knots), dy0(n_knots);
     for (int i = 0; i < n_knots; i++) {
         dx0[i] = dxp[i];
@@ -455,7 +463,9 @@ py::dict fine_tune_pinhole_splined(
 
     constexpr int max_rebuilds = 25;
 
+    // declare these outside the loop so we don't reallocate on every rebuild
     std::vector<double*> dx_blocks, dy_blocks;
+
     std::vector<ObservationRecord> obs_records;
 
     ceres::Solver::Summary last_summary;
