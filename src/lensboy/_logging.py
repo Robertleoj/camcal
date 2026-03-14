@@ -14,13 +14,13 @@ _enabled = True
 def log(msg: str) -> None:
     """Print an info message if logging is enabled."""
     if _enabled:
-        print(msg)
+        print(msg, flush=True)
 
 
 def warn(msg: str) -> None:
     """Print a warning message if logging is enabled."""
     if _enabled:
-        print(f"Warning: {msg}")
+        print(f"Warning: {msg}", flush=True)
 
 
 def disable_logs() -> None:

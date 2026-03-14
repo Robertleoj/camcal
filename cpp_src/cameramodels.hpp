@@ -17,6 +17,7 @@ struct PinholeSplinedConfig {
     double fov_deg_y;
     uint32_t num_knots_x;
     uint32_t num_knots_y;
+    double smoothness_lambda;
 };
 
 struct PinholeSplinedIntrinsicsParameters {

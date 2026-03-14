@@ -1191,9 +1191,25 @@ def _opencv_calibrate(
             state, intrinsics=intrinsics, cameras_from_target=cameras, warp_coeffs=kxy
         )
 
+    # Run one optimization pass, then re-initialize poses with PnP using the
+    # optimized model. This recovers cameras that got garbage initial poses.
+    log("Running full optimization...")
+    first_state = optimize_fn(
+        _OptimizationState(initial_intrinsics, solved_poses, solved_frames, None)
+    )
+    model = first_state.intrinsics
+    log("Re-running PnP with optimized model...")
+    re_poses, re_solved, _ = _solve_pnp_all_frames(
+        model.K(), target_points, solved_frames, model.distortion_coeffs
+    )
+    n_re_solved = sum(re_solved)
+    log(f"Re-PnP solved {n_re_solved}/{len(solved_frames)} frames")
+    solved_frames = [f for f, ok in zip(solved_frames, re_solved) if ok]
+    solved_poses = [p for p, ok in zip(re_poses, re_solved) if ok]
+
     state = _run_with_outlier_filtering(
         optimize_fn,
-        _OptimizationState(initial_intrinsics, solved_poses, solved_frames, None),
+        _OptimizationState(model, solved_poses, solved_frames, None),
         target_points,
         outlier_threshold_stddevs,
         warp_coordinates=warp_coordinates,
@@ -1285,11 +1301,23 @@ def _pinhole_splined_refine_inner(
 
 
 def _compute_fov_from_opencv(
-    opencv_model: OpenCV, buffer_deg: float = 2.0
+    opencv_model: OpenCV,
+    padding_fraction: float = 0.05,
+    max_fov_deg: float = 175.0,
 ) -> tuple[float, float]:
+    """Compute the spline FOV from an OpenCV model with percentage padding.
+
+    Args:
+        opencv_model: Seed OpenCV camera model.
+        padding_fraction: Fractional padding to add to each FOV axis.
+        max_fov_deg: Maximum allowed FOV to avoid singularities near 180 degrees.
+
+    Returns:
+        Padded (fov_deg_x, fov_deg_y), capped at max_fov_deg.
+    """
     return (
-        opencv_model.fov_deg_x + buffer_deg,
-        opencv_model.fov_deg_y + buffer_deg,
+        min(opencv_model.fov_deg_x * (1 + padding_fraction), max_fov_deg),
+        min(opencv_model.fov_deg_y * (1 + padding_fraction), max_fov_deg),
     )
 
 
@@ -1323,8 +1351,17 @@ def _calibrate_pinhole_splined(
 
     opencv_model = opencv_calibration_result.camera_model
 
-    fov_deg_x, fov_deg_y = _compute_fov_from_opencv(opencv_model)
-    log(f"Computed FOV from OpenCV model: {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
+    raw_fov_x, raw_fov_y = _compute_fov_from_opencv(opencv_model, padding_fraction=0.0)
+    log(f"OpenCV model FOV: {raw_fov_x:.1f}° x {raw_fov_y:.1f}°")
+
+    if config.fov_deg_xy is not None:
+        fov_deg_x, fov_deg_y = config.fov_deg_xy
+        log(f"Spline FOV (user-specified): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
+    else:
+        fov_deg_x, fov_deg_y = _compute_fov_from_opencv(
+            opencv_model, padding_fraction=0.05
+        )
+        log(f"Spline FOV (+5% padding): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
 
     cpp_config = lbb.PinholeSplinedConfig(
         config.image_width,
@@ -1333,6 +1370,7 @@ def _calibrate_pinhole_splined(
         fov_deg_y,
         config.num_knots_x,
         config.num_knots_y,
+        config.smoothness_lambda,
     )
 
     log("Calculating matching spline model...")
@@ -1359,6 +1397,7 @@ def _calibrate_pinhole_splined(
         num_knots_y=config.num_knots_y,
         fov_deg_x=fov_deg_x,
         fov_deg_y=fov_deg_y,
+        smoothness_lambda=config.smoothness_lambda,
     )
 
     pnp_solved = opencv_calibration_result.cameras_from_target

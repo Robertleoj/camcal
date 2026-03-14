@@ -103,16 +103,18 @@ struct SplineMap {
     }
 };
 
-struct KnotPrior2D {
-    double s, x0, y0;
+struct KnotSmoothness {
+    double s;
     template <typename T>
     bool operator()(
-        const T* const dx,
-        const T* const dy,
+        const T* const a,
+        const T* const b,
+        const T* const c,
+        const T* const d,
         T* residuals
     ) const {
-        residuals[0] = T(s) * (dx[0] - T(x0));
-        residuals[1] = T(s) * (dy[0] - T(y0));
+        // Third derivative: -a + 3b - 3c + d
+        residuals[0] = T(s) * (-a[0] + T(3.0) * b[0] - T(3.0) * c[0] + d[0]);
         return true;
     }
 };
@@ -257,8 +259,6 @@ static inline void BuildProblem(
     std::vector<double*>& dx_blocks,
     std::vector<double*>& dy_blocks,
     std::vector<ObservationRecord>& obs_records,
-    const std::vector<double>& dx0,
-    const std::vector<double>& dy0,
     double sqrt_lambda
 ) {
     const int nx = static_cast<int>(cfg.num_knots_x);
@@ -308,42 +308,9 @@ static inline void BuildProblem(
         }
     }
 
-    // Determine which knots are at the corners of a cell that contains at
-    // least one observation. For cell (ix, iy) that means the 2x2 corner
-    // knots: (ix, iy), (ix+1, iy), (ix, iy+1), (ix+1, iy+1).
-    std::vector<bool> knot_has_obs(n_knots, false);
-    for (size_t cam_idx = 0; cam_idx < frames.size(); cam_idx++) {
-        auto& ids = std::get<0>(frames[cam_idx]);
-        auto& cam6 = cameras_from_target[cam_idx];
-        for (size_t oi : valid_observation_indices[cam_idx]) {
-            const auto& pw = target_points[ids[oi]];
-            int ix, iy;
-            map.cell_index(cam6.data(), pw, ix, iy);
-            for (int dy = 0; dy <= 1; dy++) {
-                for (int dx = 0; dx <= 1; dx++) {
-                    const int kx = clamp_int(ix + dx, 0, nx - 1);
-                    const int ky = clamp_int(iy + dy, 0, ny - 1);
-                    knot_has_obs[ky * nx + kx] = true;
-                }
-            }
-        }
-    }
-
-    // priors: only for knots with no observation influence
-    for (int i = 0; i < n_knots; i++) {
-        if (!knot_has_obs[i]) {
-            problem.AddResidualBlock(
-                new ceres::AutoDiffCostFunction<KnotPrior2D, 2, 1, 1>(
-                    new KnotPrior2D{sqrt_lambda, dx0[i], dy0[i]}
-                ),
-                nullptr,
-                dx_blocks[i],
-                dy_blocks[i]
-            );
-        }
-    }
-
     // reprojection residuals (wired to correct 16 knots for each observation)
+    // Track which cells contain at least one observation.
+    std::vector<bool> cell_has_obs(nx * ny, false);
     obs_records.clear();
     const size_t num_cams = frames.size();
     for (size_t cam_idx = 0; cam_idx < num_cams; cam_idx++) {
@@ -359,6 +326,8 @@ static inline void BuildProblem(
 
             int ix, iy;
             map.cell_index(cam6.data(), pw, ix, iy);
+
+            cell_has_obs[iy * nx + ix] = true;
 
             std::array<int, 16> flat{};
             map.support_indices_4x4(ix, iy, flat);
@@ -397,6 +366,65 @@ static inline void BuildProblem(
             );
         }
     }
+
+    // Third-derivative smoothness priors for cells without observations.
+    // For each empty cell (cx, cy), add horizontal and vertical stencils
+    // through both rows/columns of the cell's corner knots.
+    for (int cy = 0; cy < ny; cy++) {
+        for (int cx = 0; cx < nx; cx++) {
+            if (cell_has_obs[cy * nx + cx]) {
+                continue;
+            }
+
+            // Horizontal: 4-knot stencil along rows cy and cy+1
+            if (cx - 1 >= 0 && cx + 2 < nx) {
+                for (int row = cy; row <= cy + 1 && row < ny; row++) {
+                    const int k0 = row * nx + (cx - 1);
+                    const int k1 = row * nx + cx;
+                    const int k2 = row * nx + (cx + 1);
+                    const int k3 = row * nx + (cx + 2);
+                    problem.AddResidualBlock(
+                        new ceres::AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        ),
+                        nullptr,
+                        dx_blocks[k0], dx_blocks[k1], dx_blocks[k2], dx_blocks[k3]
+                    );
+                    problem.AddResidualBlock(
+                        new ceres::AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        ),
+                        nullptr,
+                        dy_blocks[k0], dy_blocks[k1], dy_blocks[k2], dy_blocks[k3]
+                    );
+                }
+            }
+
+            // Vertical: 4-knot stencil along columns cx and cx+1
+            if (cy - 1 >= 0 && cy + 2 < ny) {
+                for (int col = cx; col <= cx + 1 && col < nx; col++) {
+                    const int k0 = (cy - 1) * nx + col;
+                    const int k1 = cy * nx + col;
+                    const int k2 = (cy + 1) * nx + col;
+                    const int k3 = (cy + 2) * nx + col;
+                    problem.AddResidualBlock(
+                        new ceres::AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        ),
+                        nullptr,
+                        dx_blocks[k0], dx_blocks[k1], dx_blocks[k2], dx_blocks[k3]
+                    );
+                    problem.AddResidualBlock(
+                        new ceres::AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        ),
+                        nullptr,
+                        dy_blocks[k0], dy_blocks[k1], dy_blocks[k2], dy_blocks[k3]
+                    );
+                }
+            }
+        }
+    }
 }
 
 py::dict fine_tune_pinhole_splined(
@@ -428,18 +456,7 @@ py::dict fine_tune_pinhole_splined(
     double* dxp = static_cast<double*>(dxb.ptr);
     double* dyp = static_cast<double*>(dyb.ptr);
 
-    const int nx = static_cast<int>(model_config.num_knots_x);
-    const int ny = static_cast<int>(model_config.num_knots_y);
-    const int n_knots = nx * ny;
-
-    std::vector<double> dx0(n_knots), dy0(n_knots);
-    for (int i = 0; i < n_knots; i++) {
-        dx0[i] = dxp[i];
-        dy0[i] = dyp[i];
-    }
-
-    const double lambda = 1e-1;
-    const double sqrt_lambda = std::sqrt(lambda);
+    const double sqrt_lambda = std::sqrt(model_config.smoothness_lambda);
 
     double warp_coeffs[5] = {
         warp_coeffs_initial[0],
@@ -488,8 +505,6 @@ py::dict fine_tune_pinhole_splined(
             dx_blocks,
             dy_blocks,
             obs_records,
-            dx0,
-            dy0,
             sqrt_lambda
         );
 

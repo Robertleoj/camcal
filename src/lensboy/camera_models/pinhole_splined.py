@@ -23,6 +23,10 @@ class PinholeSplinedConfig(CameraModelConfig):
         num_knots_y: Number of spline knots along the y axis.
         initial_focal_length: Initial focal length guess in pixels, or None to
             estimate automatically from the calibration data.
+        fov_deg_xy: Explicit FOV in degrees (x, y) for the spline grid. If None,
+            the FOV is computed from the seed OpenCV model with 10% padding.
+        smoothness_lambda: Strength of the smoothness prior applied to spline
+            knots in regions without calibration data.
     """
 
     image_height: int
@@ -32,6 +36,8 @@ class PinholeSplinedConfig(CameraModelConfig):
     num_knots_y: int
 
     initial_focal_length: float | None = None
+    fov_deg_xy: tuple[float, float] | None = None
+    smoothness_lambda: float = 1e-1
 
 
 @dataclass
@@ -80,6 +86,7 @@ class PinholeSplined(CameraModel):
     fov_deg_y: float
 
     seed_opencv_distortion_parameters: np.ndarray | None = None
+    smoothness_lambda: float = 1e-1
 
     def __repr__(self) -> str:
         return (
@@ -189,6 +196,7 @@ class PinholeSplined(CameraModel):
             self.fov_deg_y,
             self.num_knots_x,
             self.num_knots_y,
+            self.smoothness_lambda,
         )
 
     def _cpp_params(self) -> lbb.PinholeSplinedIntrinsicsParameters:

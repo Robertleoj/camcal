@@ -8,7 +8,7 @@ import numpy.typing
 import typing
 __all__: list[str] = ['PinholeSplinedConfig', 'PinholeSplinedIntrinsicsParameters', 'WarpCoordinates', 'add', 'calibrate_opencv', 'fine_tune_pinhole_splined', 'get_matching_spline_distortion_model', 'make_undistortion_maps_pinhole_splined', 'normalize_pinhole_splined_points', 'project_pinhole_splined_points', 'warp_target_points']
 class PinholeSplinedConfig:
-    def __init__(self, image_width: typing.SupportsInt, image_height: typing.SupportsInt, fov_deg_x: typing.SupportsFloat, fov_deg_y: typing.SupportsFloat, num_knots_x: typing.SupportsInt, num_knots_y: typing.SupportsInt) -> None:
+    def __init__(self, image_width: typing.SupportsInt, image_height: typing.SupportsInt, fov_deg_x: typing.SupportsFloat, fov_deg_y: typing.SupportsFloat, num_knots_x: typing.SupportsInt, num_knots_y: typing.SupportsInt, smoothness_lambda: typing.SupportsFloat) -> None:
         ...
     def __repr__(self) -> str:
         ...
@@ -47,6 +47,12 @@ class PinholeSplinedConfig:
         ...
     @num_knots_y.setter
     def num_knots_y(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def smoothness_lambda(self) -> float:
+        ...
+    @smoothness_lambda.setter
+    def smoothness_lambda(self, arg0: typing.SupportsFloat) -> None:
         ...
 class PinholeSplinedIntrinsicsParameters:
     def __init__(self, pinhole_parameters: typing.Annotated[numpy.typing.ArrayLike, numpy.float64], dx_grid: typing.Annotated[numpy.typing.ArrayLike, numpy.float64], dy_grid: typing.Annotated[numpy.typing.ArrayLike, numpy.float64]) -> None:
