@@ -198,7 +198,9 @@ def _collect_points(detections: list[lb.Frame]) -> np.ndarray:
         if p.ndim != 2 or p.shape[1] != 2:
             raise ValueError(f"detected_points_in_image must be (K,2), got {p.shape}")
         pts_list.append(p)
-    return np.concatenate(pts_list, axis=0) if pts_list else np.empty((0, 2), dtype=float)
+    if len(pts_list) > 0:
+        return np.concatenate(pts_list, axis=0)
+    return np.empty((0, 2), dtype=float)
 
 
 def _split_inlier_outlier(
@@ -219,12 +221,12 @@ def _split_inlier_outlier(
             outlier_list.append(pts[outlier_mask])
     inliers = (
         np.concatenate(inlier_list, axis=0)
-        if inlier_list
+        if len(inlier_list) > 0
         else np.empty((0, 2), dtype=float)
     )
     outliers = (
         np.concatenate(outlier_list, axis=0)
-        if outlier_list
+        if len(outlier_list) > 0
         else np.empty((0, 2), dtype=float)
     )
     return inliers, outliers
@@ -688,8 +690,8 @@ def _plot_residuals(
         inlier_2d.append(fi.residuals[fi.inlier_mask])
         outlier_2d.append(fi.residuals[~fi.inlier_mask])
 
-    inlier_pts = np.concatenate(inlier_2d) if inlier_2d else np.empty((0, 2))
-    outlier_pts = np.concatenate(outlier_2d) if outlier_2d else np.empty((0, 2))
+    inlier_pts = np.concatenate(inlier_2d) if len(inlier_2d) > 0 else np.empty((0, 2))
+    outlier_pts = np.concatenate(outlier_2d) if len(outlier_2d) > 0 else np.empty((0, 2))
     all_pts = np.concatenate([inlier_pts, outlier_pts])  # (N, 2)
 
     if all_pts.shape[0] == 0:
@@ -891,8 +893,8 @@ def _plot_residual_vectors(
         positions.append(frame.detected_points_in_image)
         residuals.append(fi.residuals)
 
-    pos = np.concatenate(positions) if positions else np.empty((0, 2))
-    res = np.concatenate(residuals) if residuals else np.empty((0, 2))
+    pos = np.concatenate(positions) if len(positions) > 0 else np.empty((0, 2))
+    res = np.concatenate(residuals) if len(residuals) > 0 else np.empty((0, 2))
 
     if pos.shape[0] == 0:
         return
@@ -1007,8 +1009,8 @@ def _plot_residual_grid(
         positions.append(frame.detected_points_in_image[fi.inlier_mask])
         residuals.append(fi.residuals[fi.inlier_mask])
 
-    pos = np.concatenate(positions) if positions else np.empty((0, 2))
-    res = np.concatenate(residuals) if residuals else np.empty((0, 2))
+    pos = np.concatenate(positions) if len(positions) > 0 else np.empty((0, 2))
+    res = np.concatenate(residuals) if len(residuals) > 0 else np.empty((0, 2))
 
     if pos.shape[0] == 0:
         return
