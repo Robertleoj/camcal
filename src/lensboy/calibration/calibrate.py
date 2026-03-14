@@ -406,9 +406,9 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             The figure if ``return_figure`` is True, otherwise None.
         """
-        from lensboy.analysis.plots import _plot_distortion_grid
+        from lensboy.analysis.plots import plot_distortion_grid
 
-        return _plot_distortion_grid(
+        return plot_distortion_grid(
             self.camera_model,
             grid_step_norm=grid_step_norm,
             fov_fraction=fov_fraction,

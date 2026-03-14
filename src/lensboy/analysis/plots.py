@@ -356,7 +356,7 @@ def _plot_outliers(
     )
 
 
-def _plot_distortion_grid(
+def plot_distortion_grid(
     model: lb.OpenCV | lb.PinholeSplined,
     *,
     grid_step_norm: float = 0.05,
