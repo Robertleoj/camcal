@@ -486,6 +486,68 @@ def _make_warp_coordinates(target_points: np.ndarray) -> WarpCoordinates | None:
     )
 
 
+def _recover_failed_pnp(
+    optimize_fn: Callable[[_OptimizationBatch[OpenCV]], _OptimizationBatch[OpenCV]],
+    initial_intrinsics: OpenCV,
+    initial_poses: list[Pose],
+    pnp_solved: list[bool],
+    target_points: np.ndarray,
+    frames: list[Frame],
+    image_width: int,
+    image_height: int,
+) -> tuple[OpenCV, list[Pose | None], list[np.ndarray | None]]:
+    """Fit a subsampled model and re-run PnP to recover initially failed frames.
+
+    Args:
+        optimize_fn: Optimizer callback.
+        initial_intrinsics: Intrinsics from first PnP pass.
+        initial_poses: Poses from first PnP pass (identity for failed frames).
+        pnp_solved: Per-frame success mask from first PnP pass.
+        target_points: 3D target points.
+        frames: All calibration frames.
+        image_width: Image width in pixels.
+        image_height: Image height in pixels.
+
+    Returns:
+        Updated (intrinsics, poses, inlier_masks) with recovered frames.
+    """
+    solved_frames = [f for f, ok in zip(frames, pnp_solved) if ok]
+    solved_poses = [p for p, ok in zip(initial_poses, pnp_solved) if ok]
+    covering_indices = set(
+        _select_covering_frames(solved_frames, image_width, image_height)
+    )
+    covering_frames = [f for i, f in enumerate(solved_frames) if i in covering_indices]
+    covering_poses = [p for i, p in enumerate(solved_poses) if i in covering_indices]
+    log(
+        f"Fitting subsampled model ({len(covering_frames)} frames)"
+        f" to recover failed PnP..."
+    )
+    result = optimize_fn(
+        _OptimizationBatch(
+            intrinsics=initial_intrinsics,
+            cameras_from_target=covering_poses,
+            frames=covering_frames,
+            warp_coeffs=None,
+        )
+    )
+    model = result.intrinsics
+    log("Re-running PnP with optimized model...")
+    re_poses, re_solved, _ = _solve_pnp_all_frames(
+        model.K(),
+        target_points,
+        frames,
+        model.distortion_coeffs,
+    )
+    n_re_solved = sum(re_solved)
+    log(f"Re-PnP solved {n_re_solved}/{len(frames)} frames")
+
+    poses: list[Pose | None] = [p if ok else None for p, ok in zip(re_poses, re_solved)]
+    inlier_masks: list[np.ndarray | None] = [
+        np.ones(len(f), dtype=bool) if ok else None for f, ok in zip(frames, re_solved)
+    ]
+    return model, poses, inlier_masks
+
+
 def _opencv_calibrate(
     target_points: np.ndarray,
     frames: list[Frame],
@@ -525,43 +587,16 @@ def _opencv_calibrate(
         return _opencv_calibrate_inner(batch, config, target_points, warp_coordinates)
 
     if n_failed > 0:
-        # Fit a subsampled model first, then re-PnP all frames to recover failures
-        solved_frames = [f for f, ok in zip(frames, pnp_solved) if ok]
-        solved_poses = [p for p, ok in zip(initial_poses, pnp_solved) if ok]
-        covering_indices = set(
-            _select_covering_frames(
-                solved_frames, config.image_width, config.image_height
-            )
-        )
-        covering_frames = [
-            f for i, f in enumerate(solved_frames) if i in covering_indices
-        ]
-        covering_poses: list[Pose | None] = [
-            p for i, p in enumerate(solved_poses) if i in covering_indices
-        ]
-        log(
-            f"Fitting subsampled model ({len(covering_frames)} frames)"
-            f" to recover failed PnP..."
-        )
-        first_result = optimize_fn(
-            _OptimizationBatch(
-                intrinsics=initial_intrinsics,
-                cameras_from_target=[p for p in covering_poses if p is not None],
-                frames=covering_frames,
-                warp_coeffs=None,
-            )
-        )
-        initial_intrinsics = first_result.intrinsics
-        log("Re-running PnP with optimized model...")
-        re_poses, re_solved, _ = _solve_pnp_all_frames(
-            initial_intrinsics.K(),
+        initial_intrinsics, poses, inlier_masks = _recover_failed_pnp(
+            optimize_fn,
+            initial_intrinsics,
+            initial_poses,
+            pnp_solved,
             target_points,
             frames,
-            initial_intrinsics.distortion_coeffs,
+            config.image_width,
+            config.image_height,
         )
-        n_re_solved = sum(re_solved)
-        log(f"Re-PnP solved {n_re_solved}/{len(frames)} frames")
-        poses = [p if ok else None for p, ok in zip(re_poses, re_solved)]
 
     state = _run_with_outlier_filtering(
         optimize_fn,
@@ -753,21 +788,21 @@ def _compute_fov_from_spline_model(
     return (min(fov_x, max_fov_deg), min(fov_y, max_fov_deg))
 
 
-def _calibrate_pinhole_splined(
+def _fit_opencv_seed(
     target_points: np.ndarray,
     frames: list[Frame],
     config: PinholeSplinedConfig,
-    outlier_threshold_stddevs: float | None,
-    estimate_target_warp: bool,
-) -> CalibrationResult[PinholeSplined]:
-    assert target_points.ndim == 2 and target_points.shape[1] == 3, (
-        f"Expected (N, 3) target_points, got {target_points.shape}"
-    )
-    assert np.issubdtype(target_points.dtype, np.floating), (
-        f"Expected floating dtype for target_points, got {target_points.dtype}"
-    )
+) -> tuple[CalibrationResult[OpenCV], list[Frame]]:
+    """Fit an OpenCV seed model on a coverage-subsampled set of frames.
 
-    # --- Stage 1: Subsample and fit OpenCV seed ---
+    Args:
+        target_points: 3D target points, shape (N, 3).
+        frames: All calibration frames.
+        config: Spline config (used for image size and initial focal length).
+
+    Returns:
+        Tuple of (calibration result, subsampled frames used).
+    """
     sub_indices = _select_covering_frames(frames, config.image_width, config.image_height)
     subsampled_frames = [frames[i] for i in sub_indices]
     log(
@@ -785,103 +820,124 @@ def _calibrate_pinhole_splined(
 
     log("Calibrating seed opencv model on subsampled data...")
     start_time = default_timer()
-    opencv_calibration_result = _opencv_calibrate(
-        target_points,
-        subsampled_frames,
-        opencv_config,
-        None,
+    result = _opencv_calibrate(
+        target_points, subsampled_frames, opencv_config, None,
         estimate_target_warp=False,
     )
-    end_time = default_timer()
-    log(f"OpenCV seed model ready in {end_time - start_time:.1f}s")
+    log(f"OpenCV seed model ready in {default_timer() - start_time:.1f}s")
+    return result, subsampled_frames
 
-    opencv_model = opencv_calibration_result.camera_model
 
-    opencv_fov_x, opencv_fov_y = _compute_fov_from_opencv(
-        opencv_model, padding_fraction=0.0
+def _estimate_spline_fov(
+    opencv_model: OpenCV,
+    opencv_result: CalibrationResult[OpenCV],
+    subsampled_frames: list[Frame],
+    target_points: np.ndarray,
+    config: PinholeSplinedConfig,
+    opencv_fov_x: float,
+    opencv_fov_y: float,
+) -> tuple[float, float]:
+    """Estimate the spline FOV by fitting a coarse spline and unprojecting image edges.
+
+    Args:
+        opencv_model: Seed OpenCV model.
+        opencv_result: Calibration result from the seed model.
+        subsampled_frames: Frames used for the seed calibration.
+        target_points: 3D target points, shape (N, 3).
+        config: Spline config.
+        opencv_fov_x: OpenCV model's FOV in x (no padding).
+        opencv_fov_y: OpenCV model's FOV in y (no padding).
+
+    Returns:
+        Estimated (fov_deg_x, fov_deg_y) for the full spline model.
+    """
+    coarse_fov_x, coarse_fov_y = _compute_fov_from_opencv(
+        opencv_model, padding_fraction=0.30
     )
-    log(f"OpenCV model FOV: {opencv_fov_x:.1f}° x {opencv_fov_y:.1f}°")
+    log(f"Coarse spline FOV (+30% padding): {coarse_fov_x:.1f}° x {coarse_fov_y:.1f}°")
 
-    if config.fov_deg_xy is not None:
-        fov_deg_x, fov_deg_y = config.fov_deg_xy
-        log(f"Spline FOV (user-specified): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
-    else:
-        # --- Stage 2: Coarse spline to estimate FOV ---
-        coarse_fov_x, coarse_fov_y = _compute_fov_from_opencv(
-            opencv_model, padding_fraction=0.30
-        )
-        log(
-            f"Coarse spline FOV (+30% padding): {coarse_fov_x:.1f}° x {coarse_fov_y:.1f}°"
-        )
+    coarse_nx = min(config.num_knots_x, 10)
+    coarse_ny = min(config.num_knots_y, 8)
+    coarse_cpp_config = lbb.PinholeSplinedConfig(
+        config.image_width, config.image_height,
+        coarse_fov_x, coarse_fov_y,
+        coarse_nx, coarse_ny,
+        1.0,  # strong smoothness for coarse model
+    )
 
-        coarse_nx = min(config.num_knots_x, 10)
-        coarse_ny = min(config.num_knots_y, 8)
-        coarse_cpp_config = lbb.PinholeSplinedConfig(
-            config.image_width,
-            config.image_height,
-            coarse_fov_x,
-            coarse_fov_y,
-            coarse_nx,
-            coarse_ny,
-            1.0,  # strong smoothness for coarse model
-        )
+    coarse_image_bound_x = np.tan(np.deg2rad(opencv_fov_x) / 2.0) * 0.8
+    coarse_image_bound_y = np.tan(np.deg2rad(opencv_fov_y) / 2.0) * 0.8
+    coarse_out = lbb.get_matching_spline_distortion_model(
+        opencv_model.distortion_coeffs.tolist(),
+        coarse_cpp_config,
+        float(coarse_image_bound_x),
+        float(coarse_image_bound_y),
+    )
 
-        coarse_image_bound_x = np.tan(np.deg2rad(opencv_fov_x) / 2.0) * 0.8
-        coarse_image_bound_y = np.tan(np.deg2rad(opencv_fov_y) / 2.0) * 0.8
-        coarse_out = lbb.get_matching_spline_distortion_model(
-            opencv_model.distortion_coeffs.tolist(),
-            coarse_cpp_config,
-            float(coarse_image_bound_x),
-            float(coarse_image_bound_y),
-        )
+    coarse_model = PinholeSplined(
+        image_height=config.image_height,
+        image_width=config.image_width,
+        fx=opencv_model.fx, fy=opencv_model.fy,
+        cx=opencv_model.cx, cy=opencv_model.cy,
+        dx_grid=coarse_out["x_knots"],
+        dy_grid=coarse_out["y_knots"],
+        num_knots_x=coarse_nx, num_knots_y=coarse_ny,
+        fov_deg_x=coarse_fov_x, fov_deg_y=coarse_fov_y,
+        smoothness_lambda=1.0,
+    )
 
-        coarse_model = PinholeSplined(
-            image_height=config.image_height,
-            image_width=config.image_width,
-            fx=opencv_model.fx,
-            fy=opencv_model.fy,
-            cx=opencv_model.cx,
-            cy=opencv_model.cy,
-            dx_grid=coarse_out["x_knots"],
-            dy_grid=coarse_out["y_knots"],
-            num_knots_x=coarse_nx,
-            num_knots_y=coarse_ny,
-            fov_deg_x=coarse_fov_x,
-            fov_deg_y=coarse_fov_y,
-            smoothness_lambda=1.0,
-        )
+    sub_pnp = opencv_result.cameras_from_target
+    sub_poses = [p for p in sub_pnp if p is not None]
+    sub_frames = [
+        f for f, p in zip(subsampled_frames, sub_pnp) if p is not None
+    ]
 
-        sub_pnp = opencv_calibration_result.cameras_from_target
-        sub_poses = [p for p in sub_pnp if p is not None]
-        sub_frames = [f for f, p in zip(subsampled_frames, sub_pnp) if p is not None]
+    log("Fitting coarse spline model to estimate FOV...")
+    start_time = default_timer()
+    coarse_result = _pinhole_splined_refine_inner(
+        _OptimizationBatch(
+            intrinsics=coarse_model,
+            cameras_from_target=sub_poses,
+            frames=sub_frames,
+            warp_coeffs=None,
+        ),
+        target_points,
+        None,
+    )
+    log(f"Coarse spline fit in {default_timer() - start_time:.1f}s")
 
-        log("Fitting coarse spline model to estimate FOV...")
-        start_time = default_timer()
-        coarse_result = _pinhole_splined_refine_inner(
-            _OptimizationBatch(
-                intrinsics=coarse_model,
-                cameras_from_target=sub_poses,
-                frames=sub_frames,
-                warp_coeffs=None,
-            ),
-            target_points,
-            None,
-        )
-        log(f"Coarse spline fit in {default_timer() - start_time:.1f}s")
+    fov_deg_x, fov_deg_y = _compute_fov_from_spline_model(
+        coarse_result.intrinsics, padding_fraction=0.05
+    )
+    log(f"Spline FOV (from coarse model +5%): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
+    return fov_deg_x, fov_deg_y
 
-        fov_deg_x, fov_deg_y = _compute_fov_from_spline_model(
-            coarse_result.intrinsics, padding_fraction=0.05
-        )
-        log(f"Spline FOV (from coarse model +5%): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
 
-    # --- Stage 3: Full spline model ---
+def _build_initial_spline_model(
+    opencv_model: OpenCV,
+    config: PinholeSplinedConfig,
+    fov_deg_x: float,
+    fov_deg_y: float,
+    opencv_fov_x: float,
+    opencv_fov_y: float,
+) -> PinholeSplined:
+    """Build the initial spline model by matching the OpenCV distortion.
+
+    Args:
+        opencv_model: Seed OpenCV model.
+        config: Spline config.
+        fov_deg_x: Target FOV in x for the spline grid.
+        fov_deg_y: Target FOV in y for the spline grid.
+        opencv_fov_x: OpenCV model's FOV in x (no padding).
+        opencv_fov_y: OpenCV model's FOV in y (no padding).
+
+    Returns:
+        Initial PinholeSplined model with knots matched to the OpenCV distortion.
+    """
     cpp_config = lbb.PinholeSplinedConfig(
-        config.image_width,
-        config.image_height,
-        fov_deg_x,
-        fov_deg_y,
-        config.num_knots_x,
-        config.num_knots_y,
+        config.image_width, config.image_height,
+        fov_deg_x, fov_deg_y,
+        config.num_knots_x, config.num_knots_y,
         config.smoothness_lambda,
     )
 
@@ -890,7 +946,6 @@ def _calibrate_pinhole_splined(
 
     matching_bounds_fov_x = min(fov_deg_x, opencv_fov_x)
     matching_bounds_fov_y = min(fov_deg_y, opencv_fov_y)
-
     image_bound_x = np.tan(np.deg2rad(matching_bounds_fov_x) / 2.0) * 0.8
     image_bound_y = np.tan(np.deg2rad(matching_bounds_fov_y) / 2.0) * 0.8
 
@@ -900,26 +955,60 @@ def _calibrate_pinhole_splined(
         float(image_bound_x),
         float(image_bound_y),
     )
-    end_time = default_timer()
-    log(f"Matching spline model ready in {end_time - start_time:.1f}s")
+    log(f"Matching spline model ready in {default_timer() - start_time:.1f}s")
 
-    x_knots = out_dict["x_knots"]
-    y_knots = out_dict["y_knots"]
-
-    prior_model = PinholeSplined(
+    return PinholeSplined(
         image_height=config.image_height,
         image_width=config.image_width,
-        fx=opencv_model.fx,
-        fy=opencv_model.fy,
-        cx=opencv_model.cx,
-        cy=opencv_model.cy,
-        dx_grid=x_knots,
-        dy_grid=y_knots,
+        fx=opencv_model.fx, fy=opencv_model.fy,
+        cx=opencv_model.cx, cy=opencv_model.cy,
+        dx_grid=out_dict["x_knots"],
+        dy_grid=out_dict["y_knots"],
         num_knots_x=config.num_knots_x,
         num_knots_y=config.num_knots_y,
-        fov_deg_x=fov_deg_x,
-        fov_deg_y=fov_deg_y,
+        fov_deg_x=fov_deg_x, fov_deg_y=fov_deg_y,
         smoothness_lambda=config.smoothness_lambda,
+    )
+
+
+def _calibrate_pinhole_splined(
+    target_points: np.ndarray,
+    frames: list[Frame],
+    config: PinholeSplinedConfig,
+    outlier_threshold_stddevs: float | None,
+    estimate_target_warp: bool,
+) -> CalibrationResult[PinholeSplined]:
+    assert target_points.ndim == 2 and target_points.shape[1] == 3, (
+        f"Expected (N, 3) target_points, got {target_points.shape}"
+    )
+    assert np.issubdtype(target_points.dtype, np.floating), (
+        f"Expected floating dtype for target_points, got {target_points.dtype}"
+    )
+
+    # Stage 1: Subsample and fit OpenCV seed
+    opencv_result, subsampled_frames = _fit_opencv_seed(
+        target_points, frames, config
+    )
+    opencv_model = opencv_result.camera_model
+
+    opencv_fov_x, opencv_fov_y = _compute_fov_from_opencv(
+        opencv_model, padding_fraction=0.0
+    )
+    log(f"OpenCV model FOV: {opencv_fov_x:.1f}° x {opencv_fov_y:.1f}°")
+
+    # Stage 2: Determine spline FOV
+    if config.fov_deg_xy is not None:
+        fov_deg_x, fov_deg_y = config.fov_deg_xy
+        log(f"Spline FOV (user-specified): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
+    else:
+        fov_deg_x, fov_deg_y = _estimate_spline_fov(
+            opencv_model, opencv_result, subsampled_frames,
+            target_points, config, opencv_fov_x, opencv_fov_y,
+        )
+
+    # Stage 3: Build and fit full spline model
+    prior_model = _build_initial_spline_model(
+        opencv_model, config, fov_deg_x, fov_deg_y, opencv_fov_x, opencv_fov_y,
     )
 
     # PnP for all frames using the opencv model
