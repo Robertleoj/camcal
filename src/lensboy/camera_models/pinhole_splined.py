@@ -24,7 +24,9 @@ class PinholeSplinedConfig(CameraModelConfig):
         initial_focal_length: Initial focal length guess in pixels, or None to
             estimate automatically from the calibration data.
         fov_deg_xy: Explicit FOV in degrees (x, y) for the spline grid. If None,
-            the FOV is computed from the seed OpenCV model with 10% padding.
+            the FOV is computed from the seed OpenCV model with padding.
+        fov_padding_fraction: Fractional padding added to the seed OpenCV model's
+            FOV when fov_deg_xy is None.
         smoothness_lambda: Strength of the smoothness prior applied to spline
             knots in regions without calibration data.
     """
@@ -37,6 +39,7 @@ class PinholeSplinedConfig(CameraModelConfig):
 
     initial_focal_length: float | None = None
     fov_deg_xy: tuple[float, float] | None = None
+    fov_padding_fraction: float = 0.05
     smoothness_lambda: float = 1e-1
 
 

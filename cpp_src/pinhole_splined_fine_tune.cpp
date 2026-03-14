@@ -106,22 +106,6 @@ struct SplineMap {
     }
 };
 
-struct KnotSmoothness {
-    double s;
-    template <typename T>
-    bool operator()(
-        const T* const a,
-        const T* const b,
-        const T* const c,
-        const T* const d,
-        T* residuals
-    ) const {
-        // Third derivative: -a + 3b - 3c + d
-        residuals[0] = T(s) * (-a[0] + T(3.0) * b[0] - T(3.0) * c[0] + d[0]);
-        return true;
-    }
-};
-
 struct ReprojectionErrorSplined {
     const SplineMap& map;
     double fx, fy, cx, cy;

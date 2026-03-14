@@ -105,11 +105,22 @@ class FrameDiagnostics:
 
 
 @dataclass
-class _OptimizationState(Generic[_IntrinsicsT]):
+class _OptimizationBatch(Generic[_IntrinsicsT]):
+    """Compact, fully-valid data passed to the optimizer. No None values."""
+
     intrinsics: _IntrinsicsT
     cameras_from_target: list[Pose]
     frames: list[Frame]
     warp_coeffs: tuple[float, float, float, float, float] | None
+
+
+@dataclass
+class _OptimizationState(Generic[_IntrinsicsT]):
+    intrinsics: _IntrinsicsT
+    cameras_from_target: list[Pose | None]
+    frames: list[Frame]
+    warp_coeffs: tuple[float, float, float, float, float] | None
+    inlier_masks: list[np.ndarray | None]
 
 
 @dataclass
@@ -763,62 +774,62 @@ def _robust_sigma_xy(residuals: list[np.ndarray]) -> float:
 
 
 def _filter_outliers(
-    frames: list,
     residuals: list[np.ndarray],
     k: float,
     sigma_floor_px: float = 0.05,  # prevents collapse
-) -> list:
+) -> list[np.ndarray]:
+    """Compute per-frame inlier masks based on residual norms.
+
+    Returns:
+        List of boolean arrays, one per frame, True for inliers.
+    """
     sigma = max(_robust_sigma_xy(residuals), sigma_floor_px)
     gate = k * sigma
 
-    filtered = []
-    for frame, r in zip(frames, residuals):
-        inlier_mask = np.linalg.norm(r, axis=1) <= gate
-        filtered.append(
-            type(frame)(
-                frame.target_point_indices[inlier_mask],
-                frame.detected_points_in_image[inlier_mask],
-            )
-        )
-    return filtered
+    out = []
+    for res in residuals:
+        mask = np.linalg.norm(res, axis=1) <= gate
+        out.append(mask)
+
+    return out
+
+
+def _apply_mask(frame: Frame, mask: np.ndarray | None) -> Frame:
+    """Apply an inlier mask to a frame, keeping only inlier points."""
+    if mask is None:
+        return frame
+    return Frame(
+        target_point_indices=frame.target_point_indices[mask],
+        detected_points_in_image=frame.detected_points_in_image[mask],
+    )
 
 
 def _opencv_calibrate_inner(
-    curr_intrinsics: OpenCV,
+    batch: _OptimizationBatch[OpenCV],
     config: OpenCVConfig,
-    curr_cameras_from_target: list[Pose],
     target_points: np.ndarray,
-    frames: list[Frame],
     warp_coordinates: WarpCoordinates | None = None,
-    warp_coeffs: tuple[float, float, float, float, float] | None = None,
-) -> tuple[OpenCV, list[Pose], tuple[float, float, float, float, float] | None]:
-    params = curr_intrinsics._params()
+) -> _OptimizationBatch[OpenCV]:
+    params = batch.intrinsics._params()
     mask = config.optimize_mask()
     intrinsics_param_optimize_mask = mask.tolist()
-
-    cameras_from_target_in = [p._to_cpp() for p in curr_cameras_from_target]
 
     log("Running full optimization...")
     start_time = default_timer()
     result = lbb.calibrate_opencv(
         intrinsics_initial_value=params,
         intrinsics_param_optimize_mask=intrinsics_param_optimize_mask,
-        cameras_from_target=cameras_from_target_in,
+        cameras_from_target=[p._to_cpp() for p in batch.cameras_from_target],
         target_points=list(target_points),
-        frames=[f._to_cpp() for f in frames],
+        frames=[f._to_cpp() for f in batch.frames],
         warp_coordinates=(
             warp_coordinates._to_cpp() if warp_coordinates is not None else None
         ),
-        warp_coeffs_initial=list(warp_coeffs) if warp_coeffs is not None else [0.0] * 5,
+        warp_coeffs_initial=(
+            list(batch.warp_coeffs) if batch.warp_coeffs is not None else [0.0] * 5
+        ),
     )
-    end_time = default_timer()
-    log(f"Ran optimizer in {end_time - start_time:.2f}s")
-
-    optimized_intrinsics = curr_intrinsics._with_params(result["intrinsics"])
-
-    optimized_cameras_from_target: list[Pose] = [
-        Pose._from_cpp(np.array(a)) for a in result["cameras_from_target"]
-    ]
+    log(f"Ran optimizer in {default_timer() - start_time:.2f}s")
 
     out_coeffs: tuple[float, float, float, float, float] | None = None
     if warp_coordinates is not None:
@@ -831,46 +842,53 @@ def _opencv_calibrate_inner(
             float(arr[4]),
         )
 
-    return optimized_intrinsics, optimized_cameras_from_target, out_coeffs
+    return _OptimizationBatch(
+        intrinsics=batch.intrinsics._with_params(result["intrinsics"]),
+        cameras_from_target=[
+            Pose._from_cpp(np.array(a)) for a in result["cameras_from_target"]
+        ],
+        frames=batch.frames,
+        warp_coeffs=out_coeffs,
+    )
 
 
 def _compute_frame_diagnostics(
     intrinsics: OpenCV | PinholeSplined,
-    cameras_from_target: list[Pose],
-    original_frames: list[Frame],
-    filtered_frames: list[Frame] | None,
+    cameras_from_target: list[Pose | None],
+    frames: list[Frame],
     target_points: np.ndarray,
+    inlier_masks: list[np.ndarray | None],
     target_warp: TargetWarp | None = None,
-) -> list[FrameDiagnostics]:
-    frame_diagnostics: list[FrameDiagnostics] = []
-    for i in range(len(cameras_from_target)):
+) -> list[FrameDiagnostics | None]:
+    frame_diagnostics: list[FrameDiagnostics | None] = []
+    for i in range(len(frames)):
+        pose = cameras_from_target[i]
+        if pose is None:
+            frame_diagnostics.append(None)
+            continue
+
         projected, residuals = _project_and_calculate_residuals(
             target_points,
-            cameras_from_target[i],
-            original_frames[i],
+            pose,
+            frames[i],
             intrinsics,
             target_warp,
         )
+        mask = inlier_masks[i]
+        if mask is None:
+            mask = np.ones(len(frames[i]), dtype=bool)
 
-        if filtered_frames is not None:
-            inlier_mask = np.isin(
-                original_frames[i].target_point_indices,
-                filtered_frames[i].target_point_indices,
-            )
-        else:
-            inlier_mask = np.ones(len(original_frames[i]), dtype=bool)
-
-        frame_diagnostics.append(FrameDiagnostics(projected, residuals, inlier_mask))
+        frame_diagnostics.append(FrameDiagnostics(projected, residuals, mask))
 
     return frame_diagnostics
 
 
-def _log_residual_stats(frame_diagnostics: list[FrameDiagnostics]) -> None:
+def _log_residual_stats(frame_diagnostics: list[FrameDiagnostics | None]) -> None:
     inlier_norms = np.concatenate(
         [
             np.linalg.norm(fi.residuals[fi.inlier_mask], axis=1)
             for fi in frame_diagnostics
-            if fi.inlier_mask.any()
+            if fi is not None and fi.inlier_mask.any()
         ]
     )
     log(
@@ -881,84 +899,95 @@ def _log_residual_stats(frame_diagnostics: list[FrameDiagnostics]) -> None:
 
 def _run_with_outlier_filtering(
     optimize_fn: Callable[
-        [_OptimizationState[_IntrinsicsT]], _OptimizationState[_IntrinsicsT]
+        [_OptimizationBatch[_IntrinsicsT]], _OptimizationBatch[_IntrinsicsT]
     ],
     initial_state: _OptimizationState[_IntrinsicsT],
     target_points: np.ndarray,
     outlier_threshold_stddevs: float | None,
     warp_coordinates: WarpCoordinates | None = None,
 ) -> _OptimizationState[_IntrinsicsT]:
-    original_frames = initial_state.frames
-    total_observations = sum(len(f) for f in original_frames)
     state = initial_state
+    total_observations = sum(len(f) for f in state.frames)
 
-    for i in range(MAX_OUTLIER_FILTER_PASSES + 1):
-        non_empty_mask = [len(f) > 0 for f in state.frames]
-        if not any(non_empty_mask):
+    for iteration in range(MAX_OUTLIER_FILTER_PASSES + 1):
+        active_indices = [
+            i for i, p in enumerate(state.cameras_from_target) if p is not None
+        ]
+        if not active_indices:
             raise ValueError(
-                "All points in all frames were marked as outliers; "
-                "calibration cannot continue."
+                "All frames have been excluded; calibration cannot continue."
             )
 
-        if all(non_empty_mask):
-            state = optimize_fn(state)
-        else:
-            n_empty = sum(not m for m in non_empty_mask)
-            log(f"Skipping {n_empty} frame(s) with no inlier points")
-            active_frames = [f for f, m in zip(state.frames, non_empty_mask) if m]
-            active_poses = [
-                p for p, m in zip(state.cameras_from_target, non_empty_mask) if m
-            ]
-            optimized = optimize_fn(
-                replace(state, frames=active_frames, cameras_from_target=active_poses)
-            )
-            # Merge optimized poses back, keeping old poses for empty frames
-            full_poses = list(state.cameras_from_target)
-            j = 0
-            for idx, m in enumerate(non_empty_mask):
-                if m:
-                    full_poses[idx] = optimized.cameras_from_target[j]
-                    j += 1
-            state = replace(
-                optimized, frames=state.frames, cameras_from_target=full_poses
-            )
-
-        if outlier_threshold_stddevs is None or i == MAX_OUTLIER_FILTER_PASSES:
-            break
-
-        curr_target_warp = (
-            TargetWarp(warp_coordinates, state.warp_coeffs)
-            if warp_coordinates is not None and state.warp_coeffs is not None
-            else None
-        )
-        # Compute residuals on the original (unfiltered) frames so that
-        # previously-rejected points can be recovered if they now fit.
-        curr_residuals = [
-            _project_and_calculate_residuals(
-                target_points, cam, frame, state.intrinsics, curr_target_warp
-            )[1]
-            for cam, frame in zip(state.cameras_from_target, original_frames)
+        opt_frames = [
+            _apply_mask(state.frames[i], state.inlier_masks[i]) for i in active_indices
+        ]
+        opt_poses: list[Pose] = [
+            state.cameras_from_target[i]  # type: ignore[misc]
+            for i in active_indices
         ]
 
-        new_frames = _filter_outliers(
-            original_frames, curr_residuals, outlier_threshold_stddevs
+        optimized = optimize_fn(
+            _OptimizationBatch(
+                intrinsics=state.intrinsics,
+                cameras_from_target=opt_poses,
+                frames=opt_frames,
+                warp_coeffs=state.warp_coeffs,
+            )
         )
 
-        if all(
-            np.array_equal(new_frame.target_point_indices, old_frame.target_point_indices)
-            for new_frame, old_frame in zip(new_frames, state.frames)
-        ):
+        # Scatter optimized poses back
+        for idx, pose in zip(active_indices, optimized.cameras_from_target):
+            state.cameras_from_target[idx] = pose
+        state.intrinsics = optimized.intrinsics
+        state.warp_coeffs = optimized.warp_coeffs
+
+        if outlier_threshold_stddevs is None or iteration == MAX_OUTLIER_FILTER_PASSES:
             break
 
-        total_remaining = sum(len(f) for f in new_frames)
+        # Compute residuals and update masks
+        curr_target_warp = None
+        if warp_coordinates is not None:
+            assert state.warp_coeffs is not None
+            curr_target_warp = TargetWarp(warp_coordinates, state.warp_coeffs)
+
+        residuals = []
+        for i in active_indices:
+            pose = state.cameras_from_target[i]
+            assert pose is not None
+            _, r = _project_and_calculate_residuals(
+                target_points,
+                pose,
+                state.frames[i],
+                state.intrinsics,
+                curr_target_warp,
+            )
+            residuals.append(r)
+
+        new_active_masks = _filter_outliers(residuals, outlier_threshold_stddevs)
+
+        changed = False
+        for idx, new_mask in zip(active_indices, new_active_masks):
+            old_mask = state.inlier_masks[idx]
+            assert old_mask is not None
+
+            if not new_mask.any():
+                state.cameras_from_target[idx] = None
+                state.inlier_masks[idx] = None
+                changed = True
+            elif not np.array_equal(old_mask, new_mask):
+                state.inlier_masks[idx] = new_mask
+                changed = True
+
+        if not changed:
+            break
+
+        total_remaining = sum(int(m.sum()) for m in state.inlier_masks if m is not None)
         total_outliers = total_observations - total_remaining
         pct = total_outliers / total_observations * 100
         log(
             f"Outlier filtering: {total_outliers}/{total_observations}"
             f" ({pct:.1f}%) outliers - going again..."
         )
-
-        state = replace(state, frames=new_frames)
 
     return state
 
@@ -1166,50 +1195,65 @@ def _opencv_calibrate(
     n_failed = len(frames) - n_solved
     log(f"PnP solved {n_solved}/{len(frames)} frames")
     if n_failed > 0:
-        log(f"{n_failed} frame(s) failed PnP, marking all their points as outliers")
+        log(f"{n_failed} frame(s) failed PnP, excluding from optimization")
 
-    # Split into solved-only lists for the optimizer (which can't handle None poses)
-    solved_frames = [f for f, ok in zip(frames, pnp_solved) if ok]
-    solved_poses = [p for p, ok in zip(initial_poses, pnp_solved) if ok]
-    failed_indices = [i for i, ok in enumerate(pnp_solved) if not ok]
+    poses: list[Pose | None] = [
+        p if ok else None for p, ok in zip(initial_poses, pnp_solved)
+    ]
+    inlier_masks: list[np.ndarray | None] = [
+        np.ones(len(f), dtype=bool) if ok else None
+        for f, ok in zip(frames, pnp_solved)
+    ]
 
     warp_coordinates = None
     if estimate_target_warp:
         warp_coordinates = _make_warp_coordinates(target_points)
 
-    def optimize_fn(state: _OptimizationState[OpenCV]) -> _OptimizationState[OpenCV]:
-        intrinsics, cameras, kxy = _opencv_calibrate_inner(
-            state.intrinsics,
-            config,
-            state.cameras_from_target,
-            target_points,
-            state.frames,
-            warp_coordinates,
-            state.warp_coeffs,
-        )
-        return replace(
-            state, intrinsics=intrinsics, cameras_from_target=cameras, warp_coeffs=kxy
-        )
+    def optimize_fn(batch: _OptimizationBatch[OpenCV]) -> _OptimizationBatch[OpenCV]:
+        return _opencv_calibrate_inner(batch, config, target_points, warp_coordinates)
 
-    # Run one optimization pass, then re-initialize poses with PnP using the
-    # optimized model. This recovers cameras that got garbage initial poses.
-    log("Running full optimization...")
-    first_state = optimize_fn(
-        _OptimizationState(initial_intrinsics, solved_poses, solved_frames, None)
-    )
-    model = first_state.intrinsics
-    log("Re-running PnP with optimized model...")
-    re_poses, re_solved, _ = _solve_pnp_all_frames(
-        model.K(), target_points, solved_frames, model.distortion_coeffs
-    )
-    n_re_solved = sum(re_solved)
-    log(f"Re-PnP solved {n_re_solved}/{len(solved_frames)} frames")
-    solved_frames = [f for f, ok in zip(solved_frames, re_solved) if ok]
-    solved_poses = [p for p, ok in zip(re_poses, re_solved) if ok]
+    if n_failed > 0:
+        # Fit a subsampled model first, then re-PnP all frames to recover failures
+        solved_frames = [f for f, ok in zip(frames, pnp_solved) if ok]
+        solved_poses = [p for p, ok in zip(initial_poses, pnp_solved) if ok]
+        covering_indices = set(
+            _select_covering_frames(
+                solved_frames, config.image_width, config.image_height
+            )
+        )
+        covering_frames = [
+            f for i, f in enumerate(solved_frames) if i in covering_indices
+        ]
+        covering_poses: list[Pose | None] = [
+            p for i, p in enumerate(solved_poses) if i in covering_indices
+        ]
+        log(
+            f"Fitting subsampled model ({len(covering_frames)} frames)"
+            f" to recover failed PnP..."
+        )
+        first_result = optimize_fn(
+            _OptimizationBatch(
+                intrinsics=initial_intrinsics,
+                cameras_from_target=[p for p in covering_poses if p is not None],
+                frames=covering_frames,
+                warp_coeffs=None,
+            )
+        )
+        initial_intrinsics = first_result.intrinsics
+        log("Re-running PnP with optimized model...")
+        re_poses, re_solved, _ = _solve_pnp_all_frames(
+            initial_intrinsics.K(),
+            target_points,
+            frames,
+            initial_intrinsics.distortion_coeffs,
+        )
+        n_re_solved = sum(re_solved)
+        log(f"Re-PnP solved {n_re_solved}/{len(frames)} frames")
+        poses = [p if ok else None for p, ok in zip(re_poses, re_solved)]
 
     state = _run_with_outlier_filtering(
         optimize_fn,
-        _OptimizationState(model, solved_poses, solved_frames, None),
+        _OptimizationState(initial_intrinsics, poses, frames, None, inlier_masks),
         target_points,
         outlier_threshold_stddevs,
         warp_coordinates=warp_coordinates,
@@ -1223,33 +1267,20 @@ def _opencv_calibrate(
         deflection = target_warp.max_deflection(target_points)
         log(f"Target warp max deflection: {deflection:.4f} (target units)")
 
-    solved_diagnostics = _compute_frame_diagnostics(
+    diagnostics = _compute_frame_diagnostics(
         state.intrinsics,
         state.cameras_from_target,
-        solved_frames,
-        state.frames if state.frames is not solved_frames else None,
+        state.frames,
         target_points,
-        target_warp,
+        inlier_masks=state.inlier_masks,
+        target_warp=target_warp,
     )
-    _log_residual_stats(solved_diagnostics)
-
-    # Reassemble full-length output lists with None for failed frames
-    all_poses: list[Pose | None] = list(initial_poses)
-    all_diagnostics: list[FrameDiagnostics | None] = [None] * len(frames)
-    j = 0
-    for i, ok in enumerate(pnp_solved):
-        if ok:
-            all_poses[i] = state.cameras_from_target[j]
-            all_diagnostics[i] = solved_diagnostics[j]
-            j += 1
-
-    for i in failed_indices:
-        all_poses[i] = None
+    _log_residual_stats(diagnostics)
 
     return CalibrationResult(
         camera_model=state.intrinsics,
-        cameras_from_target=all_poses,
-        frame_diagnostics=all_diagnostics,
+        cameras_from_target=state.cameras_from_target,
+        frame_diagnostics=diagnostics,
         frames=list(frames),
         target_points=target_points,
         target_warp=target_warp,
@@ -1257,33 +1288,22 @@ def _opencv_calibrate(
 
 
 def _pinhole_splined_refine_inner(
-    curr_intrinsics: PinholeSplined,
-    curr_cameras_from_target: list[Pose],
+    batch: _OptimizationBatch[PinholeSplined],
     target_points: np.ndarray,
-    frames: list[Frame],
     warp_coordinates: WarpCoordinates | None,
-    warp_coeffs: tuple[float, float, float, float, float] | None = None,
-) -> tuple[PinholeSplined, list[Pose], tuple[float, float, float, float, float] | None]:
+) -> _OptimizationBatch[PinholeSplined]:
     fine_tune_result = lbb.fine_tune_pinhole_splined(
-        model_config=curr_intrinsics._cpp_config(),
-        intrinsics_parameters=curr_intrinsics._cpp_params(),
-        cameras_from_target=[pose._to_cpp() for pose in curr_cameras_from_target],
+        model_config=batch.intrinsics._cpp_config(),
+        intrinsics_parameters=batch.intrinsics._cpp_params(),
+        cameras_from_target=[pose._to_cpp() for pose in batch.cameras_from_target],
         target_points=list(target_points),
-        frames=[f._to_cpp() for f in frames],
+        frames=[f._to_cpp() for f in batch.frames],
         warp_coordinates=(
             warp_coordinates._to_cpp() if warp_coordinates is not None else None
         ),
-        warp_coeffs_initial=list(warp_coeffs) if warp_coeffs is not None else [0.0] * 5,
-    )
-
-    optimized_cameras_from_target = [
-        Pose._from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_target"]
-    ]
-
-    optimized_intrinsics = replace(
-        curr_intrinsics,
-        dx_grid=fine_tune_result["dx_grid"],
-        dy_grid=fine_tune_result["dy_grid"],
+        warp_coeffs_initial=(
+            list(batch.warp_coeffs) if batch.warp_coeffs is not None else [0.0] * 5
+        ),
     )
 
     out_coeffs: tuple[float, float, float, float, float] | None = None
@@ -1297,7 +1317,18 @@ def _pinhole_splined_refine_inner(
             float(arr[4]),
         )
 
-    return optimized_intrinsics, optimized_cameras_from_target, out_coeffs
+    return _OptimizationBatch(
+        intrinsics=replace(
+            batch.intrinsics,
+            dx_grid=fine_tune_result["dx_grid"],
+            dy_grid=fine_tune_result["dy_grid"],
+        ),
+        cameras_from_target=[
+            Pose._from_cpp(np.array(a)) for a in fine_tune_result["cameras_from_target"]
+        ],
+        frames=batch.frames,
+        warp_coeffs=out_coeffs,
+    )
 
 
 def _compute_fov_from_opencv(
@@ -1321,6 +1352,95 @@ def _compute_fov_from_opencv(
     )
 
 
+def _select_covering_frames(
+    frames: list[Frame],
+    image_width: int,
+    image_height: int,
+    max_frames: int = 30,
+    cell_fraction: float = 0.02,
+) -> list[int]:
+    """Select a subset of frames that maximizes spatial coverage.
+
+    Greedily picks the frame covering the most uncovered image cells until
+    max_frames is reached or all cells are covered.
+
+    Args:
+        frames: Input calibration frames.
+        image_width: Image width in pixels.
+        image_height: Image height in pixels.
+        max_frames: Maximum number of frames to select.
+        cell_fraction: Cell size as a fraction of the smaller image dimension.
+
+    Returns:
+        Indices of selected frames ordered by coverage contribution.
+    """
+    cell_size = cell_fraction * min(image_width, image_height)
+    nx = int(np.ceil(image_width / cell_size))
+
+    frame_cells: list[set[int]] = []
+    for frame in frames:
+        pts = frame.detected_points_in_image
+        cx = np.clip((pts[:, 0] / cell_size).astype(int), 0, nx - 1)
+        cy = (pts[:, 1] / cell_size).astype(int)
+        frame_cells.append(set((cy * nx + cx).tolist()))
+
+    covered: set[int] = set()
+    selected: list[int] = []
+    remaining = set(range(len(frames)))
+
+    for _ in range(min(max_frames, len(frames))):
+        best_idx = -1
+        best_new = -1
+        for i in remaining:
+            new_count = len(frame_cells[i] - covered)
+            if new_count > best_new:
+                best_new = new_count
+                best_idx = i
+        if best_idx < 0 or best_new == 0:
+            break
+        covered |= frame_cells[best_idx]
+        selected.append(best_idx)
+        remaining.discard(best_idx)
+
+    return selected
+
+
+def _compute_fov_from_spline_model(
+    model: PinholeSplined,
+    padding_fraction: float = 0.05,
+    max_fov_deg: float = 175.0,
+) -> tuple[float, float]:
+    """Compute FOV by unprojecting the image corners through the spline model.
+
+    Args:
+        model: Fitted spline model.
+        padding_fraction: Fractional padding to add to each FOV axis.
+        max_fov_deg: Maximum allowed FOV.
+
+    Returns:
+        Padded (fov_deg_x, fov_deg_y), capped at max_fov_deg.
+    """
+    w, h = float(model.image_width), float(model.image_height)
+    n = 50
+    t = np.linspace(0, 1, n)
+    edges = np.concatenate(
+        [
+            np.column_stack([t * w, np.zeros(n)]),  # top
+            np.column_stack([t * w, np.full(n, h)]),  # bottom
+            np.column_stack([np.zeros(n), t * h]),  # left
+            np.column_stack([np.full(n, w), t * h]),  # right
+        ]
+    )
+    normalized = model.normalize_points(edges)
+    half_x = float(np.abs(normalized[:, 0]).max())
+    half_y = float(np.abs(normalized[:, 1]).max())
+
+    fov_x = float(np.degrees(2 * np.arctan(half_x * (1 + padding_fraction))))
+    fov_y = float(np.degrees(2 * np.arctan(half_y * (1 + padding_fraction))))
+
+    return (min(fov_x, max_fov_deg), min(fov_y, max_fov_deg))
+
+
 def _calibrate_pinhole_splined(
     target_points: np.ndarray,
     frames: list[Frame],
@@ -1334,6 +1454,16 @@ def _calibrate_pinhole_splined(
     assert np.issubdtype(target_points.dtype, np.floating), (
         f"Expected floating dtype for target_points, got {target_points.dtype}"
     )
+
+    # --- Stage 1: Subsample and fit OpenCV seed ---
+    sub_indices = _select_covering_frames(frames, config.image_width, config.image_height)
+    subsampled_frames = [frames[i] for i in sub_indices]
+    log(
+        f"Subsampled {sum(len(f.target_point_indices) for f in frames)} observations "
+        f"to {sum(len(f.target_point_indices) for f in subsampled_frames)} "
+        f"({len(subsampled_frames)} frames)"
+    )
+
     opencv_config = OpenCVConfig(
         image_height=config.image_height,
         image_width=config.image_width,
@@ -1341,28 +1471,98 @@ def _calibrate_pinhole_splined(
         included_distortion_coefficients=OpenCVConfig.FULL_14,
     )
 
-    log("Calibrating seed opencv model...")
+    log("Calibrating seed opencv model on subsampled data...")
     start_time = default_timer()
     opencv_calibration_result = _opencv_calibrate(
-        target_points, frames, opencv_config, None, estimate_target_warp=False
+        target_points,
+        subsampled_frames,
+        opencv_config,
+        None,
+        estimate_target_warp=False,
     )
     end_time = default_timer()
     log(f"OpenCV seed model ready in {end_time - start_time:.1f}s")
 
     opencv_model = opencv_calibration_result.camera_model
 
-    raw_fov_x, raw_fov_y = _compute_fov_from_opencv(opencv_model, padding_fraction=0.0)
-    log(f"OpenCV model FOV: {raw_fov_x:.1f}° x {raw_fov_y:.1f}°")
+    opencv_fov_x, opencv_fov_y = _compute_fov_from_opencv(
+        opencv_model, padding_fraction=0.0
+    )
+    log(f"OpenCV model FOV: {opencv_fov_x:.1f}° x {opencv_fov_y:.1f}°")
 
     if config.fov_deg_xy is not None:
         fov_deg_x, fov_deg_y = config.fov_deg_xy
         log(f"Spline FOV (user-specified): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
     else:
-        fov_deg_x, fov_deg_y = _compute_fov_from_opencv(
-            opencv_model, padding_fraction=0.10
+        # --- Stage 2: Coarse spline to estimate FOV ---
+        coarse_fov_x, coarse_fov_y = _compute_fov_from_opencv(
+            opencv_model, padding_fraction=0.30
         )
-        log(f"Spline FOV (+10% padding): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
+        log(
+            f"Coarse spline FOV (+30% padding): {coarse_fov_x:.1f}° x {coarse_fov_y:.1f}°"
+        )
 
+        coarse_nx = min(config.num_knots_x, 10)
+        coarse_ny = min(config.num_knots_y, 8)
+        coarse_cpp_config = lbb.PinholeSplinedConfig(
+            config.image_width,
+            config.image_height,
+            coarse_fov_x,
+            coarse_fov_y,
+            coarse_nx,
+            coarse_ny,
+            1.0,  # strong smoothness for coarse model
+        )
+
+        coarse_image_bound_x = np.tan(np.deg2rad(opencv_fov_x) / 2.0) * 0.8
+        coarse_image_bound_y = np.tan(np.deg2rad(opencv_fov_y) / 2.0) * 0.8
+        coarse_out = lbb.get_matching_spline_distortion_model(
+            opencv_model.distortion_coeffs.tolist(),
+            coarse_cpp_config,
+            float(coarse_image_bound_x),
+            float(coarse_image_bound_y),
+        )
+
+        coarse_model = PinholeSplined(
+            image_height=config.image_height,
+            image_width=config.image_width,
+            fx=opencv_model.fx,
+            fy=opencv_model.fy,
+            cx=opencv_model.cx,
+            cy=opencv_model.cy,
+            dx_grid=coarse_out["x_knots"],
+            dy_grid=coarse_out["y_knots"],
+            num_knots_x=coarse_nx,
+            num_knots_y=coarse_ny,
+            fov_deg_x=coarse_fov_x,
+            fov_deg_y=coarse_fov_y,
+            smoothness_lambda=1.0,
+        )
+
+        sub_pnp = opencv_calibration_result.cameras_from_target
+        sub_poses = [p for p in sub_pnp if p is not None]
+        sub_frames = [f for f, p in zip(subsampled_frames, sub_pnp) if p is not None]
+
+        log("Fitting coarse spline model to estimate FOV...")
+        start_time = default_timer()
+        coarse_result = _pinhole_splined_refine_inner(
+            _OptimizationBatch(
+                intrinsics=coarse_model,
+                cameras_from_target=sub_poses,
+                frames=sub_frames,
+                warp_coeffs=None,
+            ),
+            target_points,
+            None,
+        )
+        log(f"Coarse spline fit in {default_timer() - start_time:.1f}s")
+
+        fov_deg_x, fov_deg_y = _compute_fov_from_spline_model(
+            coarse_result.intrinsics, padding_fraction=0.05
+        )
+        log(f"Spline FOV (from coarse model +5%): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
+
+    # --- Stage 3: Full spline model ---
     cpp_config = lbb.PinholeSplinedConfig(
         config.image_width,
         config.image_height,
@@ -1375,8 +1575,18 @@ def _calibrate_pinhole_splined(
 
     log("Calculating matching spline model...")
     start_time = default_timer()
+
+    matching_bounds_fov_x = min(fov_deg_x, opencv_fov_x)
+    matching_bounds_fov_y = min(fov_deg_y, opencv_fov_y)
+
+    image_bound_x = np.tan(np.deg2rad(matching_bounds_fov_x) / 2.0) * 0.8
+    image_bound_y = np.tan(np.deg2rad(matching_bounds_fov_y) / 2.0) * 0.8
+
     out_dict = lbb.get_matching_spline_distortion_model(
-        opencv_model.distortion_coeffs.tolist(), cpp_config
+        opencv_model.distortion_coeffs.tolist(),
+        cpp_config,
+        float(image_bound_x),
+        float(image_bound_y),
     )
     end_time = default_timer()
     log(f"Matching spline model ready in {end_time - start_time:.1f}s")
@@ -1400,35 +1610,40 @@ def _calibrate_pinhole_splined(
         smoothness_lambda=config.smoothness_lambda,
     )
 
-    pnp_solved = opencv_calibration_result.cameras_from_target
-    solved_poses = [p for p in pnp_solved if p is not None]
-    solved_frames = [f for f, p in zip(frames, pnp_solved) if p is not None]
+    # PnP for all frames using the opencv model
+    all_poses_pnp, pnp_solved_mask, _ = _solve_pnp_all_frames(
+        opencv_model.K(),
+        target_points,
+        frames,
+        dist_coeffs=opencv_model.distortion_coeffs,
+    )
+    n_solved = sum(pnp_solved_mask)
+    log(f"PnP solved {n_solved}/{len(frames)} frames")
+
+    poses: list[Pose | None] = [
+        p if ok else None for p, ok in zip(all_poses_pnp, pnp_solved_mask)
+    ]
+    inlier_masks: list[np.ndarray | None] = [
+        np.ones(len(f), dtype=bool) if ok else None
+        for f, ok in zip(frames, pnp_solved_mask)
+    ]
 
     warp_coordinates = None
     if estimate_target_warp:
         warp_coordinates = _make_warp_coordinates(target_points)
 
     def optimize_fn(
-        state: _OptimizationState[PinholeSplined],
-    ) -> _OptimizationState[PinholeSplined]:
+        batch: _OptimizationBatch[PinholeSplined],
+    ) -> _OptimizationBatch[PinholeSplined]:
         log("Running full optimization...")
         start = default_timer()
-        intrinsics, cameras, kxy = _pinhole_splined_refine_inner(
-            state.intrinsics,
-            state.cameras_from_target,
-            target_points,
-            state.frames,
-            warp_coordinates,
-            state.warp_coeffs,
-        )
+        result = _pinhole_splined_refine_inner(batch, target_points, warp_coordinates)
         log(f"Performed full optimization in {default_timer() - start:.2f}s")
-        return replace(
-            state, intrinsics=intrinsics, cameras_from_target=cameras, warp_coeffs=kxy
-        )
+        return result
 
     state = _run_with_outlier_filtering(
         optimize_fn,
-        _OptimizationState(prior_model, solved_poses, solved_frames, None),
+        _OptimizationState(prior_model, poses, frames, None, inlier_masks),
         target_points,
         outlier_threshold_stddevs,
         warp_coordinates=warp_coordinates,
@@ -1442,35 +1657,26 @@ def _calibrate_pinhole_splined(
         deflection = target_warp.max_deflection(target_points)
         log(f"Target warp max deflection: {deflection:.4f} (target units)")
 
-    solved_diagnostics = _compute_frame_diagnostics(
+    diagnostics = _compute_frame_diagnostics(
         state.intrinsics,
         state.cameras_from_target,
-        solved_frames,
-        state.frames if state.frames is not solved_frames else None,
+        state.frames,
         target_points,
-        target_warp,
+        inlier_masks=state.inlier_masks,
+        target_warp=target_warp,
     )
 
     final_intrinsics = replace(
-        state.intrinsics, seed_opencv_distortion_parameters=opencv_model.distortion_coeffs
+        state.intrinsics,
+        seed_opencv_distortion_parameters=opencv_model.distortion_coeffs,
     )
 
-    _log_residual_stats(solved_diagnostics)
-
-    # Reassemble full-length output lists with None for failed frames
-    all_poses: list[Pose | None] = [None] * len(frames)
-    all_diagnostics: list[FrameDiagnostics | None] = [None] * len(frames)
-    j = 0
-    for i, p in enumerate(pnp_solved):
-        if p is not None:
-            all_poses[i] = state.cameras_from_target[j]
-            all_diagnostics[i] = solved_diagnostics[j]
-            j += 1
+    _log_residual_stats(diagnostics)
 
     return CalibrationResult(
         camera_model=final_intrinsics,
-        cameras_from_target=all_poses,
-        frame_diagnostics=all_diagnostics,
+        cameras_from_target=state.cameras_from_target,
+        frame_diagnostics=diagnostics,
         frames=list(frames),
         target_points=target_points,
         target_warp=target_warp,

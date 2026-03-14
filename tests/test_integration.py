@@ -123,11 +123,12 @@ def test_opencv_all_outliers_in_one_frame() -> None:
         target_points, frames_with_corruption, camera_model_config=config
     )
 
-    # The corrupted frame should have all points marked as outliers
-    fi0 = result.frame_diagnostics[0]
-    assert fi0 is not None, "Expected diagnostics for corrupted frame"
-    assert not fi0.inlier_mask.any(), (
-        "Expected all points in corrupted frame to be outliers"
+    # The corrupted frame should be fully rejected (no valid pose/diagnostics)
+    assert result.frame_diagnostics[0] is None, (
+        "Expected corrupted frame to be fully rejected"
+    )
+    assert result.cameras_from_target[0] is None, (
+        "Expected corrupted frame to have no pose"
     )
 
     sigma = result.residual_sigma_map()

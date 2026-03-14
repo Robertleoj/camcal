@@ -25,7 +25,9 @@ py::dict calibrate_opencv(
 
 py::dict get_matching_spline_distortion_model(
     std::vector<double>& opencv_distortion_params,
-    PinholeSplinedConfig& model_config
+    PinholeSplinedConfig& model_config,
+    double image_bound_x,
+    double image_bound_y
 );
 
 py::dict fine_tune_pinhole_splined(

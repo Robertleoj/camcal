@@ -1,7 +1,6 @@
 #include <ceres/ceres.h>
 #include <pybind11/numpy.h>
 #include <spdlog/spdlog.h>
-#include "./calibrate.hpp"
 #include "./utils.hpp"
 #include "cameramodels.hpp"
 
@@ -142,7 +141,9 @@ struct DistortionError {
 
 py::dict get_matching_spline_distortion_model(
     std::vector<double>& opencv_distortion_params,
-    PinholeSplinedConfig& model_config
+    PinholeSplinedConfig& model_config,
+    double image_bound_x,
+    double image_bound_y
 ) {
     const double fov_rad_x = model_config.fov_deg_x * M_PI / 180.0;
     const double fov_rad_y = model_config.fov_deg_y * M_PI / 180.0;
@@ -155,8 +156,8 @@ py::dict get_matching_spline_distortion_model(
     const double half_x_stereo = stereo_half_range(fov_rad_x);
     const double half_y_stereo = stereo_half_range(fov_rad_y);
 
-    const uint32_t num_samples_x = model_config.num_knots_x * 5;
-    const uint32_t num_samples_y = model_config.num_knots_y * 5;
+    const uint32_t num_samples_x = model_config.num_knots_x;
+    const uint32_t num_samples_y = model_config.num_knots_y;
 
     // y-major storage: knots[y][x]
     auto x_knots = vector_mat<double>(
@@ -180,8 +181,14 @@ py::dict get_matching_spline_distortion_model(
         }
     }
 
+    const int Nx = static_cast<int>(model_config.num_knots_x);
+    const int Ny = static_cast<int>(model_config.num_knots_y);
+
     const double inv_x_span = 1.0 / (2.0 * half_x_stereo);
     const double inv_y_span = 1.0 / (2.0 * half_y_stereo);
+
+    // Track which cells have in-image distortion residuals
+    std::vector<bool> cell_has_data(Nx * Ny, false);
 
     for (size_t y_sample_idx = 0; y_sample_idx < num_samples_y;
          ++y_sample_idx) {
@@ -200,33 +207,23 @@ py::dict get_matching_spline_distortion_model(
             const double y_normalized =
                 -half_y_pinhole + 2.0 * half_y_pinhole * y_proportion;
 
-            Vec2<double> normalized_point(x_normalized, y_normalized);
-
-            Vec2<double> opencv_distorted_point;
-            distort_opencv(
-                opencv_distortion_params.data(),
-                normalized_point,
-                opencv_distorted_point
-            );
-
             // Convert to stereographic for spline lookup
             double x_stereo, y_stereo;
             normalized_to_stereographic(
-                x_normalized, y_normalized, x_stereo, y_stereo
+                x_normalized,
+                y_normalized,
+                x_stereo,
+                y_stereo
             );
 
             // Spline coords in knot index space (stereographic domain)
-            double x_spline =
-                1.0 +
-                (x_stereo + half_x_stereo) *
-                    (static_cast<double>(model_config.num_knots_x) - 3.0) *
-                    inv_x_span;
+            double x_spline = 1.0 + (x_stereo + half_x_stereo) *
+                                        (static_cast<double>(Nx) - 3.0) *
+                                        inv_x_span;
 
-            double y_spline =
-                1.0 +
-                (y_stereo + half_y_stereo) *
-                    (static_cast<double>(model_config.num_knots_y) - 3.0) *
-                    inv_y_span;
+            double y_spline = 1.0 + (y_stereo + half_y_stereo) *
+                                        (static_cast<double>(Ny) - 3.0) *
+                                        inv_y_span;
 
             // Clamp to the interior range where the 4x4 support patch
             // has unique knot indices. Outside this range, clamping would
@@ -234,10 +231,8 @@ py::dict get_matching_spline_distortion_model(
             const double eps = 1e-12;
             const double x_min = 1.0;
             const double y_min = 1.0;
-            const double x_max =
-                static_cast<double>(model_config.num_knots_x) - 2.0;
-            const double y_max =
-                static_cast<double>(model_config.num_knots_y) - 2.0;
+            const double x_max = static_cast<double>(Nx) - 2.0;
+            const double y_max = static_cast<double>(Ny) - 2.0;
 
             if (x_spline < x_min || x_spline > x_max - eps ||
                 y_spline < y_min || y_spline > y_max - eps) {
@@ -246,6 +241,23 @@ py::dict get_matching_spline_distortion_model(
 
             const uint32_t ix = static_cast<uint32_t>(std::floor(x_spline));
             const uint32_t iy = static_cast<uint32_t>(std::floor(y_spline));
+
+            // Skip distortion matching outside the image bounds
+            if (std::abs(x_normalized) > image_bound_x ||
+                std::abs(y_normalized) > image_bound_y) {
+                continue;
+            }
+
+            cell_has_data[iy * Nx + ix] = true;
+
+            Vec2<double> normalized_point(x_normalized, y_normalized);
+
+            Vec2<double> opencv_distorted_point;
+            distort_opencv(
+                opencv_distortion_params.data(),
+                normalized_point,
+                opencv_distorted_point
+            );
 
             const double u = x_spline - static_cast<double>(ix);
             const double v = y_spline - static_cast<double>(iy);
@@ -291,6 +303,76 @@ py::dict get_matching_spline_distortion_model(
                 &y_knots[iy + 2][ix + 1], &y_knots[iy + 2][ix + 2]
             );
             // clang-format on
+        }
+    }
+
+    // Smoothness priors for cells without in-image data
+    const double sqrt_lambda = std::sqrt(model_config.smoothness_lambda);
+    for (int cy = 0; cy < Ny; cy++) {
+        for (int cx = 0; cx < Nx; cx++) {
+            if (cell_has_data[cy * Nx + cx]) {
+                continue;
+            }
+
+            // Horizontal: 4-knot stencil along rows
+            if (cx - 1 >= 0 && cx + 2 < Nx) {
+                for (int row = cy; row <= cy + 1 && row < Ny; row++) {
+                    auto* cost = new ceres::
+                        AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        );
+                    problem.AddResidualBlock(
+                        cost,
+                        nullptr,
+                        &x_knots[row][cx - 1],
+                        &x_knots[row][cx],
+                        &x_knots[row][cx + 1],
+                        &x_knots[row][cx + 2]
+                    );
+                    auto* cost_y = new ceres::
+                        AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        );
+                    problem.AddResidualBlock(
+                        cost_y,
+                        nullptr,
+                        &y_knots[row][cx - 1],
+                        &y_knots[row][cx],
+                        &y_knots[row][cx + 1],
+                        &y_knots[row][cx + 2]
+                    );
+                }
+            }
+
+            // Vertical: 4-knot stencil along columns
+            if (cy - 1 >= 0 && cy + 2 < Ny) {
+                for (int col = cx; col <= cx + 1 && col < Nx; col++) {
+                    auto* cost = new ceres::
+                        AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        );
+                    problem.AddResidualBlock(
+                        cost,
+                        nullptr,
+                        &x_knots[cy - 1][col],
+                        &x_knots[cy][col],
+                        &x_knots[cy + 1][col],
+                        &x_knots[cy + 2][col]
+                    );
+                    auto* cost_y = new ceres::
+                        AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        );
+                    problem.AddResidualBlock(
+                        cost_y,
+                        nullptr,
+                        &y_knots[cy - 1][col],
+                        &y_knots[cy][col],
+                        &y_knots[cy + 1][col],
+                        &y_knots[cy + 2][col]
+                    );
+                }
+            }
         }
     }
 

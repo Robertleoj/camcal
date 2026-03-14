@@ -179,7 +179,9 @@ PYBIND11_MODULE(
         "get_matching_spline_distortion_model",
         &lensboy::get_matching_spline_distortion_model,
         py::arg("opencv_distortion_params"),
-        py::arg("model_config")
+        py::arg("model_config"),
+        py::arg("image_bound_x"),
+        py::arg("image_bound_y")
     );
 
     m.def(
