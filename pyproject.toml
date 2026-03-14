@@ -101,5 +101,5 @@ convention = "google"
 
 [tool.pyright]
 useLibraryCodeForTypes = true
-include = ["src/lensboy/**"]
+include = ["src/lensboy/**", "tests/**"]
 exclude = ["**/build", "**/dist", "**/.venv", "**/__pycache__", "**/*.ipynb"]

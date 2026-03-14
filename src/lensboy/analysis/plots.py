@@ -203,11 +203,13 @@ def _collect_points(detections: list[lb.Frame]) -> np.ndarray:
 
 def _split_inlier_outlier(
     frames: list[lb.Frame],
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
 ) -> tuple[np.ndarray, np.ndarray]:
     inlier_list: list[np.ndarray] = []
     outlier_list: list[np.ndarray] = []
     for f, fd in zip(frames, frame_diagnostics):
+        if fd is None:
+            continue
         pts = np.asarray(f.detected_points_in_image, dtype=float)
         if pts.size == 0:
             continue
@@ -269,7 +271,7 @@ def plot_detection_coverage(
 
 def _plot_inlier_coverage(
     frames: list[lb.Frame],
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     image_width: int,
     image_height: int,
@@ -313,7 +315,7 @@ def _plot_inlier_coverage(
 
 def _plot_outliers(
     frames: list[lb.Frame],
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     image_width: int,
     image_height: int,
@@ -649,7 +651,7 @@ def _plot_distortion_grid(
 
 
 def _plot_residuals(
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     bins: int = 100,
     n_sigma: float = 6.0,
@@ -681,6 +683,8 @@ def _plot_residuals(
     inlier_2d: list[np.ndarray] = []
     outlier_2d: list[np.ndarray] = []
     for fi in frame_diagnostics:
+        if fi is None:
+            continue
         inlier_2d.append(fi.residuals[fi.inlier_mask])
         outlier_2d.append(fi.residuals[~fi.inlier_mask])
 
@@ -848,7 +852,7 @@ def _plot_residuals(
 
 def _plot_residual_vectors(
     frames: list[lb.Frame],
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     image_width: int,
     image_height: int,
@@ -882,6 +886,8 @@ def _plot_residual_vectors(
     positions: list[np.ndarray] = []
     residuals: list[np.ndarray] = []
     for frame, fi in zip(frames, frame_diagnostics):
+        if fi is None:
+            continue
         positions.append(frame.detected_points_in_image)
         residuals.append(fi.residuals)
 
@@ -963,7 +969,7 @@ def _plot_residual_vectors(
 
 def _plot_residual_grid(
     frames: list[lb.Frame],
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     image_width: int,
     image_height: int,
@@ -996,6 +1002,8 @@ def _plot_residual_grid(
     positions: list[np.ndarray] = []
     residuals: list[np.ndarray] = []
     for frame, fi in zip(frames, frame_diagnostics):
+        if fi is None:
+            continue
         positions.append(frame.detected_points_in_image[fi.inlier_mask])
         residuals.append(fi.residuals[fi.inlier_mask])
 
@@ -1101,7 +1109,7 @@ def _plot_residual_grid(
 
 def _plot_target_and_poses(
     target_points: np.ndarray,
-    cameras_T_target: list[lb.Pose],
+    cameras_T_target: list[lb.Pose | None],
     *,
     triad_scale: float = 20.0,
     title: str = "Target and camera poses",
@@ -1151,6 +1159,8 @@ def _plot_target_and_poses(
     axis_colors = ["red", "green", "blue"]
     camera_origins = []
     for pose in cameras_T_target:
+        if pose is None:
+            continue
         target_T_camera = pose.inverse()
         origin = target_T_camera.translation
         rotmat = target_T_camera.rotmat
@@ -1720,7 +1730,7 @@ def _draw_frame_residuals(
 
 
 def _plot_worst_residual_frames(
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     frames: list[lb.Frame],
     images: list[np.ndarray],
     *,
@@ -1752,16 +1762,16 @@ def _plot_worst_residual_frames(
     Returns:
         The figure if ``return_figure`` is True, otherwise None.
     """
-    per_frame_mags = []
-    for fi in frame_diagnostics:
+    per_frame_mags: dict[int, float] = {}
+    for i, fi in enumerate(frame_diagnostics):
+        if fi is None:
+            continue
         mags = np.linalg.norm(fi.residuals, axis=1)
         if not include_outliers:
             mags = mags[fi.inlier_mask]
-        per_frame_mags.append(float(np.sqrt(np.mean(mags**2))) if len(mags) > 0 else 0.0)
+        per_frame_mags[i] = float(np.sqrt(np.mean(mags**2))) if len(mags) > 0 else 0.0
 
-    ranked = sorted(
-        range(len(per_frame_mags)), key=lambda i: per_frame_mags[i], reverse=True
-    )
+    ranked = sorted(per_frame_mags, key=lambda i: per_frame_mags[i], reverse=True)
     selected = ranked[:n]
 
     bg = "#111111"
@@ -1782,6 +1792,7 @@ def _plot_worst_residual_frames(
     for ax_row, idx in zip(axes, selected):
         ax = ax_row[0]
         fi = frame_diagnostics[idx]
+        assert fi is not None
         frame = frames[idx]
         h_i, w_i = images[idx].shape[:2]
 
@@ -2117,7 +2128,7 @@ def plot_projection_diff(
 
 
 def _plot_per_image_rms(
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     sort_by: Literal["inliers", "all"] | None = "all",
     title: str = "Per-image residual RMS",
@@ -2145,19 +2156,27 @@ def _plot_per_image_rms(
     inlier_color = "#00d4ff"
     outlier_color = "#ff4444"
 
-    n_frames = len(frame_diagnostics)
-    indices = np.arange(n_frames)
-    inlier_rms = np.zeros(n_frames)
-    total_rms = np.zeros(n_frames)
+    # Collect only valid frames, preserving their original indices
+    valid_indices: list[int] = []
+    inlier_rms_list: list[float] = []
+    total_rms_list: list[float] = []
 
     for i, fi in enumerate(frame_diagnostics):
+        if fi is None:
+            continue
+        valid_indices.append(i)
         norms = np.linalg.norm(fi.residuals, axis=1)
-        total_rms[i] = float(np.sqrt(np.mean(norms**2))) if len(norms) > 0 else 0.0
+        total_rms_list.append(
+            float(np.sqrt(np.mean(norms**2))) if len(norms) > 0 else 0.0
+        )
         inlier_norms = norms[fi.inlier_mask]
-        inlier_rms[i] = (
+        inlier_rms_list.append(
             float(np.sqrt(np.mean(inlier_norms**2))) if len(inlier_norms) > 0 else 0.0
         )
 
+    n_valid = len(valid_indices)
+    inlier_rms = np.array(inlier_rms_list)
+    total_rms = np.array(total_rms_list)
     outlier_top = total_rms - inlier_rms
 
     if sort_by == "inliers":
@@ -2165,17 +2184,17 @@ def _plot_per_image_rms(
     elif sort_by == "all":
         order = np.argsort(total_rms)[::-1]
     else:
-        order = indices
+        order = np.arange(n_valid)
 
     sorted_inlier = inlier_rms[order]
     sorted_outlier = outlier_top[order]
-    sorted_labels = [str(i) for i in order]
+    sorted_labels = [str(valid_indices[i]) for i in order]
 
-    fig, ax = plt.subplots(figsize=(6, max(4, n_frames * 0.25)))
+    fig, ax = plt.subplots(figsize=(6, max(4, n_valid * 0.25)))
     fig.patch.set_facecolor(bg)
     ax.set_facecolor(bg)
 
-    y_pos = np.arange(n_frames)
+    y_pos = np.arange(n_valid)
     ax.barh(y_pos, sorted_inlier, color=inlier_color, label="Inliers only")
     ax.barh(
         y_pos,
@@ -2185,7 +2204,7 @@ def _plot_per_image_rms(
         label="Outliers included",
     )
 
-    ax.set_ylim(n_frames - 0.4, -0.6)
+    ax.set_ylim(n_valid - 0.4, -0.6)
     ax.set_yticks(y_pos)
     ax.set_yticklabels(sorted_labels)
     ax.set_ylabel("Image index", color=fg)

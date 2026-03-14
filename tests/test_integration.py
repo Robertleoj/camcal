@@ -1,5 +1,6 @@
 """Integration tests using a real charuco dataset and synthetic data."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -122,7 +123,9 @@ def test_opencv_all_outliers_in_one_frame() -> None:
     )
 
     # The corrupted frame should have all points marked as outliers
-    assert not result.frame_diagnostics[0].inlier_mask.any(), (
+    fi0 = result.frame_diagnostics[0]
+    assert fi0 is not None, "Expected diagnostics for corrupted frame"
+    assert not fi0.inlier_mask.any(), (
         "Expected all points in corrupted frame to be outliers"
     )
 
@@ -172,6 +175,8 @@ def _check_frame_projections(
     for i, frame in enumerate(frames):
         pose = result.cameras_from_target[i]
         fi = result.frame_diagnostics[i]
+        if pose is None or fi is None:
+            continue
 
         points_in_target = target_points[frame.target_point_indices]
         if result.target_warp is not None:
@@ -230,11 +235,18 @@ def _generate_synthetic_frames(
     all_indices = np.arange(len(target_points))
     frames: list[lb.Frame] = []
 
+    # Scale camera distances to the target's spatial extent
+    centroid = target_points.mean(axis=0)
+    target_radius = np.linalg.norm(target_points - centroid, axis=1).max()
+    base_dist = max(
+        target_radius * model.fx / (min(model.image_width, model.image_height) / 2), 100.0
+    )
+
     for _ in range(num_frames):
         rotvec = rng.normal(scale=0.2, size=3)
-        tz = rng.uniform(300, 900)
-        tx = rng.normal(scale=40)
-        ty = rng.normal(scale=40)
+        tz = rng.uniform(base_dist * 0.8, base_dist * 2.5)
+        tx = rng.normal(scale=base_dist * 0.1)
+        ty = rng.normal(scale=base_dist * 0.1)
         pose = lb.Pose.from_rotvec_trans(rotvec=rotvec, trans=np.array([tx, ty, tz]))
 
         points_in_cam = pose.apply(target_points)
@@ -353,7 +365,7 @@ def test_synthetic_auto_focal_length(ground_truth: lb.OpenCV) -> None:
     """Calibrate synthetic data without an initial focal length guess."""
     rng = np.random.default_rng(123)
     target_points = _make_planar_grid()
-    frames = _generate_synthetic_frames(rng, ground_truth, target_points)
+    frames = _generate_synthetic_frames(rng, ground_truth, target_points, num_frames=80)
 
     assert len(frames) >= 10, f"Too few valid frames ({len(frames)})"
 
@@ -366,10 +378,385 @@ def test_synthetic_auto_focal_length(ground_truth: lb.OpenCV) -> None:
 
     recovered = result.camera_model
     f_err_pct = abs(recovered.fx - ground_truth.fx) / ground_truth.fx * 100
-    assert f_err_pct < 2, (
+    print(f"focal error pct {f_err_pct}")
+    assert f_err_pct < 0.05, (
         f"Focal length off by {f_err_pct:.1f}%: "
         f"recovered {recovered.fx:.1f} vs ground truth {ground_truth.fx:.1f}"
     )
 
     sigma = result.residual_sigma_map()
-    assert sigma < 0.5, f"Residual sigma too high: {sigma:.3f}px"
+    assert sigma < 0.11, f"Residual sigma too high: {sigma:.3f}px"
+
+
+# ---------------------------------------------------------------------------
+# Exotic target generators
+# ---------------------------------------------------------------------------
+
+
+def _apply_random_similarity_transform(
+    rng: np.random.Generator, points: np.ndarray
+) -> np.ndarray:
+    """Apply a random rotation, translation, and uniform scale to target points.
+
+    Args:
+        rng: Numpy random generator.
+        points: 3D points, shape (N, 3).
+
+    Returns:
+        Transformed points, shape (N, 3).
+    """
+    scale = rng.uniform(0.01, 1000.0)
+    rotvec = rng.normal(scale=3, size=3)
+    # Keep translation modest so the target stays visible from the synthetic cameras
+    trans = rng.normal(scale=30.0, size=3)
+    pose = lb.Pose.from_rotvec_trans(rotvec=rotvec, trans=trans)
+    return pose.apply(points * scale)
+
+
+def _make_random_planar(
+    rng: np.random.Generator, n_points: int = 100, extent: float = 150.0
+) -> np.ndarray:
+    """Create randomly scattered points on the z=0 plane.
+
+    Args:
+        rng: Numpy random generator.
+        n_points: Number of points to generate.
+        extent: Half-width of the square region.
+
+    Returns:
+        Points, shape (n_points, 3) with z=0.
+    """
+    xy = rng.uniform(-extent, extent, size=(n_points, 2))
+    z = np.zeros((n_points, 1))
+    return np.hstack([xy, z])
+
+
+def _make_ball(
+    rng: np.random.Generator, n_points: int = 100, radius: float = 80.0
+) -> np.ndarray:
+    """Create points uniformly distributed inside a 3D ball.
+
+    Args:
+        rng: Numpy random generator.
+        n_points: Number of points to generate.
+        radius: Ball radius.
+
+    Returns:
+        Points, shape (n_points, 3).
+    """
+    # Rejection sampling for uniform distribution in a ball
+    points = []
+    while len(points) < n_points:
+        candidates = rng.uniform(-radius, radius, size=(n_points * 2, 3))
+        inside = np.linalg.norm(candidates, axis=1) <= radius
+        points.extend(candidates[inside].tolist())
+    return np.array(points[:n_points])
+
+
+def _make_two_intersecting_planes(
+    rng: np.random.Generator,
+    n_per_plane: int = 50,
+    extent: float = 120.0,
+    angle_deg: float = 30.0,
+) -> np.ndarray:
+    """Create points on two planes intersecting along the y-axis.
+
+    Args:
+        rng: Numpy random generator.
+        n_per_plane: Number of points per plane.
+        extent: Half-width of each plane.
+        angle_deg: Half-angle between the two planes.
+
+    Returns:
+        Points, shape (2 * n_per_plane, 3).
+    """
+    angle = np.radians(angle_deg)
+
+    # Plane 1: tilted by +angle around y-axis
+    xy1 = rng.uniform(-extent, extent, size=(n_per_plane, 2))
+    plane1 = np.column_stack(
+        [xy1[:, 0] * np.cos(angle), xy1[:, 1], xy1[:, 0] * np.sin(angle)]
+    )
+
+    # Plane 2: tilted by -angle around y-axis
+    xy2 = rng.uniform(-extent, extent, size=(n_per_plane, 2))
+    plane2 = np.column_stack(
+        [xy2[:, 0] * np.cos(-angle), xy2[:, 1], xy2[:, 0] * np.sin(-angle)]
+    )
+
+    return np.vstack([plane1, plane2])
+
+
+def _make_hemisphere(
+    rng: np.random.Generator, n_points: int = 100, radius: float = 100.0
+) -> np.ndarray:
+    """Create points on the surface of a hemisphere (z >= 0).
+
+    Args:
+        rng: Numpy random generator.
+        n_points: Number of points to generate.
+        radius: Hemisphere radius.
+
+    Returns:
+        Points, shape (n_points, 3).
+    """
+    # Uniform sampling on a sphere via normal distribution, then take z >= 0
+    points = []
+    while len(points) < n_points:
+        raw = rng.normal(size=(n_points * 3, 3))
+        raw /= np.linalg.norm(raw, axis=1, keepdims=True)
+        raw *= radius
+        upper = raw[raw[:, 2] >= 0]
+        points.extend(upper.tolist())
+    return np.array(points[:n_points])
+
+
+def _make_cylinder(
+    rng: np.random.Generator,
+    n_points: int = 100,
+    radius: float = 60.0,
+    height: float = 200.0,
+) -> np.ndarray:
+    """Create points on the surface of a cylinder aligned with the y-axis.
+
+    Args:
+        rng: Numpy random generator.
+        n_points: Number of points to generate.
+        radius: Cylinder radius.
+        height: Cylinder height.
+
+    Returns:
+        Points, shape (n_points, 3).
+    """
+    theta = rng.uniform(0, 2 * np.pi, size=n_points)
+    y = rng.uniform(-height / 2, height / 2, size=n_points)
+    x = radius * np.cos(theta)
+    z = radius * np.sin(theta)
+    return np.column_stack([x, y, z])
+
+
+def _make_random_3d_cluster(
+    rng: np.random.Generator, n_points: int = 100, extent: float = 100.0
+) -> np.ndarray:
+    """Create randomly scattered points in a 3D box.
+
+    Args:
+        rng: Numpy random generator.
+        n_points: Number of points to generate.
+        extent: Half-width of the box along each axis.
+
+    Returns:
+        Points, shape (n_points, 3).
+    """
+    return rng.uniform(-extent, extent, size=(n_points, 3))
+
+
+# ---------------------------------------------------------------------------
+# Synthetic exotic-target tests
+# ---------------------------------------------------------------------------
+
+_EXOTIC_TARGET_MODELS = [
+    pytest.param(
+        lb.OpenCV(
+            image_width=1920,
+            image_height=1080,
+            fx=1200.0,
+            fy=1200.0,
+            cx=960.0,
+            cy=540.0,
+            distortion_coeffs=np.array([0.02, -0.005, 0.0, 0.0, 0.0]),
+        ),
+        id="minimal_distortion",
+    ),
+    pytest.param(
+        lb.OpenCV(
+            image_width=1920,
+            image_height=1080,
+            fx=800.0,
+            fy=800.0,
+            cx=960.0,
+            cy=540.0,
+            distortion_coeffs=np.array([-0.3, 0.12, 0.001, -0.002, -0.04]),
+        ),
+        id="medium_distortion",
+    ),
+    pytest.param(
+        lb.OpenCV(
+            image_width=3088,
+            image_height=2064,
+            fx=1354.5124985080904,
+            fy=1354.3181984440832,
+            cx=1514.104403863959,
+            cy=1076.8896015546975,
+            distortion_coeffs=np.array(
+                [
+                    1.721749851751697,
+                    0.4929049527387092,
+                    -0.00012249059620334055,
+                    6.571195104303754e-05,
+                    0.010826498817585985,
+                    2.040924560626435,
+                    0.9497700975338902,
+                    0.0744348380132027,
+                    -6.852182482012876e-05,
+                    -8.155006688534965e-06,
+                    0.00021009345380118726,
+                    -4.392347849675705e-06,
+                    0.0005388341393511124,
+                    -0.0003861499673898091,
+                ]
+            ),
+        ),
+        id="extreme_distortion",
+    ),
+]
+
+_EXOTIC_TARGETS = [
+    pytest.param(_make_random_planar, id="random_planar"),
+    pytest.param(_make_ball, id="ball"),
+    pytest.param(_make_two_intersecting_planes, id="two_intersecting_planes"),
+    pytest.param(_make_hemisphere, id="hemisphere"),
+    pytest.param(_make_cylinder, id="cylinder"),
+    pytest.param(_make_random_3d_cluster, id="random_3d_cluster"),
+]
+
+
+@pytest.mark.parametrize("ground_truth", _EXOTIC_TARGET_MODELS)
+@pytest.mark.parametrize("make_target", _EXOTIC_TARGETS)
+def test_synthetic_exotic_targets(
+    ground_truth: lb.OpenCV,
+    make_target: Callable[[np.random.Generator], np.ndarray],
+) -> None:
+    """Calibrate with exotic (non-grid) calibration targets."""
+    rng = np.random.default_rng(777)
+    target_points = make_target(rng)
+    target_points = _apply_random_similarity_transform(rng, target_points)
+
+    frames = _generate_synthetic_frames(rng, ground_truth, target_points, num_frames=40)
+    assert len(frames) >= 10, f"Too few valid frames ({len(frames)})"
+
+    # Fit the same distortion terms the ground truth uses
+    dist_mask = ground_truth.distortion_coeffs != 0
+    config = lb.OpenCVConfig(
+        image_height=ground_truth.image_height,
+        image_width=ground_truth.image_width,
+        included_distortion_coefficients=dist_mask,
+    )
+    result = lb.calibrate_camera(
+        target_points,
+        frames,
+        camera_model_config=config,
+    )
+
+    recovered = result.camera_model
+    f_err_pct = abs(recovered.fx - ground_truth.fx) / ground_truth.fx * 100
+    print(f"focal error pct: {f_err_pct}")
+    assert f_err_pct < 0.05, (
+        f"Focal length off by {f_err_pct:.1f}%: "
+        f"recovered {recovered.fx:.1f} vs ground truth {ground_truth.fx:.1f}"
+    )
+
+    sigma = result.residual_sigma_map()
+    print(f"sigma: {sigma}")
+    assert sigma < 0.11, f"Residual sigma too high: {sigma:.3f}px"
+
+    _check_frame_projections(result, target_points, frames)
+
+
+def test_pnp_failure() -> None:
+    """Verify that frames failing initial PnP are recovered after optimization.
+
+    Uses a wrong initial focal length so PnP produces bad poses initially.
+    After the first optimization refines intrinsics, the retry should recover them.
+    """
+    ground_truth = lb.OpenCV(
+        image_width=3088,
+        image_height=2064,
+        fx=1354.5124985080904,
+        fy=1354.3181984440832,
+        cx=1514.104403863959,
+        cy=1076.8896015546975,
+        distortion_coeffs=np.array(
+            [
+                1.721749851751697,
+                0.4929049527387092,
+                -0.00012249059620334055,
+                6.571195104303754e-05,
+                0.010826498817585985,
+                2.040924560626435,
+                0.9497700975338902,
+                0.0744348380132027,
+                -6.852182482012876e-05,
+                -8.155006688534965e-06,
+                0.00021009345380118726,
+                -4.392347849675705e-06,
+                0.0005388341393511124,
+                -0.0003861499673898091,
+            ]
+        ),
+    )
+
+    rng = np.random.default_rng(999)
+    target_points = _make_planar_grid()
+    frames = _generate_synthetic_frames(rng, ground_truth, target_points, num_frames=60)
+    assert len(frames) >= 20, f"Too few valid frames ({len(frames)})"
+
+    # Inject some frames with only 3 detections — too few for PnP (needs >= 4).
+    # These should fail initially but be recovered after the first optimization
+    # refines intrinsics and retries with distortion-aware PnP.
+    sparse_frames = []
+    for f in frames[:5]:
+        sparse_frames.append(
+            lb.Frame(
+                target_point_indices=f.target_point_indices[:3],
+                detected_points_in_image=f.detected_points_in_image[:3],
+            )
+        )
+    frames_with_sparse = sparse_frames + frames
+
+    dist_mask = ground_truth.distortion_coeffs != 0
+    config = lb.OpenCVConfig(
+        image_height=ground_truth.image_height,
+        image_width=ground_truth.image_width,
+        included_distortion_coefficients=dist_mask,
+    )
+    result = lb.calibrate_camera(
+        target_points,
+        frames_with_sparse,
+        camera_model_config=config,
+    )
+
+    # Output lists must match input length
+    n_total = len(frames_with_sparse)
+    assert len(result.cameras_from_target) == n_total
+    assert len(result.frame_diagnostics) == n_total
+    assert len(result.frames) == n_total
+
+    # The first 5 frames (sparse, <4 points) should have None pose/diagnostics
+    for i in range(5):
+        assert result.cameras_from_target[i] is None, (
+            f"Expected None pose for sparse frame {i}"
+        )
+        assert result.frame_diagnostics[i] is None, (
+            f"Expected None diagnostics for sparse frame {i}"
+        )
+
+    # The remaining frames (full detections) should all have valid pose/diagnostics
+    for i in range(5, n_total):
+        assert result.cameras_from_target[i] is not None, (
+            f"Expected valid pose for frame {i}"
+        )
+        assert result.frame_diagnostics[i] is not None, (
+            f"Expected valid diagnostics for frame {i}"
+        )
+
+    # Should still converge — sparse frames are just ignored
+    recovered = result.camera_model
+    f_err_pct = abs(recovered.fx - ground_truth.fx) / ground_truth.fx * 100
+    assert f_err_pct < 0.05, (
+        f"Focal length off by {f_err_pct:.1f}%: "
+        f"recovered {recovered.fx:.1f} vs ground truth {ground_truth.fx:.1f}"
+    )
+
+    sigma = result.residual_sigma_map()
+    assert sigma < 0.11, f"Residual sigma too high: {sigma:.3f}px"

@@ -220,8 +220,8 @@ class CalibrationResult(Generic[_IntrinsicsT]):
     """
 
     camera_model: _IntrinsicsT
-    cameras_from_target: list[Pose]
-    frame_diagnostics: list[FrameDiagnostics]
+    cameras_from_target: list[Pose | None]
+    frame_diagnostics: list[FrameDiagnostics | None]
     frames: list[Frame]
     target_points: np.ndarray
     target_warp: TargetWarp | None = None
@@ -256,7 +256,11 @@ class CalibrationResult(Generic[_IntrinsicsT]):
             Estimated residual standard deviation in pixels.
         """
         inlier_vals = np.concatenate(
-            [fi.residuals[fi.inlier_mask] for fi in self.frame_diagnostics]
+            [
+                fi.residuals[fi.inlier_mask]
+                for fi in self.frame_diagnostics
+                if fi is not None
+            ]
         ).ravel()
         mu = float(np.median(inlier_vals))
         mad = float(np.median(np.abs(inlier_vals - mu)))
@@ -269,7 +273,9 @@ class CalibrationResult(Generic[_IntrinsicsT]):
             Total outlier count.
         """
         return sum(
-            int(np.count_nonzero(~fi.inlier_mask)) for fi in self.frame_diagnostics
+            int(np.count_nonzero(~fi.inlier_mask))
+            for fi in self.frame_diagnostics
+            if fi is not None
         )
 
     def num_detections(self) -> int:
@@ -278,7 +284,7 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         Returns:
             Total detection count (inliers + outliers).
         """
-        return sum(len(fi.residuals) for fi in self.frame_diagnostics)
+        return sum(len(fi.residuals) for fi in self.frame_diagnostics if fi is not None)
 
     # -- Plot forwarding methods --
     # These require the `analysis` extra (pip install lensboy[analysis]).
@@ -716,10 +722,13 @@ class CalibrationResult(Generic[_IntrinsicsT]):
         """
         from lensboy.analysis.plots import _plot_frame_residuals
 
+        fi = self.frame_diagnostics[index]
+        if fi is None:
+            raise ValueError(f"Frame {index} has no diagnostics (PnP failed)")
         image = images[index] if images is not None else None
         return _plot_frame_residuals(
             self.frames[index],
-            self.frame_diagnostics[index],
+            fi,
             image=image,
             image_width=self.camera_model.image_width,
             image_height=self.camera_model.image_height,
@@ -971,25 +980,31 @@ def _solve_pnp_all_frames(
     K: np.ndarray,
     target_points: np.ndarray,
     frames: list[Frame],
-) -> tuple[list[Pose], float]:
-    """Run solvePnP for all frames and return poses with mean reprojection error.
+    dist_coeffs: np.ndarray | None = None,
+) -> tuple[list[Pose], list[bool], float]:
+    """Run solvePnP for all frames.
 
-    Each failed frame is penalised as 10x the average error of successful frames.
-    If all frames fail, the returned error is inf.
+    Every frame gets a pose — failed frames get an identity pose and are
+    flagged so the caller can mask them out.
 
     Args:
         K: Camera intrinsics matrix, shape (3, 3).
         target_points: Calibration target 3D points, shape (N, 3).
         frames: Detected calibration frames.
+        dist_coeffs: Distortion coefficients for PnP. Zeros if None.
 
     Returns:
-        Tuple of (poses, penalised mean squared error per point).
+        Tuple of (poses, solved mask, mean squared error per point).
     """
-    dist_coeffs = np.zeros(5, dtype=np.float64)
-    poses = []
+    if dist_coeffs is None:
+        dist_coeffs = np.zeros(5, dtype=np.float64)
+
+    poses: list[Pose] = []
+    solved: list[bool] = []
     total_squared_error = 0.0
     total_points = 0
-    num_failed = 0
+
+    identity = Pose.from_rotvec_trans(rotvec=np.zeros(3), trans=np.array([0.0, 0.0, 1.0]))
 
     for frame in frames:
         obj_pts = target_points[frame.target_point_indices].astype(np.float64)
@@ -1006,25 +1021,21 @@ def _solve_pnp_all_frames(
                 ].reshape(-1, 2)
                 total_squared_error += float(np.sum((projected - img_pts) ** 2))
                 total_points += len(obj_pts)
+                solved.append(True)
                 continue
 
-        warn("PnP init failed for frame, using fallback pose")
-        poses.append(Pose.from_tz(100))
-        num_failed += 1
+        poses.append(identity)
+        solved.append(False)
 
-    if total_points == 0:
-        return poses, float("inf")
-
-    mean_error = total_squared_error / total_points
-    penalty = 10.0 * mean_error * num_failed
-    return poses, mean_error + penalty
+    mean_error = total_squared_error / total_points if total_points > 0 else float("inf")
+    return poses, solved, mean_error
 
 
 def _get_initial_state_with_pnp(
     config: OpenCVConfig,
     target_points: np.ndarray,
     frames: list[Frame],
-) -> tuple[OpenCV, list[Pose]]:
+) -> tuple[OpenCV, list[Pose], list[bool]]:
     """Estimate initial intrinsics and poses using PnP.
 
     If ``config.initial_focal_length`` is set, uses that value directly.
@@ -1037,15 +1048,15 @@ def _get_initial_state_with_pnp(
         frames: Detected calibration frames.
 
     Returns:
-        Tuple of (initial intrinsics, initial poses).
+        Tuple of (initial intrinsics, poses, solved mask).
     """
     cx = config.image_width / 2.0
     cy = config.image_height / 2.0
 
     if config.initial_focal_length is not None:
         intrinsics = config.get_initial_value()
-        poses, _ = _solve_pnp_all_frames(intrinsics.K(), target_points, frames)
-        return intrinsics, poses
+        poses, solved, _ = _solve_pnp_all_frames(intrinsics.K(), target_points, frames)
+        return intrinsics, poses, solved
 
     max_dim = max(config.image_width, config.image_height)
     candidates = np.geomspace(0.2 * max_dim, 5.0 * max_dim, num=30)
@@ -1053,14 +1064,16 @@ def _get_initial_state_with_pnp(
     best_focal = float(candidates[0])
     best_error = float("inf")
     best_poses: list[Pose] = []
+    best_solved: list[bool] = []
 
     for f in candidates:
         K = np.array([[f, 0, cx], [0, f, cy], [0, 0, 1]])
-        poses, error = _solve_pnp_all_frames(K, target_points, frames)
+        poses, solved, error = _solve_pnp_all_frames(K, target_points, frames)
         if error < best_error:
             best_error = error
             best_focal = float(f)
             best_poses = poses
+            best_solved = solved
 
     log(f"Auto-estimated initial focal length: {best_focal:.1f} px")
 
@@ -1073,7 +1086,7 @@ def _get_initial_state_with_pnp(
         cy=cy,
         distortion_coeffs=np.zeros(14, dtype=np.float64),
     )
-    return intrinsics, best_poses
+    return intrinsics, best_poses, best_solved
 
 
 _PLANARITY_RATIO_THRESHOLD = 0.1
@@ -1158,9 +1171,20 @@ def _opencv_calibrate(
         f"Expected floating dtype for target_points, got {target_points.dtype}"
     )
     log("Computing initial poses with PnP...")
-    initial_intrinsics, initial_cameras_from_target = _get_initial_state_with_pnp(
+    initial_intrinsics, initial_poses, pnp_solved = _get_initial_state_with_pnp(
         config, target_points, frames
     )
+
+    n_solved = sum(pnp_solved)
+    n_failed = len(frames) - n_solved
+    log(f"PnP solved {n_solved}/{len(frames)} frames")
+    if n_failed > 0:
+        log(f"{n_failed} frame(s) failed PnP, marking all their points as outliers")
+
+    # Split into solved-only lists for the optimizer (which can't handle None poses)
+    solved_frames = [f for f, ok in zip(frames, pnp_solved) if ok]
+    solved_poses = [p for p, ok in zip(initial_poses, pnp_solved) if ok]
+    failed_indices = [i for i, ok in enumerate(pnp_solved) if not ok]
 
     warp_coordinates = None
     if estimate_target_warp:
@@ -1182,7 +1206,7 @@ def _opencv_calibrate(
 
     state = _run_with_outlier_filtering(
         optimize_fn,
-        _OptimizationState(initial_intrinsics, initial_cameras_from_target, frames, None),
+        _OptimizationState(initial_intrinsics, solved_poses, solved_frames, None),
         target_points,
         outlier_threshold_stddevs,
         warp_coordinates=warp_coordinates,
@@ -1196,21 +1220,34 @@ def _opencv_calibrate(
         deflection = target_warp.max_deflection(target_points)
         log(f"Target warp max deflection: {deflection:.4f} (target units)")
 
-    frame_diagnostics = _compute_frame_diagnostics(
+    solved_diagnostics = _compute_frame_diagnostics(
         state.intrinsics,
         state.cameras_from_target,
-        frames,
-        state.frames if state.frames is not frames else None,
+        solved_frames,
+        state.frames if state.frames is not solved_frames else None,
         target_points,
         target_warp,
     )
+    _log_residual_stats(solved_diagnostics)
 
-    _log_residual_stats(frame_diagnostics)
+    # Reassemble full-length output lists with None for failed frames
+    all_poses: list[Pose | None] = list(initial_poses)
+    all_diagnostics: list[FrameDiagnostics | None] = [None] * len(frames)
+    j = 0
+    for i, ok in enumerate(pnp_solved):
+        if ok:
+            all_poses[i] = state.cameras_from_target[j]
+            all_diagnostics[i] = solved_diagnostics[j]
+            j += 1
+
+    for i in failed_indices:
+        all_poses[i] = None
+
     return CalibrationResult(
         camera_model=state.intrinsics,
-        cameras_from_target=state.cameras_from_target,
-        frame_diagnostics=frame_diagnostics,
-        frames=frames,
+        cameras_from_target=all_poses,
+        frame_diagnostics=all_diagnostics,
+        frames=list(frames),
         target_points=target_points,
         target_warp=target_warp,
     )
@@ -1337,7 +1374,9 @@ def _calibrate_pinhole_splined(
         fov_deg_y=fov_deg_y,
     )
 
-    cameras_from_target = opencv_calibration_result.cameras_from_target
+    pnp_solved = opencv_calibration_result.cameras_from_target
+    solved_poses = [p for p in pnp_solved if p is not None]
+    solved_frames = [f for f, p in zip(frames, pnp_solved) if p is not None]
 
     warp_coordinates = None
     if estimate_target_warp:
@@ -1363,7 +1402,7 @@ def _calibrate_pinhole_splined(
 
     state = _run_with_outlier_filtering(
         optimize_fn,
-        _OptimizationState(prior_model, cameras_from_target, frames, None),
+        _OptimizationState(prior_model, solved_poses, solved_frames, None),
         target_points,
         outlier_threshold_stddevs,
         warp_coordinates=warp_coordinates,
@@ -1377,11 +1416,11 @@ def _calibrate_pinhole_splined(
         deflection = target_warp.max_deflection(target_points)
         log(f"Target warp max deflection: {deflection:.4f} (target units)")
 
-    frame_diagnostics = _compute_frame_diagnostics(
+    solved_diagnostics = _compute_frame_diagnostics(
         state.intrinsics,
         state.cameras_from_target,
-        frames,
-        state.frames if state.frames is not frames else None,
+        solved_frames,
+        state.frames if state.frames is not solved_frames else None,
         target_points,
         target_warp,
     )
@@ -1390,12 +1429,23 @@ def _calibrate_pinhole_splined(
         state.intrinsics, seed_opencv_distortion_parameters=opencv_model.distortion_coeffs
     )
 
-    _log_residual_stats(frame_diagnostics)
+    _log_residual_stats(solved_diagnostics)
+
+    # Reassemble full-length output lists with None for failed frames
+    all_poses: list[Pose | None] = [None] * len(frames)
+    all_diagnostics: list[FrameDiagnostics | None] = [None] * len(frames)
+    j = 0
+    for i, p in enumerate(pnp_solved):
+        if p is not None:
+            all_poses[i] = state.cameras_from_target[j]
+            all_diagnostics[i] = solved_diagnostics[j]
+            j += 1
+
     return CalibrationResult(
         camera_model=final_intrinsics,
-        cameras_from_target=state.cameras_from_target,
-        frame_diagnostics=frame_diagnostics,
-        frames=frames,
+        cameras_from_target=all_poses,
+        frame_diagnostics=all_diagnostics,
+        frames=list(frames),
         target_points=target_points,
         target_warp=target_warp,
     )
