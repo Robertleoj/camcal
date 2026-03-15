@@ -1,8 +1,8 @@
 #include <ceres/ceres.h>
 #include <pybind11/numpy.h>
 #include <spdlog/spdlog.h>
+#include "./cameramodels.hpp"
 #include "./utils.hpp"
-#include "cameramodels.hpp"
 
 namespace lensboy {
 
@@ -145,16 +145,14 @@ py::dict get_matching_spline_distortion_model(
     double image_bound_x,
     double image_bound_y
 ) {
+    const SplineMap map(model_config);
+
     const double fov_rad_x = model_config.fov_deg_x * M_PI / 180.0;
     const double fov_rad_y = model_config.fov_deg_y * M_PI / 180.0;
 
     // Sampling range in normalized (pinhole) space
     const double half_x_pinhole = std::tan(fov_rad_x / 2.0);
     const double half_y_pinhole = std::tan(fov_rad_y / 2.0);
-
-    // Spline domain is in stereographic space
-    const double half_x_stereo = stereo_half_range(fov_rad_x);
-    const double half_y_stereo = stereo_half_range(fov_rad_y);
 
     const uint32_t num_samples_x = model_config.num_knots_x;
     const uint32_t num_samples_y = model_config.num_knots_y;
@@ -181,14 +179,8 @@ py::dict get_matching_spline_distortion_model(
         }
     }
 
-    const int Nx = static_cast<int>(model_config.num_knots_x);
-    const int Ny = static_cast<int>(model_config.num_knots_y);
-
-    const double inv_x_span = 1.0 / (2.0 * half_x_stereo);
-    const double inv_y_span = 1.0 / (2.0 * half_y_stereo);
-
     // Track which cells have in-image distortion residuals
-    std::vector<bool> cell_has_data(Nx * Ny, false);
+    std::vector<bool> cell_has_data(map.Nx * map.Ny, false);
 
     for (size_t y_sample_idx = 0; y_sample_idx < num_samples_y;
          ++y_sample_idx) {
@@ -207,40 +199,20 @@ py::dict get_matching_spline_distortion_model(
             const double y_normalized =
                 -half_y_pinhole + 2.0 * half_y_pinhole * y_proportion;
 
-            // Convert to stereographic for spline lookup
-            double x_stereo, y_stereo;
-            normalized_to_stereographic(
+            double x_spline, y_spline;
+            map.normalized_to_grid_coords(
                 x_normalized,
                 y_normalized,
-                x_stereo,
-                y_stereo
+                x_spline,
+                y_spline
             );
 
-            // Spline coords in knot index space (stereographic domain)
-            double x_spline = 1.0 + (x_stereo + half_x_stereo) *
-                                        (static_cast<double>(Nx) - 3.0) *
-                                        inv_x_span;
+            const int ix = static_cast<int>(x_spline);
+            const int iy = static_cast<int>(y_spline);
 
-            double y_spline = 1.0 + (y_stereo + half_y_stereo) *
-                                        (static_cast<double>(Ny) - 3.0) *
-                                        inv_y_span;
-
-            // Clamp to the interior range where the 4x4 support patch
-            // has unique knot indices. Outside this range, clamping would
-            // cause duplicate parameter block pointers which Ceres forbids.
-            const double eps = 1e-12;
-            const double x_min = 1.0;
-            const double y_min = 1.0;
-            const double x_max = static_cast<double>(Nx) - 2.0;
-            const double y_max = static_cast<double>(Ny) - 2.0;
-
-            if (x_spline < x_min || x_spline > x_max - eps ||
-                y_spline < y_min || y_spline > y_max - eps) {
+            if (!map.is_inside_fov(ix, iy)) {
                 continue;
             }
-
-            const uint32_t ix = static_cast<uint32_t>(std::floor(x_spline));
-            const uint32_t iy = static_cast<uint32_t>(std::floor(y_spline));
 
             // Skip distortion matching outside the image bounds
             if (std::abs(x_normalized) > image_bound_x ||
@@ -248,7 +220,7 @@ py::dict get_matching_spline_distortion_model(
                 continue;
             }
 
-            cell_has_data[iy * Nx + ix] = true;
+            cell_has_data[iy * map.Nx + ix] = true;
 
             Vec2<double> normalized_point(x_normalized, y_normalized);
 
@@ -308,15 +280,15 @@ py::dict get_matching_spline_distortion_model(
 
     // Smoothness priors for cells without in-image data
     const double sqrt_lambda = std::sqrt(model_config.smoothness_lambda);
-    for (int cy = 0; cy < Ny; cy++) {
-        for (int cx = 0; cx < Nx; cx++) {
-            if (cell_has_data[cy * Nx + cx]) {
+    for (int cy = 0; cy < map.Ny; cy++) {
+        for (int cx = 0; cx < map.Nx; cx++) {
+            if (cell_has_data[cy * map.Nx + cx]) {
                 continue;
             }
 
             // Horizontal: 4-knot stencil along rows
-            if (cx - 1 >= 0 && cx + 2 < Nx) {
-                for (int row = cy; row <= cy + 1 && row < Ny; row++) {
+            if (cx - 1 >= 0 && cx + 2 < map.Nx) {
+                for (int row = cy; row <= cy + 1 && row < map.Ny; row++) {
                     auto* cost = new ceres::
                         AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
                             new KnotSmoothness{sqrt_lambda}
@@ -345,8 +317,8 @@ py::dict get_matching_spline_distortion_model(
             }
 
             // Vertical: 4-knot stencil along columns
-            if (cy - 1 >= 0 && cy + 2 < Ny) {
-                for (int col = cx; col <= cx + 1 && col < Nx; col++) {
+            if (cy - 1 >= 0 && cy + 2 < map.Ny) {
+                for (int col = cx; col <= cx + 1 && col < map.Nx; col++) {
                     auto* cost = new ceres::
                         AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
                             new KnotSmoothness{sqrt_lambda}
@@ -413,10 +385,10 @@ py::dict get_matching_spline_distortion_model(
     out["x_knots"] = x_array;
     out["y_knots"] = y_array;
 
-    out["x_range_start"] = -half_x_stereo;
-    out["x_range_end"] = half_x_stereo;
-    out["y_range_start"] = -half_y_stereo;
-    out["y_range_end"] = half_y_stereo;
+    out["x_range_start"] = -map.half_x;
+    out["x_range_end"] = map.half_x;
+    out["y_range_start"] = -map.half_y;
+    out["y_range_end"] = map.half_y;
 
     return out;
 }

@@ -16,96 +16,6 @@
 
 namespace lensboy {
 
-struct SplineMap {
-    int Nx = 0;
-    int Ny = 0;
-    double half_x = 0.0;
-    double half_y = 0.0;
-    double x_scale = 0.0;
-    double y_scale = 0.0;
-
-    explicit SplineMap(
-        const PinholeSplinedConfig& cfg
-    ) {
-        this->Nx = static_cast<int>(cfg.num_knots_x);
-        this->Ny = static_cast<int>(cfg.num_knots_y);
-
-        const double fov_rad_x = cfg.fov_deg_x * M_PI / 180.0;
-        const double fov_rad_y = cfg.fov_deg_y * M_PI / 180.0;
-        this->half_x = stereo_half_range(fov_rad_x);
-        this->half_y = stereo_half_range(fov_rad_y);
-
-        this->x_scale = (Nx - 3) / (2.0 * this->half_x);
-        this->y_scale = (Ny - 3) / (2.0 * this->half_y);
-    }
-
-    inline void project_to_spline_coords(
-        const double* cam6,
-        const Vec3<double>& pw,
-        double& gx,
-        double& gy,
-        double& x_n,
-        double& y_n
-    ) const {
-        double pc[3];
-        ceres::AngleAxisRotatePoint(cam6, pw.data(), pc);
-        pc[0] += cam6[3];
-        pc[1] += cam6[4];
-        pc[2] += cam6[5];
-
-        const double inv_z = 1.0 / pc[2];
-        x_n = pc[0] * inv_z;
-        y_n = pc[1] * inv_z;
-
-        double x_s, y_s;
-        normalized_to_stereographic(x_n, y_n, x_s, y_s);
-
-        const double x_s_raw = 1.0 + (x_s + this->half_x) * this->x_scale;
-        const double y_s_raw = 1.0 + (y_s + this->half_y) * this->y_scale;
-
-        constexpr double eps = 1e-12;
-        gx = std::max(0.0, std::min(x_s_raw, Nx - 1.0 - eps));
-        gy = std::max(0.0, std::min(y_s_raw, Ny - 1.0 - eps));
-    }
-
-    inline void cell_index(
-        const double* cam6,
-        const Vec3<double>& pw,
-        int& ix,
-        int& iy
-    ) const {
-        double gx, gy, xn, yn;
-        project_to_spline_coords(cam6, pw, gx, gy, xn, yn);
-        ix = static_cast<int>(gx);
-        iy = static_cast<int>(gy);
-    }
-
-    // Check whether the 4x4 support patch for cell (ix, iy) has all
-    // unique knot indices. Near edges, clamping causes duplicates which
-    // Ceres forbids in a single residual block.
-    inline bool is_inside_fov(
-        int ix,
-        int iy
-    ) const {
-        return ix >= 1 && ix <= Nx - 3 && iy >= 1 && iy <= Ny - 3;
-    }
-
-    inline void support_indices_4x4(
-        int ix,
-        int iy,
-        std::array<int, 16>& flat
-    ) const {
-        int idx = 0;
-        for (int b = 0; b < 4; b++) {
-            const int yy = clamp_int(iy + b - 1, 0, Ny - 1);
-            for (int a = 0; a < 4; a++) {
-                const int xx = clamp_int(ix + a - 1, 0, Nx - 1);
-                flat[idx++] = yy * Nx + xx;
-            }
-        }
-    }
-};
-
 // Constrains the spline correction at a fixed point to a target value.
 // Precomputed basis weights make this a simple weighted sum of 16 knots.
 struct SplineAnchor {
@@ -290,13 +200,8 @@ static inline void BuildProblem(
                                  bool constrain_dx,
                                  bool constrain_dy,
                                  double weight) {
-        double x_s, y_s;
-        normalized_to_stereographic(x_n, y_n, x_s, y_s);
-        const double gx_raw = 1.0 + (x_s + map.half_x) * map.x_scale;
-        const double gy_raw = 1.0 + (y_s + map.half_y) * map.y_scale;
-        constexpr double eps = 1e-12;
-        const double gx = std::max(0.0, std::min(gx_raw, map.Nx - 1.0 - eps));
-        const double gy = std::max(0.0, std::min(gy_raw, map.Ny - 1.0 - eps));
+        double gx, gy;
+        map.normalized_to_grid_coords(x_n, y_n, gx, gy);
         const int ix = static_cast<int>(gx);
         const int iy = static_cast<int>(gy);
 

@@ -298,7 +298,7 @@ class CalibrationResult(Generic[IntrinsicsT]):
         *,
         title: str = "Inlier coverage",
         s: float = 6.0,
-        grid_cells: int = 20,
+        grid_cells: int = 50,
         return_figure: bool = False,
     ) -> Figure | None:
         """Scatter-plot inlier detections with empty grid cells highlighted.

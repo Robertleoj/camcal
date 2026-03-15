@@ -103,13 +103,15 @@ I've converged on a pretty simple pattern that I'll use again for my camera. I u
 
 Here are some examples of the images from each position:
 
-<img src="media/calibration_docs/setup/top_left_img.jpg" width="49%"> <img src="media/calibration_docs/setup/top_img.jpg" width="49%">
+<img src="media/calibration_docs/setup/top_left_img.png" width="49%"> <img src="media/calibration_docs/setup/top_img.png" width="49%">
 
-<img src="media/calibration_docs/setup/top_right_img.jpg" width="49%"> <img src="media/calibration_docs/setup/bottom_left_img.jpg" width="49%">
+<img src="media/calibration_docs/setup/top_right_img.png" width="49%"> <img src="media/calibration_docs/setup/bottom_left_img.png" width="49%">
 
-<img src="media/calibration_docs/setup/bottom_img.jpg" width="49%"> <img src="media/calibration_docs/setup/bottom_right_img.jpg" width="49%">
+<img src="media/calibration_docs/setup/bottom_img.png" width="49%"> <img src="media/calibration_docs/setup/bottom_right_img.png" width="49%">
 
 These are all angled close-ups with varying angles, and I end up with good coverage. This has worked well for me for a while.
+
+When creating your capture program, I recommend adding a live display of your detection coverage so far - this goes a long way in preventing bad coverage.
 
 ## 5. Detecting Keypoints
 
@@ -148,7 +150,7 @@ lba.plot_detection_coverage(frames, image_width=image_width, image_height=image_
 
 <img src="media/calibration_docs/coverage.png" width="100%">
 
-Looks like I did okay, though the density could be better on the right of the image.
+Looks like I did okay - there are a couple of patches with less density, but this should do just fine.
 
 If you see that you don't have data in an area of the image you will be using, you need to take more samples to make sure to cover them.
 
@@ -185,21 +187,18 @@ The logs of the solver were
 
 ```
 Computing initial poses with PnP...
-Running full optimization...
-Ran optimizer in 0.34s
-Outlier filtering: 23/5708 (0.4%) outliers - going again...
-Running full optimization...
-Ran optimizer in 0.16s
-Outlier filtering: 32/5708 (0.6%) outliers - going again...
-Running full optimization...
-Ran optimizer in 0.15s
-Target warp max deflection: 0.3662 (target units)
-Residuals (inliers): mean=0.170px, worst=0.712px
+PnP solved 62/62 frames
+OpenCV pass 1: 0.4s (mean reproj=0.166px, worst=6.293px)
+Outlier filtering: 82/6204 (1.3%) — re-optimizing...
+OpenCV pass 2: 0.1s (mean reproj=0.147px, worst=0.702px)
+Outlier filtering: 110/6204 (1.8%) — re-optimizing...
+OpenCV pass 3: 0.1s (mean reproj=0.145px, worst=0.582px)
+Target warp max deflection: 0.3835 (target units)
 ```
 
 You might notice two things:
 
-**Outlier filtering:** `lensboy` automatically filters outliers when fitting the lens model. The reason for this is that you often have erroneous or noisy data in your dataset, and including them will corrupt your fit. You can control the aggressiveness of the outlier filtering by tweaking `outlier_threshold_stddevs`, and turn it off entirely by passing `None`. However, the default value of `5` provides a good balance and works well for me. I see that about 0.6% of my data was filtered out, which is normal. I'd start to worry if it goes over a few percent.
+**Outlier filtering:** `lensboy` automatically filters outliers when fitting the lens model. The reason for this is that you often have erroneous or noisy data in your dataset, and including them will corrupt your fit. You can control the aggressiveness of the outlier filtering by tweaking `outlier_threshold_stddevs`, and turn it off entirely by passing `None`. However, the default value of `5` provides a good balance and works well for me. I see that about 1.8% of my data was filtered out, which is normal. I'd start to worry if it goes over ~5%.
 
 **Target warp estimation:** No matter how precisely manufactured, your target will never be perfectly flat - it will have some kind of warping. Because of this, `lensboy` automatically estimates the warping of your target, which usually results in better fits. This feature is not available for very non-planar targets. You can disable this feature by setting `estimate_target_warp` to `False`.
 
@@ -231,7 +230,7 @@ This looks about as I'd expect. What you should look out for:
 
 - **Histogram should be roughly Gaussian.** If your histogram does not look like a Gaussian distribution, something is going systematically wrong, and you need to debug it.
 - **2D residuals should be isotropic.** The 2D residual distribution in the bottom left should be radially symmetric - you should not be able to see much of a pattern. Again, if this is not the case, you need to figure out what's causing the irregularity.
-- **Sparse outliers.** Ideally, you should have a sparse set of outliers outside your main residual cloud. You should not see a dense mass of outliers on the edges of the cloud - this indicates issues with the target point detections, and should be mitigated.
+- **Reasonable outliers.** Ideally, you should have a sparse set of outliers outside your main residual cloud. You should not see a dense mass of outliers on the edges of the cloud - this indicates issues with the target point detections, and should be mitigated.
 
 The gaussian MAD $\sigma$ is a robust estimate of the standard deviation of the data - it represents the distribution better than a raw standard deviation. When it comes to this number, lower is better until we start overfitting.
 
@@ -311,12 +310,12 @@ When looking at the residual grid, it is important to only focus on the areas wh
 Let's look at the residual grid for the model we fit earlier:
 
 ```python
-result.plot_residual_grid(heatmap_max=1.0)
+result.plot_residual_grid()
 ```
 
 <img src="media/calibration_docs/first_model_residual_grid.png" width="100%">
 
-This looks _reasonable_. However, I still see a bit too much growth in residual norm and directional bias on the right side. I'd want to see if I can do better.
+This looks _reasonable_. However, I still see a bit too much growth in residual norm and directional bias towards the edges. I'd want to see if I can do better.
 
 ### Target warp
 
@@ -346,10 +345,10 @@ result_no_warp.plot_residuals()
 
 <img src="media/calibration_docs/first_model_no_warp_residuals.png" width="100%">
 
-We have a higher MAD $\sigma$ - 0.18px vs the 0.13px we saw earlier. The smaller number of outliers is explained by the distribution being wider overall, causing a larger outlier threshold. We can also see more systematic issues in the residual grid:
+We have a higher MAD $\sigma$ - 0.16px vs the 0.11px we saw earlier. The smaller number of outliers is explained by the distribution being wider overall, causing a larger outlier threshold. We can also see more systematic issues in the residual grid:
 
 ```python
-result_no_warp.plot_residual_grid(heatmap_max=1.0)
+result_no_warp.plot_residual_grid()
 ```
 
 <img src="media/calibration_docs/first_model_no_warp_residual_grid.png" width="100%">
@@ -363,7 +362,7 @@ Most of the time, you should enable target warp estimation.
 Let's look at this plot for our camera model:
 
 ```python
-result.plot_distortion_grid(fov_fraction=0.7)
+result.plot_distortion_grid()
 ```
 
 <img src="media/calibration_docs/first_model_distortion_grid.png" width="100%">
@@ -409,9 +408,11 @@ lba.plot_projection_diff(result_a.camera_model, result_b.camera_model)
 
 <img src="media/calibration_docs/first_model_cross_validation.png" width="100%">
 
-The plot shows the magnitude of the projection difference between the models. This looks pretty reasonable! The models differ by less than 0.1 pixel in most of the image, so the model is not overfitting.
+The plot shows the magnitude of the projection difference between the models. The differences exceeding 0.2px on the left are a bit concerning.
 
 > **Rule of thumb:** Be concerned if there are widespread differences of more than 2x the MAD $\sigma$ from the residual plot.
+
+I would actually think we are slightly underfitting here - the model is not able to capture the distortion as well as we would like on the left side, and has some degrees of freedom in how exactly it underfits. It's the systematic issues we saw in the residual grid that makes me think this.
 
 One thing to look out for is the "fit circle". Its interior is the area of the image we use to find the difference between the implied camera frames of the models. This should only cover areas of the image where you expect good intrinsics. If it goes out of that area, this plot will not be realistic, and you need to adjust the `radius` argument.
 
@@ -448,25 +449,25 @@ result.plot_residuals()
 
 <img src="media/calibration_docs/spline_30x20_residuals.png" width="100%">
 
-The fit is tighter, the MAD sigma going from 0.13px to 0.09px. There are a bit more outliers, owing to the tighter distribution. Let's take a look at the residual grid:
+The fit is _slightly_ tighter, with the MAD sigma going from 0.106px to 0.094px. It's a very small reduction, I wouldn't switch to the spline model just looking at this number.
 
 ```python
-result.plot_residual_grid(heatmap_max=1.0)
+result.plot_residual_grid()
 ```
 
 <img src="media/calibration_docs/spline_30x20_residual_grid.png" width="100%">
 
-This looks much better than our previous model. There is less directional bias and there is less pattern in the residual magnitudes. Specifically, we've reduced the amount of error in the right side of the image.
+This definitely looks a bit better than our previous model. I specifically see less directional bias towards the edges.
 
 Let's take a look at what this spline model's projection function looks like. I'll show the spline knots by setting `show_spline_knots` to `True`:
 
 ```python
-result.plot_distortion_grid(fov_fraction=0.7, show_spline_knots=True)
+result.plot_distortion_grid(show_spline_knots=True)
 ```
 
 <img src="media/calibration_docs/spline_30x20_distortion_grid.png" width="100%">
 
-The distortion looks very similar to our previous model. One thing to note is that the spline-based models can look a bit strange where they are underconstrained, such as in the top right corner for our model. This is nothing to worry about unless you require good intrinsics in those areas. In those cases, you need to constrain the distortion model with more data in those areas.
+The distortion looks very similar to our previous model - not surprising, since they both fit the lens pretty well.
 
 Let's do a quick cross-validation:
 
@@ -478,7 +479,7 @@ lba.plot_projection_diff(result_a.camera_model, result_b.camera_model)
 
 <img src="media/calibration_docs/spline_30x20_cross_validation.png" width="100%">
 
-Interesting - the differences are a bit larger than what we saw for the previous model. It indicates that we might be approaching overfitting. However, I'll follow my rule of thumb - most of the difference in the image is smaller than ~0.2px, so I would happily use this model.
+Interesting - this cross-validation looks better than for the OpenCV model. My hypothesis is that this model underfits less, and so is better defined by the data. We are nowhere near overfitting.
 
 ## 9. Using your model
 
@@ -528,8 +529,11 @@ You can do this with `get_pinhole_model()`, which returns a matching `PinholeRem
 ```python
 spline_model = lb.PinholeSplined.load("calibration.json")
 
-# export to a pinhole model
-pinhole_model = spline_model.get_pinhole_model(fx=1100, fy=1100)
+# export to the pinhole model
+pinhole_model = spline_result.camera_model.get_pinhole_model(
+    fx=1100,
+    fy=1100,
+)
 
 # Now I can undistort images
 undistorted_img = pinhole_model.undistort(img)
@@ -538,7 +542,9 @@ undistorted_img = pinhole_model.undistort(img)
 K = pinhole_model.K()
 ```
 
-The `fx` and `fy` parameters control the focal length of the output pinhole model. Higher values zoom in, preserving detail in the center but cropping the edges of the field of view. Lower values preserve the full field of view but compress the center, reducing the effective resolution there. In the case of a wide-angle lens, this tradeoff is particularly pronounced. Let's see what our choice of `fx=1100, fy=1100` looks like:
+The `fx` and `fy` parameters control the focal length of the output pinhole model. Higher values zoom in, preserving detail in the center but cropping the edges of the field of view. Lower values preserve the full field of view but compress the center, reducing the effective resolution there. In the case of a wide-angle lens, this tradeoff is particularly pronounced.
+
+Let's see what our pinhole model looks like:
 
 ```python
 lba.plot_undistortion(pinhole_model, image=used_images[0])
@@ -548,7 +554,31 @@ lba.plot_undistortion(pinhole_model, image=used_images[0])
 
 With these values, we throw away the edges of the distorted image in order to keep all of the information in the interior.
 
-Here is an example of an undistortion map that makes the opposite tradeoff, compressing the information in the interior to keep all areas of the distorted image:
+You can also choose the dimension of the undistorted image. I don't want to sacrifice horizontal field of view, but I also don't want to compress the center of the image. The solution is to increase the width of my image to preserve more field of view without compressing the center of the image:
+
+```python
+# desired undistorted image dimensions
+new_width = 3072
+new_height = 2048
+
+# export to the pinhole model
+pinhole_model = spline_result.camera_model.get_pinhole_model(
+    fx=1100,
+    fy=1100,
+    # central principal point
+    cx=new_width / 2,
+    cy=new_height / 2,
+    image_size_wh=(new_width, new_height)
+)
+
+lba.plot_undistortion(pinhole_model, image=used_images[0])
+```
+
+<img src="media/calibration_docs/undistortion_improved.png" width="100%">
+
+This is more like it - we keep the horizontal edges without compressing the center.
+
+Here is a more extreme example of an undistortion map that keeps the full field of view, but drastically compresses the interior to do so:
 
 ```python
 pinhole_model_wide = spline_model.get_pinhole_model_alpha(1.0)
@@ -557,7 +587,7 @@ lba.plot_undistortion(pinhole_model_wide, image=used_images[0])
 
 <img src="media/calibration_docs/undistortion_all.png" width="100%">
 
-Notice how the center of the distorted image is dramatically compressed in the undistorted image.
+You'll need to make the appropriate tradeoffs for your application.
 
 ## 10. Conclusion
 

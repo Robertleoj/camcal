@@ -1967,7 +1967,7 @@ def plot_projection_diff(
         linestyle="--",
         linewidth=0.8,
         alpha=0.5,
-        label="fit circle",
+        label=f"fit circle (r={fit_radius:.0f}px)",
     )
     ax_heat.add_patch(circle)
     ax_heat.legend(loc="upper right", facecolor=bg, edgecolor=fg, labelcolor=fg)
