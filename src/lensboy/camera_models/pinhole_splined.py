@@ -37,7 +37,7 @@ class PinholeSplinedConfig(CameraModelConfig):
 
     initial_focal_length: float | None = None
     fov_deg_xy: tuple[float, float] | None = None
-    smoothness_lambda: float = 1e-1
+    smoothness_lambda: float = 1.0
 
 
 @dataclass
@@ -86,7 +86,7 @@ class PinholeSplined(CameraModel):
     fov_deg_y: float
 
     seed_opencv_distortion_parameters: np.ndarray | None = None
-    smoothness_lambda: float = 1e-1
+    smoothness_lambda: float = 1.0
 
     def __repr__(self) -> str:
         return (
