@@ -14,13 +14,13 @@ _enabled = True
 def log(msg: str) -> None:
     """Print an info message if logging is enabled."""
     if _enabled:
-        print(msg)
+        print(msg, flush=True)
 
 
 def warn(msg: str) -> None:
     """Print a warning message if logging is enabled."""
     if _enabled:
-        print(f"Warning: {msg}")
+        print(f"Warning: {msg}", flush=True)
 
 
 def disable_logs() -> None:
@@ -33,6 +33,17 @@ def enable_logs() -> None:
     """Re-enable lensboy log output."""
     global _enabled
     _enabled = True
+
+
+def _set_cpp_log_level(level: str) -> None:
+    """Set the spdlog log level for the C++ backend.
+
+    Args:
+        level: One of "trace", "debug", "info", "warn", "error", "critical", "off".
+    """
+    import lensboy.lensboy_bindings as lbb
+
+    lbb.set_log_level(level)
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:

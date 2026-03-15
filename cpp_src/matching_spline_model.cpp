@@ -1,9 +1,8 @@
 #include <ceres/ceres.h>
 #include <pybind11/numpy.h>
 #include <spdlog/spdlog.h>
-#include "./calibrate.hpp"
+#include "./cameramodels.hpp"
 #include "./utils.hpp"
-#include "cameramodels.hpp"
 
 namespace lensboy {
 
@@ -142,21 +141,21 @@ struct DistortionError {
 
 py::dict get_matching_spline_distortion_model(
     std::vector<double>& opencv_distortion_params,
-    PinholeSplinedConfig& model_config
+    PinholeSplinedConfig& model_config,
+    double image_bound_x,
+    double image_bound_y
 ) {
+    const SplineMap map(model_config);
+
     const double fov_rad_x = model_config.fov_deg_x * M_PI / 180.0;
     const double fov_rad_y = model_config.fov_deg_y * M_PI / 180.0;
 
-    const double half_x_range = std::tan(fov_rad_x / 2.0);
-    const double half_y_range = std::tan(fov_rad_y / 2.0);
+    // Sampling range in normalized (pinhole) space
+    const double half_x_pinhole = std::tan(fov_rad_x / 2.0);
+    const double half_y_pinhole = std::tan(fov_rad_y / 2.0);
 
-    const double x_range_start = -half_x_range;
-    const double x_range_end = +half_x_range;
-    const double y_range_start = -half_y_range;
-    const double y_range_end = +half_y_range;
-
-    const uint32_t num_samples_x = model_config.num_knots_x * 5;
-    const uint32_t num_samples_y = model_config.num_knots_y * 5;
+    const uint32_t num_samples_x = model_config.num_knots_x;
+    const uint32_t num_samples_y = model_config.num_knots_y;
 
     // y-major storage: knots[y][x]
     auto x_knots = vector_mat<double>(
@@ -180,8 +179,8 @@ py::dict get_matching_spline_distortion_model(
         }
     }
 
-    const double inv_x_span = 1.0 / (x_range_end - x_range_start);
-    const double inv_y_span = 1.0 / (y_range_end - y_range_start);
+    // Track which cells have in-image distortion residuals
+    std::vector<bool> cell_has_data(map.Nx * map.Ny, false);
 
     for (size_t y_sample_idx = 0; y_sample_idx < num_samples_y;
          ++y_sample_idx) {
@@ -194,10 +193,34 @@ py::dict get_matching_spline_distortion_model(
                 static_cast<double>(y_sample_idx) /
                 (static_cast<double>(num_samples_y) - 1);
 
+            // Sample in normalized (pinhole) space
             const double x_normalized =
-                x_range_start + (x_range_end - x_range_start) * x_proportion;
+                -half_x_pinhole + 2.0 * half_x_pinhole * x_proportion;
             const double y_normalized =
-                y_range_start + (y_range_end - y_range_start) * y_proportion;
+                -half_y_pinhole + 2.0 * half_y_pinhole * y_proportion;
+
+            double x_spline, y_spline;
+            map.normalized_to_grid_coords(
+                x_normalized,
+                y_normalized,
+                x_spline,
+                y_spline
+            );
+
+            const int ix = static_cast<int>(x_spline);
+            const int iy = static_cast<int>(y_spline);
+
+            if (!map.is_inside_fov(ix, iy)) {
+                continue;
+            }
+
+            // Skip distortion matching outside the image bounds
+            if (std::abs(x_normalized) > image_bound_x ||
+                std::abs(y_normalized) > image_bound_y) {
+                continue;
+            }
+
+            cell_has_data[iy * map.Nx + ix] = true;
 
             Vec2<double> normalized_point(x_normalized, y_normalized);
 
@@ -207,38 +230,6 @@ py::dict get_matching_spline_distortion_model(
                 normalized_point,
                 opencv_distorted_point
             );
-
-            // spline coords in knot index space
-            double x_spline =
-                1.0 +
-                (x_normalized - x_range_start) *
-                    (static_cast<double>(model_config.num_knots_x) - 3.0) *
-                    inv_x_span;
-
-            double y_spline =
-                1.0 +
-                (y_normalized - y_range_start) *
-                    (static_cast<double>(model_config.num_knots_y) - 3.0) *
-                    inv_y_span;
-
-            // Clamp to the interior range where the 4x4 support patch
-            // has unique knot indices. Outside this range, clamping would
-            // cause duplicate parameter block pointers which Ceres forbids.
-            const double eps = 1e-12;
-            const double x_min = 1.0;
-            const double y_min = 1.0;
-            const double x_max =
-                static_cast<double>(model_config.num_knots_x) - 2.0;
-            const double y_max =
-                static_cast<double>(model_config.num_knots_y) - 2.0;
-
-            if (x_spline < x_min || x_spline > x_max - eps ||
-                y_spline < y_min || y_spline > y_max - eps) {
-                continue;
-            }
-
-            const uint32_t ix = static_cast<uint32_t>(std::floor(x_spline));
-            const uint32_t iy = static_cast<uint32_t>(std::floor(y_spline));
 
             const double u = x_spline - static_cast<double>(ix);
             const double v = y_spline - static_cast<double>(iy);
@@ -287,7 +278,77 @@ py::dict get_matching_spline_distortion_model(
         }
     }
 
-    SPDLOG_DEBUG("Created problem");
+    // Smoothness priors for cells without in-image data
+    const double sqrt_lambda = std::sqrt(model_config.smoothness_lambda);
+    for (int cy = 0; cy < map.Ny; cy++) {
+        for (int cx = 0; cx < map.Nx; cx++) {
+            if (cell_has_data[cy * map.Nx + cx]) {
+                continue;
+            }
+
+            // Horizontal: 4-knot stencil along rows
+            if (cx - 1 >= 0 && cx + 2 < map.Nx) {
+                for (int row = cy; row <= cy + 1 && row < map.Ny; row++) {
+                    auto* cost = new ceres::
+                        AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        );
+                    problem.AddResidualBlock(
+                        cost,
+                        nullptr,
+                        &x_knots[row][cx - 1],
+                        &x_knots[row][cx],
+                        &x_knots[row][cx + 1],
+                        &x_knots[row][cx + 2]
+                    );
+                    auto* cost_y = new ceres::
+                        AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        );
+                    problem.AddResidualBlock(
+                        cost_y,
+                        nullptr,
+                        &y_knots[row][cx - 1],
+                        &y_knots[row][cx],
+                        &y_knots[row][cx + 1],
+                        &y_knots[row][cx + 2]
+                    );
+                }
+            }
+
+            // Vertical: 4-knot stencil along columns
+            if (cy - 1 >= 0 && cy + 2 < map.Ny) {
+                for (int col = cx; col <= cx + 1 && col < map.Nx; col++) {
+                    auto* cost = new ceres::
+                        AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        );
+                    problem.AddResidualBlock(
+                        cost,
+                        nullptr,
+                        &x_knots[cy - 1][col],
+                        &x_knots[cy][col],
+                        &x_knots[cy + 1][col],
+                        &x_knots[cy + 2][col]
+                    );
+                    auto* cost_y = new ceres::
+                        AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                            new KnotSmoothness{sqrt_lambda}
+                        );
+                    problem.AddResidualBlock(
+                        cost_y,
+                        nullptr,
+                        &y_knots[cy - 1][col],
+                        &y_knots[cy][col],
+                        &y_knots[cy + 1][col],
+                        &y_knots[cy + 2][col]
+                    );
+                }
+            }
+        }
+    }
+
+    spdlog::debug("Created problem");
     ceres::Solver::Options options;
     options.num_threads = static_cast<int>(std::thread::hardware_concurrency());
     options.linear_solver_type = ceres::ITERATIVE_SCHUR;
@@ -299,8 +360,8 @@ py::dict get_matching_spline_distortion_model(
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 
-    SPDLOG_DEBUG("Solve done");
-    SPDLOG_DEBUG(summary.BriefReport());
+    spdlog::debug("Solve done");
+    spdlog::debug(summary.BriefReport());
 
     // Return NumPy arrays in y-major shape (Y, X)
     py::array_t<double> x_array(
@@ -324,10 +385,10 @@ py::dict get_matching_spline_distortion_model(
     out["x_knots"] = x_array;
     out["y_knots"] = y_array;
 
-    out["x_range_start"] = x_range_start;
-    out["x_range_end"] = x_range_end;
-    out["y_range_start"] = y_range_start;
-    out["y_range_end"] = y_range_end;
+    out["x_range_start"] = -map.half_x;
+    out["x_range_end"] = map.half_x;
+    out["y_range_start"] = -map.half_y;
+    out["y_range_end"] = map.half_y;
 
     return out;
 }

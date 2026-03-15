@@ -110,6 +110,20 @@ class Pose:
         return Pose(mat)
 
     @staticmethod
+    def identity() -> Pose:
+        """Create the identity pose."""
+        return Pose(np.eye(4, dtype=np.float32))
+
+    @staticmethod
+    def from_trans(trans: np.ndarray) -> Pose:
+        """Create a pure translation Pose.
+
+        Args:
+            trans: Translation vector, shape (3,).
+        """
+        return Pose.from_rotvec_trans(trans=trans)
+
+    @staticmethod
     def from_tx(x: float):
         """Create a pure x-axis translation Pose."""
         return Pose.from_rotvec_trans(trans=np.array([x, 0, 0]))
@@ -166,11 +180,51 @@ class Pose:
 
         return Pose.from_rotvec_trans(rotvec=rotvec, trans=trans)
 
+    def __matmul__(self, other: Pose) -> Pose:
+        """Compose two poses: self @ other."""
+        return Pose(self.matrix @ other.matrix)
+
     def inverse(self):
         """Return the inverse transform."""
         new_rotmat = self.rotmat.T
         new_trans = -new_rotmat @ self.translation
         return Pose.from_rotmat_trans(rotmat=new_rotmat, trans=new_trans)
+
+    def tx(self, x: float) -> Pose:
+        """Return a new pose with a translation along x post-applied."""
+        return self @ Pose.from_tx(x)
+
+    def ty(self, y: float) -> Pose:
+        """Return a new pose with a translation along y post-applied."""
+        return self @ Pose.from_ty(y)
+
+    def tz(self, z: float) -> Pose:
+        """Return a new pose with a translation along z post-applied."""
+        return self @ Pose.from_tz(z)
+
+    def rx(self, angle: float) -> Pose:
+        """Return a new pose with a rotation around x post-applied.
+
+        Args:
+            angle: Rotation angle in radians.
+        """
+        return self @ Pose.from_rotvec_trans(rotvec=np.array([angle, 0.0, 0.0]))
+
+    def ry(self, angle: float) -> Pose:
+        """Return a new pose with a rotation around y post-applied.
+
+        Args:
+            angle: Rotation angle in radians.
+        """
+        return self @ Pose.from_rotvec_trans(rotvec=np.array([0.0, angle, 0.0]))
+
+    def rz(self, angle: float) -> Pose:
+        """Return a new pose with a rotation around z post-applied.
+
+        Args:
+            angle: Rotation angle in radians.
+        """
+        return self @ Pose.from_rotvec_trans(rotvec=np.array([0.0, 0.0, angle]))
 
     def apply(self, points: np.ndarray):
         """Apply this transform to a batch of 3D points.

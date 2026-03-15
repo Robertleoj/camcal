@@ -37,14 +37,18 @@ static Vec2<double> normalize_single_point(
     double ny = (target_v - cy) / fy;
 
     for (int rebuild = 0; rebuild < max_rebuilds; rebuild++) {
-        // Compute cell index for current (nx, ny)
+        // Convert to stereographic for spline lookup
+        double sx, sy;
+        normalized_to_stereographic(nx, ny, sx, sy);
+
+        // Compute cell index for current (nx, ny) in stereographic space
         double gx = std::max(
             0.0,
-            std::min(1.0 + (nx + half_x) * x_scale, Nx - 1.0 - eps)
+            std::min(1.0 + (sx + half_x) * x_scale, Nx - 1.0 - eps)
         );
         double gy = std::max(
             0.0,
-            std::min(1.0 + (ny + half_y) * y_scale, Ny - 1.0 - eps)
+            std::min(1.0 + (sy + half_y) * y_scale, Ny - 1.0 - eps)
         );
         const int ix0 = (int)std::floor(gx);
         const int iy0 = (int)std::floor(gy);
@@ -67,14 +71,17 @@ static Vec2<double> normalize_single_point(
             Jet jnx(nx, 0);
             Jet jny(ny, 1);
 
-            // Normalized coords -> spline coords
+            // Normalized coords -> stereographic -> spline coords
+            Jet jsx, jsy;
+            normalized_to_stereographic(jnx, jny, jsx, jsy);
+
             Jet jgx = clamp_T(
-                Jet(1.0) + (jnx + Jet(half_x)) * Jet(x_scale),
+                Jet(1.0) + (jsx + Jet(half_x)) * Jet(x_scale),
                 Jet(0.0),
                 Jet(Nx - 1.0 - eps)
             );
             Jet jgy = clamp_T(
-                Jet(1.0) + (jny + Jet(half_y)) * Jet(y_scale),
+                Jet(1.0) + (jsy + Jet(half_y)) * Jet(y_scale),
                 Jet(0.0),
                 Jet(Ny - 1.0 - eps)
             );
@@ -124,13 +131,14 @@ static Vec2<double> normalize_single_point(
         }
 
         // Check if the solution moved to a different cell
+        normalized_to_stereographic(nx, ny, sx, sy);
         gx = std::max(
             0.0,
-            std::min(1.0 + (nx + half_x) * x_scale, Nx - 1.0 - eps)
+            std::min(1.0 + (sx + half_x) * x_scale, Nx - 1.0 - eps)
         );
         gy = std::max(
             0.0,
-            std::min(1.0 + (ny + half_y) * y_scale, Ny - 1.0 - eps)
+            std::min(1.0 + (sy + half_y) * y_scale, Ny - 1.0 - eps)
         );
         const int new_ix = (int)std::floor(gx);
         const int new_iy = (int)std::floor(gy);
@@ -186,8 +194,8 @@ py::array_t<double> normalize_pinhole_splined_points(
 
     const double fov_rad_x = config.fov_deg_x * M_PI / 180.0;
     const double fov_rad_y = config.fov_deg_y * M_PI / 180.0;
-    const double half_x = std::tan(fov_rad_x / 2.0);
-    const double half_y = std::tan(fov_rad_y / 2.0);
+    const double half_x = stereo_half_range(fov_rad_x);
+    const double half_y = stereo_half_range(fov_rad_y);
     const double x_scale = (Nx - 3) / (2.0 * half_x);
     const double y_scale = (Ny - 3) / (2.0 * half_y);
 

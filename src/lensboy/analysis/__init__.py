@@ -2,6 +2,7 @@ try:
     from lensboy.analysis.plots import (
         draw_points,
         plot_detection_coverage,
+        plot_distortion_grid,
         plot_projection_diff,
         plot_undistortion,
     )
@@ -14,6 +15,7 @@ except ImportError as e:
 __all__ = [
     "draw_points",
     "plot_detection_coverage",
+    "plot_distortion_grid",
     "plot_projection_diff",
     "plot_undistortion",
 ]

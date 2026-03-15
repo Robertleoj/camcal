@@ -1,9 +1,11 @@
 #pragma once
 #include <ceres/jet.h>
+#include <ceres/rotation.h>
 #include <fmt/format.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <stdint.h>
+#include <array>
 #include <cmath>
 #include "./type_defs.hpp"
 
@@ -17,6 +19,7 @@ struct PinholeSplinedConfig {
     double fov_deg_y;
     uint32_t num_knots_x;
     uint32_t num_knots_y;
+    double smoothness_lambda;
 };
 
 struct PinholeSplinedIntrinsicsParameters {
@@ -161,6 +164,36 @@ inline int clamp_int(
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+// Convert normalized pinhole coordinates to stereographic projection.
+// Given p = (x, y) in normalized space:
+//   r = |p|, theta = arctan(r), p_stereo = (p / r) * 2 * tan(theta / 2)
+template <typename T>
+static inline void normalized_to_stereographic(
+    const T& x_normalized,
+    const T& y_normalized,
+    T& x_stereo,
+    T& y_stereo
+) {
+    using std::atan;
+    using std::sqrt;
+    using std::tan;
+
+    const T r_sq = x_normalized * x_normalized + y_normalized * y_normalized;
+    const T r = sqrt(r_sq + T(1e-30));  // avoid division by zero
+    const T theta = atan(r);
+    const T scale = T(2) * tan(theta / T(2)) / r;
+    x_stereo = x_normalized * scale;
+    y_stereo = y_normalized * scale;
+}
+
+// Compute stereographic half-range from FOV in radians.
+// At the edge: theta = fov/2, so stereo_half = 2*tan(fov/4).
+inline double stereo_half_range(
+    double fov_rad
+) {
+    return 2.0 * std::tan(fov_rad / 4.0);
+}
+
 template <typename T>
 static inline void cubic_bspline_basis_uniform(
     const T& u,
@@ -271,6 +304,106 @@ static inline T eval_bspline2d_uniform_cubic_clamped(
     return acc;
 }
 
+struct SplineMap {
+    int Nx = 0;
+    int Ny = 0;
+    double half_x = 0.0;
+    double half_y = 0.0;
+    double x_scale = 0.0;
+    double y_scale = 0.0;
+
+    explicit SplineMap(
+        const PinholeSplinedConfig& cfg
+    ) {
+        this->Nx = static_cast<int>(cfg.num_knots_x);
+        this->Ny = static_cast<int>(cfg.num_knots_y);
+
+        const double fov_rad_x = cfg.fov_deg_x * M_PI / 180.0;
+        const double fov_rad_y = cfg.fov_deg_y * M_PI / 180.0;
+        this->half_x = stereo_half_range(fov_rad_x);
+        this->half_y = stereo_half_range(fov_rad_y);
+
+        this->x_scale = (Nx - 3) / (2.0 * this->half_x);
+        this->y_scale = (Ny - 3) / (2.0 * this->half_y);
+    }
+
+    template <typename T>
+    inline void normalized_to_grid_coords(
+        const T& x_n,
+        const T& y_n,
+        T& gx,
+        T& gy
+    ) const {
+        T x_s, y_s;
+        normalized_to_stereographic(x_n, y_n, x_s, y_s);
+
+        const T x_s_raw = T(1.0) + (x_s + T(this->half_x)) * T(this->x_scale);
+        const T y_s_raw = T(1.0) + (y_s + T(this->half_y)) * T(this->y_scale);
+
+        constexpr double eps = 1e-12;
+        gx = clamp_T(x_s_raw, T(0.0), T(Nx - 1.0 - eps));
+        gy = clamp_T(y_s_raw, T(0.0), T(Ny - 1.0 - eps));
+    }
+
+    inline void project_to_spline_coords(
+        const double* cam6,
+        const Vec3<double>& pw,
+        double& gx,
+        double& gy,
+        double& x_n,
+        double& y_n
+    ) const {
+        double pc[3];
+        ceres::AngleAxisRotatePoint(cam6, pw.data(), pc);
+        pc[0] += cam6[3];
+        pc[1] += cam6[4];
+        pc[2] += cam6[5];
+
+        const double inv_z = 1.0 / pc[2];
+        x_n = pc[0] * inv_z;
+        y_n = pc[1] * inv_z;
+
+        normalized_to_grid_coords(x_n, y_n, gx, gy);
+    }
+
+    inline void cell_index(
+        const double* cam6,
+        const Vec3<double>& pw,
+        int& ix,
+        int& iy
+    ) const {
+        double gx, gy, xn, yn;
+        project_to_spline_coords(cam6, pw, gx, gy, xn, yn);
+        ix = static_cast<int>(gx);
+        iy = static_cast<int>(gy);
+    }
+
+    /// Check whether the 4x4 support patch for cell (ix, iy) has all
+    /// unique knot indices. Near edges, clamping causes duplicates which
+    /// Ceres forbids in a single residual block.
+    inline bool is_inside_fov(
+        int ix,
+        int iy
+    ) const {
+        return ix >= 1 && ix <= Nx - 3 && iy >= 1 && iy <= Ny - 3;
+    }
+
+    inline void support_indices_4x4(
+        int ix,
+        int iy,
+        std::array<int, 16>& flat
+    ) const {
+        int idx = 0;
+        for (int b = 0; b < 4; b++) {
+            const int yy = clamp_int(iy + b - 1, 0, Ny - 1);
+            for (int a = 0; a < 4; a++) {
+                const int xx = clamp_int(ix + a - 1, 0, Nx - 1);
+                flat[idx++] = yy * Nx + xx;
+            }
+        }
+    }
+};
+
 template <typename T>
 void project_pinhole_splined(
     PinholeSplinedConfig* config,
@@ -280,63 +413,57 @@ void project_pinhole_splined(
     const Vec3<T>& point_in_camera,
     Vec2<T>& result
 ) {
-    // --- pinhole normalized coords
     const T x_normalized = point_in_camera[0] / point_in_camera[2];
     const T y_normalized = point_in_camera[1] / point_in_camera[2];
 
-    const int Nx = static_cast<int>(config->num_knots_x);
-    const int Ny = static_cast<int>(config->num_knots_y);
+    const SplineMap map(*config);
 
-    const double fov_rad_x = config->fov_deg_x * M_PI / 180.0;
-    const double fov_rad_y = config->fov_deg_y * M_PI / 180.0;
+    T x_spline, y_spline;
+    map.normalized_to_grid_coords(
+        x_normalized,
+        y_normalized,
+        x_spline,
+        y_spline
+    );
 
-    // We define the spline domain over the normalized pinhole plane such that
-    // x_normalized in [-tan(fov_x/2), +tan(fov_x/2)] maps across the interior
-    // of the spline grid (with clamping outside).
-    const double half_x_range = std::tan(fov_rad_x / 2.0);
-    const double half_y_range = std::tan(fov_rad_y / 2.0);
-
-    const T x_range_start = T(-half_x_range);
-    const T x_range_end = T(+half_x_range);
-    const T y_range_start = T(-half_y_range);
-    const T y_range_end = T(+half_y_range);
+    const T dx = eval_bspline2d_uniform_cubic_clamped(
+        dx_grid,
+        map.Nx,
+        map.Ny,
+        x_spline,
+        y_spline
+    );
+    const T dy = eval_bspline2d_uniform_cubic_clamped(
+        dy_grid,
+        map.Nx,
+        map.Ny,
+        x_spline,
+        y_spline
+    );
 
     const T fx = pinhole_parameters[0];
     const T fy = pinhole_parameters[1];
     const T cx = pinhole_parameters[2];
     const T cy = pinhole_parameters[3];
 
-    const T inv_x_span = T(1) / (x_range_end - x_range_start);
-    const T inv_y_span = T(1) / (y_range_end - y_range_start);
-
-    const T x_spline =
-        T(1) + (x_normalized - x_range_start) * T(Nx - 3) * inv_x_span;
-    const T y_spline =
-        T(1) + (y_normalized - y_range_start) * T(Ny - 3) * inv_y_span;
-
-    // --- evaluate spline surfaces
-    const T dx = eval_bspline2d_uniform_cubic_clamped(
-        dx_grid,
-        Nx,
-        Ny,
-        x_spline,
-        y_spline
-    );
-    const T dy = eval_bspline2d_uniform_cubic_clamped(
-        dy_grid,
-        Nx,
-        Ny,
-        x_spline,
-        y_spline
-    );
-
-    // --- apply distortion in normalized plane
-    const T x_distorted = x_normalized + dx;
-    const T y_distorted = y_normalized + dy;
-
-    // --- intrinsics to pixels
-    result[0] = fx * x_distorted + cx;
-    result[1] = fy * y_distorted + cy;
+    result[0] = fx * (x_normalized + dx) + cx;
+    result[1] = fy * (y_normalized + dy) + cy;
 }
+
+struct KnotSmoothness {
+    double s;
+    template <typename T>
+    bool operator()(
+        const T* const a,
+        const T* const b,
+        const T* const c,
+        const T* const d,
+        T* residuals
+    ) const {
+        // Third derivative: -a + 3b - 3c + d
+        residuals[0] = T(s) * (-a[0] + T(3.0) * b[0] - T(3.0) * c[0] + d[0]);
+        return true;
+    }
+};
 
 }  // namespace lensboy

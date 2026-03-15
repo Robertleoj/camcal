@@ -1,6 +1,7 @@
 #include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <spdlog/spdlog.h>
 #include "./python_camera_functions.hpp"
 #include "calibrate.hpp"
 #include "cameramodels.hpp"
@@ -19,15 +20,24 @@ PYBIND11_MODULE(
     m
 ) {
     m.doc() = "lensboy for camera calibration";
+    spdlog::flush_on(spdlog::level::trace);
     py::class_<lensboy::PinholeSplinedConfig>(m, "PinholeSplinedConfig")
         .def(
-            py::init<uint32_t, uint32_t, double, double, uint32_t, uint32_t>(),
+            py::init<
+                uint32_t,
+                uint32_t,
+                double,
+                double,
+                uint32_t,
+                uint32_t,
+                double>(),
             py::arg("image_width"),
             py::arg("image_height"),
             py::arg("fov_deg_x"),
             py::arg("fov_deg_y"),
             py::arg("num_knots_x"),
-            py::arg("num_knots_y")
+            py::arg("num_knots_y"),
+            py::arg("smoothness_lambda")
         )
         .def_readwrite(
             "image_width",
@@ -48,6 +58,10 @@ PYBIND11_MODULE(
             "num_knots_y",
             &lensboy::PinholeSplinedConfig::num_knots_y
         )
+        .def_readwrite(
+            "smoothness_lambda",
+            &lensboy::PinholeSplinedConfig::smoothness_lambda
+        )
         .def("__repr__", [](const lensboy::PinholeSplinedConfig& self) {
             std::ostringstream oss;
             oss << "PinholeSplinedConfig("
@@ -56,7 +70,8 @@ PYBIND11_MODULE(
                 << ", fov_deg_x=" << self.fov_deg_x
                 << ", fov_deg_y=" << self.fov_deg_y
                 << ", num_knots_x=" << self.num_knots_x
-                << ", num_knots_y=" << self.num_knots_y << ")";
+                << ", num_knots_y=" << self.num_knots_y
+                << ", smoothness_lambda=" << self.smoothness_lambda << ")";
             return oss.str();
         });
 
@@ -173,7 +188,9 @@ PYBIND11_MODULE(
         "get_matching_spline_distortion_model",
         &lensboy::get_matching_spline_distortion_model,
         py::arg("opencv_distortion_params"),
-        py::arg("model_config")
+        py::arg("model_config"),
+        py::arg("image_bound_x"),
+        py::arg("image_bound_y")
     );
 
     m.def(
@@ -220,5 +237,33 @@ PYBIND11_MODULE(
         py::arg("intrinsics"),
         py::arg("pinhole_parameters"),
         py::arg("image_size_wh")
+    );
+
+    m.def(
+        "set_log_level",
+        [](const std::string& level) {
+            if (level == "trace") {
+                spdlog::set_level(spdlog::level::trace);
+            } else if (level == "debug") {
+                spdlog::set_level(spdlog::level::debug);
+            } else if (level == "info") {
+                spdlog::set_level(spdlog::level::info);
+            } else if (level == "warn") {
+                spdlog::set_level(spdlog::level::warn);
+            } else if (level == "error") {
+                spdlog::set_level(spdlog::level::err);
+            } else if (level == "critical") {
+                spdlog::set_level(spdlog::level::critical);
+            } else if (level == "off") {
+                spdlog::set_level(spdlog::level::off);
+            } else {
+                throw py::value_error(
+                    "Unknown log level: '" + level +
+                    "'. "
+                    "Use trace/debug/info/warn/error/critical/off."
+                );
+            }
+        },
+        py::arg("level")
     );
 }

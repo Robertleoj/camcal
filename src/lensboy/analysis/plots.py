@@ -97,7 +97,7 @@ def _plot_coverage(
         image_height: Sensor height in pixels.
         title: Plot title (count suffix is appended automatically).
         s: Marker size passed to ``ax.scatter``.
-        grid_cells: Number of grid cells along the longer image axis.
+        grid_cells: Number of grid cells along the longer axis.
         return_figure: If True, return the figure instead of calling ``plt.show()``.
 
     Returns:
@@ -198,16 +198,20 @@ def _collect_points(detections: list[lb.Frame]) -> np.ndarray:
         if p.ndim != 2 or p.shape[1] != 2:
             raise ValueError(f"detected_points_in_image must be (K,2), got {p.shape}")
         pts_list.append(p)
-    return np.concatenate(pts_list, axis=0) if pts_list else np.empty((0, 2), dtype=float)
+    if len(pts_list) > 0:
+        return np.concatenate(pts_list, axis=0)
+    return np.empty((0, 2), dtype=float)
 
 
 def _split_inlier_outlier(
     frames: list[lb.Frame],
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
 ) -> tuple[np.ndarray, np.ndarray]:
     inlier_list: list[np.ndarray] = []
     outlier_list: list[np.ndarray] = []
     for f, fd in zip(frames, frame_diagnostics):
+        if fd is None:
+            continue
         pts = np.asarray(f.detected_points_in_image, dtype=float)
         if pts.size == 0:
             continue
@@ -217,12 +221,12 @@ def _split_inlier_outlier(
             outlier_list.append(pts[outlier_mask])
     inliers = (
         np.concatenate(inlier_list, axis=0)
-        if inlier_list
+        if len(inlier_list) > 0
         else np.empty((0, 2), dtype=float)
     )
     outliers = (
         np.concatenate(outlier_list, axis=0)
-        if outlier_list
+        if len(outlier_list) > 0
         else np.empty((0, 2), dtype=float)
     )
     return inliers, outliers
@@ -235,7 +239,7 @@ def plot_detection_coverage(
     image_height: int,
     title: str = "Coverage",
     s: float = 6.0,
-    grid_cells: int = 20,
+    grid_cells: int = 60,
     return_figure: bool = False,
 ) -> Figure | None:
     """Scatter-plot all detected points with empty grid cells highlighted.
@@ -249,7 +253,7 @@ def plot_detection_coverage(
         image_height: Sensor height in pixels, sets the y-axis limit.
         title: Plot title.
         s: Marker size passed to ``ax.scatter``.
-        grid_cells: Number of grid cells along the longer image axis.
+        grid_cells: Number of grid cells along the longer axis.
         return_figure: If True, return the figure instead of calling ``plt.show()``.
 
     Returns:
@@ -269,13 +273,13 @@ def plot_detection_coverage(
 
 def _plot_inlier_coverage(
     frames: list[lb.Frame],
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     image_width: int,
     image_height: int,
     title: str = "Inlier coverage",
     s: float = 6.0,
-    grid_cells: int = 20,
+    grid_cells: int = 60,
     return_figure: bool = False,
 ) -> Figure | None:
     """Scatter-plot inlier detections with outliers highlighted in red.
@@ -292,7 +296,7 @@ def _plot_inlier_coverage(
         image_height: Sensor height in pixels, sets the y-axis limit.
         title: Plot title.
         s: Marker size passed to ``ax.scatter``.
-        grid_cells: Number of grid cells along the longer image axis.
+        grid_cells: Number of grid cells along the longer axis.
         return_figure: If True, return the figure instead of calling ``plt.show()``.
 
     Returns:
@@ -313,7 +317,7 @@ def _plot_inlier_coverage(
 
 def _plot_outliers(
     frames: list[lb.Frame],
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     image_width: int,
     image_height: int,
@@ -352,10 +356,10 @@ def _plot_outliers(
     )
 
 
-def _plot_distortion_grid(
+def plot_distortion_grid(
     model: lb.OpenCV | lb.PinholeSplined,
     *,
-    grid_step_norm: float = 0.05,
+    grid_cells: int = 60,
     fov_fraction: float | None = None,
     ux_max: float | None = None,
     uy_max: float | None = None,
@@ -370,7 +374,7 @@ def _plot_distortion_grid(
 
     Args:
         model: Camera model instance.
-        grid_step_norm: Spacing between grid lines in normalized coordinates.
+        grid_cells: Number of grid cells along the longer axis.
         fov_fraction: Fraction of the full FOV to sample (0, 1].
         ux_max: Upper bound in normalized x, mirrored to negative.
         uy_max: Upper bound in normalized y, mirrored to negative.
@@ -409,6 +413,8 @@ def _plot_distortion_grid(
 
     x_min, x_max = -x_half, +x_half
     y_min, y_max = -y_half, +y_half
+
+    grid_step_norm = max(x_max - x_min, y_max - y_min) / grid_cells
 
     cmap = plt.colormaps[cmap_name]
 
@@ -604,11 +610,22 @@ def _plot_distortion_grid(
         Ny = model.num_knots_y
         kx_indices = np.arange(Nx)
         ky_indices = np.arange(Ny)
-        knot_xn = -fov_x_half + (kx_indices - 1) * 2 * fov_x_half / (Nx - 3)
-        knot_yn = -fov_y_half + (ky_indices - 1) * 2 * fov_y_half / (Ny - 3)
-        knot_xn_grid, knot_yn_grid = np.meshgrid(knot_xn, knot_yn)
-        knot_xn_flat = knot_xn_grid.ravel()
-        knot_yn_flat = knot_yn_grid.ravel()
+        # Knots are evenly spaced in stereographic space; convert to normalized
+        fov_x_rad = np.deg2rad(model.fov_deg_x)
+        fov_y_rad = np.deg2rad(model.fov_deg_y)
+        stereo_x_half = 2 * np.tan(fov_x_rad / 4)
+        stereo_y_half = 2 * np.tan(fov_y_rad / 4)
+        knot_xs = -stereo_x_half + (kx_indices - 1) * 2 * stereo_x_half / (Nx - 3)
+        knot_ys = -stereo_y_half + (ky_indices - 1) * 2 * stereo_y_half / (Ny - 3)
+        knot_xs_grid, knot_ys_grid = np.meshgrid(knot_xs, knot_ys)
+        knot_xs_flat = knot_xs_grid.ravel()
+        knot_ys_flat = knot_ys_grid.ravel()
+        # Stereographic to normalized: r_s -> theta = 2*arctan(r_s/2), r_n = tan(theta)
+        r_s = np.sqrt(knot_xs_flat**2 + knot_ys_flat**2 + 1e-30)
+        theta = 2 * np.arctan(r_s / 2)
+        scale = np.tan(theta) / r_s
+        knot_xn_flat = knot_xs_flat * scale
+        knot_yn_flat = knot_ys_flat * scale
 
         ax0.scatter(
             knot_xn_flat,
@@ -649,7 +666,7 @@ def _plot_distortion_grid(
 
 
 def _plot_residuals(
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     bins: int = 100,
     n_sigma: float = 6.0,
@@ -681,11 +698,13 @@ def _plot_residuals(
     inlier_2d: list[np.ndarray] = []
     outlier_2d: list[np.ndarray] = []
     for fi in frame_diagnostics:
+        if fi is None:
+            continue
         inlier_2d.append(fi.residuals[fi.inlier_mask])
         outlier_2d.append(fi.residuals[~fi.inlier_mask])
 
-    inlier_pts = np.concatenate(inlier_2d) if inlier_2d else np.empty((0, 2))
-    outlier_pts = np.concatenate(outlier_2d) if outlier_2d else np.empty((0, 2))
+    inlier_pts = np.concatenate(inlier_2d) if len(inlier_2d) > 0 else np.empty((0, 2))
+    outlier_pts = np.concatenate(outlier_2d) if len(outlier_2d) > 0 else np.empty((0, 2))
     all_pts = np.concatenate([inlier_pts, outlier_pts])  # (N, 2)
 
     if all_pts.shape[0] == 0:
@@ -848,7 +867,7 @@ def _plot_residuals(
 
 def _plot_residual_vectors(
     frames: list[lb.Frame],
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     image_width: int,
     image_height: int,
@@ -882,11 +901,13 @@ def _plot_residual_vectors(
     positions: list[np.ndarray] = []
     residuals: list[np.ndarray] = []
     for frame, fi in zip(frames, frame_diagnostics):
+        if fi is None:
+            continue
         positions.append(frame.detected_points_in_image)
         residuals.append(fi.residuals)
 
-    pos = np.concatenate(positions) if positions else np.empty((0, 2))
-    res = np.concatenate(residuals) if residuals else np.empty((0, 2))
+    pos = np.concatenate(positions) if len(positions) > 0 else np.empty((0, 2))
+    res = np.concatenate(residuals) if len(residuals) > 0 else np.empty((0, 2))
 
     if pos.shape[0] == 0:
         return
@@ -963,11 +984,11 @@ def _plot_residual_vectors(
 
 def _plot_residual_grid(
     frames: list[lb.Frame],
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     image_width: int,
     image_height: int,
-    grid_cells: int = 40,
+    grid_cells: int = 60,
     arrow_scale: float = 100.0,
     heatmap_max: float | None = None,
     title: str = "Residual grid",
@@ -984,7 +1005,7 @@ def _plot_residual_grid(
         frame_diagnostics: Matching per-frame reprojection diagnostics.
         image_width: Sensor width in pixels, sets the x-axis limit.
         image_height: Sensor height in pixels, sets the y-axis limit.
-        grid_cells: Number of grid cells along the longer image axis.
+        grid_cells: Number of grid cells along the longer axis.
         arrow_scale: Multiplier applied to the mean-residual arrows.
         heatmap_max: Upper limit for the colour scale. Auto-scaled if None.
         title: Plot title.
@@ -996,11 +1017,13 @@ def _plot_residual_grid(
     positions: list[np.ndarray] = []
     residuals: list[np.ndarray] = []
     for frame, fi in zip(frames, frame_diagnostics):
+        if fi is None:
+            continue
         positions.append(frame.detected_points_in_image[fi.inlier_mask])
         residuals.append(fi.residuals[fi.inlier_mask])
 
-    pos = np.concatenate(positions) if positions else np.empty((0, 2))
-    res = np.concatenate(residuals) if residuals else np.empty((0, 2))
+    pos = np.concatenate(positions) if len(positions) > 0 else np.empty((0, 2))
+    res = np.concatenate(residuals) if len(residuals) > 0 else np.empty((0, 2))
 
     if pos.shape[0] == 0:
         return
@@ -1101,7 +1124,7 @@ def _plot_residual_grid(
 
 def _plot_target_and_poses(
     target_points: np.ndarray,
-    cameras_T_target: list[lb.Pose],
+    cameras_T_target: list[lb.Pose | None],
     *,
     triad_scale: float = 20.0,
     title: str = "Target and camera poses",
@@ -1151,6 +1174,8 @@ def _plot_target_and_poses(
     axis_colors = ["red", "green", "blue"]
     camera_origins = []
     for pose in cameras_T_target:
+        if pose is None:
+            continue
         target_T_camera = pose.inverse()
         origin = target_T_camera.translation
         rotmat = target_T_camera.rotmat
@@ -1331,7 +1356,7 @@ def plot_undistortion(
     model: lb.PinholeRemapped,
     *,
     image: np.ndarray | None = None,
-    grid_step_px: int = 50,
+    grid_cells: int = 60,
     line_thickness: int | None = None,
     return_figure: bool = False,
 ) -> Figure | None:
@@ -1346,7 +1371,7 @@ def plot_undistortion(
     Args:
         model: Undistorted pinhole model with remap tables.
         image: Optional distorted input image, shape (H, W) or (H, W, 3).
-        grid_step_px: Spacing between grid lines in pixels.
+        grid_cells: Number of grid cells along the longer axis.
         line_thickness: Line width in pixels.  When None, chosen automatically
             based on the image diagonal.
         return_figure: If True, return the figure instead of calling ``plt.show()``.
@@ -1363,6 +1388,7 @@ def plot_undistortion(
         diag = np.hypot(W_in, H_in)
         line_thickness = max(1, int(round(diag / 800)))
 
+    grid_step_px = max(W_in, H_in) / grid_cells
     cmap = plt.colormaps["jet"]
     x_lines = np.arange(grid_step_px, W_in, grid_step_px)
     y_lines = np.arange(grid_step_px, H_in, grid_step_px)
@@ -1390,7 +1416,7 @@ def plot_undistortion(
     rect_cx = round(W_in / 2.0 / grid_step_px) * grid_step_px
     rect_cy = round(H_in / 2.0 / grid_step_px) * grid_step_px
     aspect = W_in / H_in
-    corner_len = grid_step_px
+    corner_len = int(round(grid_step_px))
     n_rects = max(1, int(min(rect_cx, rect_cy) / rect_step))
     for i in range(1, n_rects + 1):
         half_h = i * rect_step
@@ -1413,8 +1439,9 @@ def plot_undistortion(
     undistorted_img = model.undistort(grid_img, interpolation=cv2.INTER_LANCZOS4)
 
     # --- Row 2: regular grid in undistorted space mapped to distorted space ---
-    x_lines_out = np.arange(grid_step_px, W_out, grid_step_px)
-    y_lines_out = np.arange(grid_step_px, H_out, grid_step_px)
+    grid_step_px_out = max(max(W_out, H_out) / grid_cells, 10.0)
+    x_lines_out = np.arange(grid_step_px_out, W_out, grid_step_px_out)
+    y_lines_out = np.arange(grid_step_px_out, H_out, grid_step_px_out)
 
     def _diag_colored_segments(
         xs: np.ndarray,
@@ -1477,8 +1504,10 @@ def plot_undistortion(
     axes[0, 1].set_aspect("equal")
 
     # Row 2 right: regular grid in undistorted space (diagonal gradient)
-    # Convert cv2 pixel line width to matplotlib points to match row 1
-    mpl_lw = line_thickness * panel_w * 72 / W_out
+    # Recompute line thickness for the output image dimensions
+    diag_out = np.hypot(W_out, H_out)
+    line_thickness_out = max(1, int(round(diag_out / 800)))
+    mpl_lw = line_thickness_out * panel_w * 72 / W_out
     n_subdivide = 64
     for x0 in x_lines_out:
         ys = np.linspace(0, H_out, n_subdivide)
@@ -1492,16 +1521,19 @@ def plot_undistortion(
         axes[1, 1].add_collection(LineCollection(segs, colors=colors, linewidths=mpl_lw))  # type: ignore[reportArgumentType]
 
     # Row 2 right: corner markers in undistorted space
-    px_to_pt = panel_w * 72 / W_out
-    marker_lw_inner = rect_thickness * px_to_pt
-    marker_lw_border = rect_thickness * 3 * px_to_pt
-    rect_cx_out = round(W_out / 2.0 / grid_step_px) * grid_step_px
-    rect_cy_out = round(H_out / 2.0 / grid_step_px) * grid_step_px
+    # Scale marker line widths proportionally to the corner arm length (in points)
+    px_to_pt_out = panel_w * 72 / W_out
+    corner_len_out = grid_step_px_out
+    marker_lw_inner = corner_len_out * px_to_pt_out * 0.16
+    marker_lw_border = corner_len_out * px_to_pt_out * 0.48
+    rect_step_out = grid_step_px_out * 4
+    rect_cx_out = round(W_out / 2.0 / grid_step_px_out) * grid_step_px_out
+    rect_cy_out = round(H_out / 2.0 / grid_step_px_out) * grid_step_px_out
     aspect_out = W_out / H_out
-    n_rects_out = max(1, int(min(rect_cx_out, rect_cy_out) / rect_step))
+    n_rects_out = max(1, int(min(rect_cx_out, rect_cy_out) / rect_step_out))
     for i in range(1, n_rects_out + 1):
-        half_h = i * rect_step
-        half_w = round(half_h * aspect_out / grid_step_px) * grid_step_px
+        half_h = i * rect_step_out
+        half_w = round(half_h * aspect_out / grid_step_px_out) * grid_step_px_out
         x1, y1 = rect_cx_out - half_w, rect_cy_out - half_h
         x2, y2 = rect_cx_out + half_w, rect_cy_out + half_h
         for cx, cy, sx, sy in [
@@ -1512,7 +1544,7 @@ def plot_undistortion(
         ]:
             for color, lw in [("black", marker_lw_border), ("white", marker_lw_inner)]:
                 axes[1, 1].plot(
-                    [cx, cx + sx * corner_len],
+                    [cx, cx + sx * corner_len_out],
                     [cy, cy],
                     color=color,
                     linewidth=lw,
@@ -1520,7 +1552,7 @@ def plot_undistortion(
                 )
                 axes[1, 1].plot(
                     [cx, cx],
-                    [cy, cy + sy * corner_len],
+                    [cy, cy + sy * corner_len_out],
                     color=color,
                     linewidth=lw,
                     solid_capstyle="butt",
@@ -1568,8 +1600,8 @@ def plot_undistortion(
     # Row 2 left: corner markers traced through remap tables
     n_marker_pts = 16
     for i in range(1, n_rects_out + 1):
-        half_h = i * rect_step
-        half_w = round(half_h * aspect_out / grid_step_px) * grid_step_px
+        half_h = i * rect_step_out
+        half_w = round(half_h * aspect_out / grid_step_px_out) * grid_step_px_out
         x1, y1 = rect_cx_out - half_w, rect_cy_out - half_h
         x2, y2 = rect_cx_out + half_w, rect_cy_out + half_h
         for cx, cy, sx, sy in [
@@ -1580,10 +1612,10 @@ def plot_undistortion(
         ]:
             # Sample along each arm and trace through remap
             h_ts = np.linspace(0, 1, n_marker_pts)
-            h_xs = cx + h_ts * sx * corner_len
+            h_xs = cx + h_ts * sx * corner_len_out
             h_ys = np.full_like(h_ts, cy)
             h_d = np.array([_remap_point(model, px, py) for px, py in zip(h_xs, h_ys)])
-            v_ys = cy + h_ts * sy * corner_len
+            v_ys = cy + h_ts * sy * corner_len_out
             v_xs = np.full_like(h_ts, cx)
             v_d = np.array([_remap_point(model, px, py) for px, py in zip(v_xs, v_ys)])
             for color, lw in [("black", marker_lw_border), ("white", marker_lw_inner)]:
@@ -1720,7 +1752,7 @@ def _draw_frame_residuals(
 
 
 def _plot_worst_residual_frames(
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     frames: list[lb.Frame],
     images: list[np.ndarray],
     *,
@@ -1752,16 +1784,16 @@ def _plot_worst_residual_frames(
     Returns:
         The figure if ``return_figure`` is True, otherwise None.
     """
-    per_frame_mags = []
-    for fi in frame_diagnostics:
+    per_frame_mags: dict[int, float] = {}
+    for i, fi in enumerate(frame_diagnostics):
+        if fi is None:
+            continue
         mags = np.linalg.norm(fi.residuals, axis=1)
         if not include_outliers:
             mags = mags[fi.inlier_mask]
-        per_frame_mags.append(float(np.sqrt(np.mean(mags**2))) if len(mags) > 0 else 0.0)
+        per_frame_mags[i] = float(np.sqrt(np.mean(mags**2))) if len(mags) > 0 else 0.0
 
-    ranked = sorted(
-        range(len(per_frame_mags)), key=lambda i: per_frame_mags[i], reverse=True
-    )
+    ranked = sorted(per_frame_mags, key=lambda i: per_frame_mags[i], reverse=True)
     selected = ranked[:n]
 
     bg = "#111111"
@@ -1782,6 +1814,7 @@ def _plot_worst_residual_frames(
     for ax_row, idx in zip(axes, selected):
         ax = ax_row[0]
         fi = frame_diagnostics[idx]
+        assert fi is not None
         frame = frames[idx]
         h_i, w_i = images[idx].shape[:2]
 
@@ -1943,7 +1976,7 @@ def plot_projection_diff(
         linestyle="--",
         linewidth=0.8,
         alpha=0.5,
-        label="fit circle",
+        label=f"fit circle (r={fit_radius:.0f}px)",
     )
     ax_heat.add_patch(circle)
     ax_heat.legend(loc="upper right", facecolor=bg, edgecolor=fg, labelcolor=fg)
@@ -2117,7 +2150,7 @@ def plot_projection_diff(
 
 
 def _plot_per_image_rms(
-    frame_diagnostics: list[lb.FrameDiagnostics],
+    frame_diagnostics: list[lb.FrameDiagnostics | None],
     *,
     sort_by: Literal["inliers", "all"] | None = "all",
     title: str = "Per-image residual RMS",
@@ -2145,19 +2178,27 @@ def _plot_per_image_rms(
     inlier_color = "#00d4ff"
     outlier_color = "#ff4444"
 
-    n_frames = len(frame_diagnostics)
-    indices = np.arange(n_frames)
-    inlier_rms = np.zeros(n_frames)
-    total_rms = np.zeros(n_frames)
+    # Collect only valid frames, preserving their original indices
+    valid_indices: list[int] = []
+    inlier_rms_list: list[float] = []
+    total_rms_list: list[float] = []
 
     for i, fi in enumerate(frame_diagnostics):
+        if fi is None:
+            continue
+        valid_indices.append(i)
         norms = np.linalg.norm(fi.residuals, axis=1)
-        total_rms[i] = float(np.sqrt(np.mean(norms**2))) if len(norms) > 0 else 0.0
+        total_rms_list.append(
+            float(np.sqrt(np.mean(norms**2))) if len(norms) > 0 else 0.0
+        )
         inlier_norms = norms[fi.inlier_mask]
-        inlier_rms[i] = (
+        inlier_rms_list.append(
             float(np.sqrt(np.mean(inlier_norms**2))) if len(inlier_norms) > 0 else 0.0
         )
 
+    n_valid = len(valid_indices)
+    inlier_rms = np.array(inlier_rms_list)
+    total_rms = np.array(total_rms_list)
     outlier_top = total_rms - inlier_rms
 
     if sort_by == "inliers":
@@ -2165,17 +2206,17 @@ def _plot_per_image_rms(
     elif sort_by == "all":
         order = np.argsort(total_rms)[::-1]
     else:
-        order = indices
+        order = np.arange(n_valid)
 
     sorted_inlier = inlier_rms[order]
     sorted_outlier = outlier_top[order]
-    sorted_labels = [str(i) for i in order]
+    sorted_labels = [str(valid_indices[i]) for i in order]
 
-    fig, ax = plt.subplots(figsize=(6, max(4, n_frames * 0.25)))
+    fig, ax = plt.subplots(figsize=(6, max(4, n_valid * 0.25)))
     fig.patch.set_facecolor(bg)
     ax.set_facecolor(bg)
 
-    y_pos = np.arange(n_frames)
+    y_pos = np.arange(n_valid)
     ax.barh(y_pos, sorted_inlier, color=inlier_color, label="Inliers only")
     ax.barh(
         y_pos,
@@ -2185,7 +2226,7 @@ def _plot_per_image_rms(
         label="Outliers included",
     )
 
-    ax.set_ylim(n_frames - 0.4, -0.6)
+    ax.set_ylim(n_valid - 0.4, -0.6)
     ax.set_yticks(y_pos)
     ax.set_yticklabels(sorted_labels)
     ax.set_ylabel("Image index", color=fg)

@@ -12,106 +12,27 @@
 #include "./cameramodels.hpp"
 #include "./ceres_geometry.hpp"
 #include "./pybind_utils.hpp"
+#include "./type_defs.hpp"
 
 namespace lensboy {
 
-struct SplineMap {
-    int Nx = 0;
-    int Ny = 0;
-    double half_x = 0.0;
-    double half_y = 0.0;
-    double x_scale = 0.0;
-    double y_scale = 0.0;
+// Constrains the spline correction at a fixed point to a target value.
+// Precomputed basis weights make this a simple weighted sum of 16 knots.
+struct SplineAnchor {
+    double weight;
+    double target;
+    double basis[16];
 
-    explicit SplineMap(
-        const PinholeSplinedConfig& cfg
-    ) {
-        Nx = (int)cfg.num_knots_x;
-        Ny = (int)cfg.num_knots_y;
-
-        const double fov_rad_x = cfg.fov_deg_x * M_PI / 180.0;
-        const double fov_rad_y = cfg.fov_deg_y * M_PI / 180.0;
-        half_x = std::tan(fov_rad_x / 2.0);
-        half_y = std::tan(fov_rad_y / 2.0);
-
-        x_scale = (Nx - 3) / (2.0 * half_x);
-        y_scale = (Ny - 3) / (2.0 * half_y);
-    }
-
-    inline void project_to_spline_coords(
-        const double* cam6,
-        const Vec3<double>& pw,
-        double& gx,
-        double& gy,
-        double& x_n,
-        double& y_n
-    ) const {
-        double pc[3];
-        ceres::AngleAxisRotatePoint(cam6, pw.data(), pc);
-        pc[0] += cam6[3];
-        pc[1] += cam6[4];
-        pc[2] += cam6[5];
-
-        const double inv_z = 1.0 / pc[2];
-        x_n = pc[0] * inv_z;
-        y_n = pc[1] * inv_z;
-
-        const double x_s_raw = 1.0 + (x_n + half_x) * x_scale;
-        const double y_s_raw = 1.0 + (y_n + half_y) * y_scale;
-
-        constexpr double eps = 1e-12;
-        gx = std::max(0.0, std::min(x_s_raw, Nx - 1.0 - eps));
-        gy = std::max(0.0, std::min(y_s_raw, Ny - 1.0 - eps));
-    }
-
-    inline void cell_index(
-        const double* cam6,
-        const Vec3<double>& pw,
-        int& ix,
-        int& iy
-    ) const {
-        double gx, gy, xn, yn;
-        project_to_spline_coords(cam6, pw, gx, gy, xn, yn);
-        ix = (int)gx;
-        iy = (int)gy;
-    }
-
-    // Check whether the 4x4 support patch for cell (ix, iy) has all
-    // unique knot indices. Near edges, clamping causes duplicates which
-    // Ceres forbids in a single residual block.
-    inline bool has_unique_support(
-        int ix,
-        int iy
-    ) const {
-        return ix >= 1 && ix <= Nx - 3 && iy >= 1 && iy <= Ny - 3;
-    }
-
-    inline void support_indices_4x4(
-        int ix,
-        int iy,
-        std::array<int, 16>& flat
-    ) const {
-        int idx = 0;
-        for (int b = 0; b < 4; b++) {
-            const int yy = clamp_int(iy + b - 1, 0, Ny - 1);
-            for (int a = 0; a < 4; a++) {
-                const int xx = clamp_int(ix + a - 1, 0, Nx - 1);
-                flat[idx++] = yy * Nx + xx;
-            }
-        }
-    }
-};
-
-struct KnotPrior2D {
-    double s, x0, y0;
     template <typename T>
     bool operator()(
-        const T* const dx,
-        const T* const dy,
+        T const* const* knots,
         T* residuals
     ) const {
-        residuals[0] = T(s) * (dx[0] - T(x0));
-        residuals[1] = T(s) * (dy[0] - T(y0));
+        T val(0.0);
+        for (int i = 0; i < 16; i++) {
+            val += knots[i][0] * T(basis[i]);
+        }
+        residuals[0] = T(weight) * (val - T(target));
         return true;
     }
 };
@@ -167,14 +88,17 @@ struct ReprojectionErrorSplined {
         const T x_n = pc[0] * inv_z;
         const T y_n = pc[1] * inv_z;
 
-        const T x_s = T(1.0) + (x_n + T(map.half_x)) * T(map.x_scale);
-        const T y_s = T(1.0) + (y_n + T(map.half_y)) * T(map.y_scale);
+        T x_st, y_st;
+        normalized_to_stereographic(x_n, y_n, x_st, y_st);
+
+        const T x_s = T(1.0) + (x_st + T(map.half_x)) * T(map.x_scale);
+        const T y_s = T(1.0) + (y_st + T(map.half_y)) * T(map.y_scale);
         constexpr double eps = 1e-12;
         const T gx = clamp_T(x_s, T(0.0), T(map.Nx - 1.0 - eps));
         const T gy = clamp_T(y_s, T(0.0), T(map.Ny - 1.0 - eps));
 
-        const T u = gx - T((double)ix0);
-        const T v = gy - T((double)iy0);
+        const T u = gx - T(static_cast<double>(ix0));
+        const T v = gy - T(static_cast<double>(iy0));
 
         T wx[4], wy[4];
         cubic_bspline_basis_uniform(u, wx);
@@ -206,39 +130,21 @@ struct ObservationRecord {
     int iy;
 };
 
-struct CellChangeCallback final : public ceres::IterationCallback {
-    CellChangeCallback(
-        const SplineMap& map,
-        const std::vector<Vec6<double>>& cams,
-        const std::vector<Vec3<double>>& pts,
-        std::vector<ObservationRecord>& obs
-    )
-        : map_(map),
-          cams_(cams),
-          pts_(pts),
-          obs_(obs) {}
-
-    ceres::CallbackReturnType operator()(const ceres::IterationSummary&) override {
-        for (auto& r : obs_) {
-            int nix, niy;
-            map_.cell_index(cams_[r.cam_idx].data(), pts_[r.pt_idx], nix, niy);
-            if (nix != r.ix || niy != r.iy) {
-                changed_ = true;
-                return ceres::SOLVER_TERMINATE_SUCCESSFULLY;
-            }
+static bool any_cell_changed(
+    const SplineMap& map,
+    const std::vector<Vec6<double>>& cams,
+    const std::vector<Vec3<double>>& pts,
+    const std::vector<ObservationRecord>& obs
+) {
+    for (auto& r : obs) {
+        int nix, niy;
+        map.cell_index(cams[r.cam_idx].data(), pts[r.pt_idx], nix, niy);
+        if (nix != r.ix || niy != r.iy) {
+            return true;
         }
-        return ceres::SOLVER_CONTINUE;
     }
-
-    bool changed() const { return changed_; }
-
-   private:
-    const SplineMap& map_;
-    const std::vector<Vec6<double>>& cams_;
-    const std::vector<Vec3<double>>& pts_;
-    std::vector<ObservationRecord>& obs_;
-    bool changed_ = false;
-};
+    return false;
+}
 
 static inline void BuildProblem(
     ceres::Problem& problem,
@@ -256,12 +162,10 @@ static inline void BuildProblem(
     std::vector<double*>& dx_blocks,
     std::vector<double*>& dy_blocks,
     std::vector<ObservationRecord>& obs_records,
-    const std::vector<double>& dx0,
-    const std::vector<double>& dy0,
     double sqrt_lambda
 ) {
-    const int nx = (int)cfg.num_knots_x;
-    const int ny = (int)cfg.num_knots_y;
+    const int nx = static_cast<int>(cfg.num_knots_x);
+    const int ny = static_cast<int>(cfg.num_knots_y);
     const int n_knots = nx * ny;
 
     // pinhole_parameters constant
@@ -288,47 +192,93 @@ static inline void BuildProblem(
         problem.AddParameterBlock(const_cast<double*>(cam.data()), 6);
     }
 
+    // Spline anchor constraints to prevent the spline from absorbing
+    // global pose changes. We evaluate the spline at two fixed points in
+    // normalized coords and constrain the output.
+    auto add_spline_anchor = [&](double x_n,
+                                 double y_n,
+                                 bool constrain_dx,
+                                 bool constrain_dy,
+                                 double weight) {
+        double gx, gy;
+        map.normalized_to_grid_coords(x_n, y_n, gx, gy);
+        const int ix = static_cast<int>(gx);
+        const int iy = static_cast<int>(gy);
+
+        if (!map.is_inside_fov(ix, iy)) {
+            return;
+        }
+
+        const double u = gx - ix;
+        const double v = gy - iy;
+        double wx[4], wy[4];
+        cubic_bspline_basis_uniform(u, wx);
+        cubic_bspline_basis_uniform(v, wy);
+
+        double basis[16];
+        int idx = 0;
+        for (int b = 0; b < 4; b++) {
+            for (int a = 0; a < 4; a++) {
+                basis[idx++] = wy[b] * wx[a];
+            }
+        }
+
+        std::array<int, 16> flat{};
+        map.support_indices_4x4(ix, iy, flat);
+
+        auto make_anchor = [&](double target, std::vector<double*>& blocks) {
+            SplineAnchor sa{weight, target, {}};
+            std::copy(basis, basis + 16, sa.basis);
+            auto* cost = new ceres::DynamicAutoDiffCostFunction<SplineAnchor>(
+                new SplineAnchor(sa)
+            );
+            std::vector<double*> ptrs;
+            for (int i = 0; i < 16; i++) {
+                cost->AddParameterBlock(1);
+                ptrs.push_back(blocks[flat[i]]);
+            }
+            cost->SetNumResiduals(1);
+            problem.AddResidualBlock(cost, nullptr, ptrs);
+        };
+
+        if (constrain_dx) {
+            make_anchor(0.0, dx_blocks);
+        }
+        if (constrain_dy) {
+            make_anchor(0.0, dy_blocks);
+        }
+    };
+
+    constexpr double anchor_weight = 1000.0;
+    // Point 1: optical center — constrain both dx and dy to 0
+    add_spline_anchor(0.0, 0.0, true, true, anchor_weight);
+    // Point 2: quarter FOV along x — constrain only dy to 0
+    const double fov_rad_x = cfg.fov_deg_x * M_PI / 180.0;
+    const double quarter_x_n = std::tan(fov_rad_x / 4.0);
+    add_spline_anchor(quarter_x_n, 0.0, false, true, anchor_weight);
+
     for (auto& pt : target_points) {
         problem.AddParameterBlock(const_cast<double*>(pt.data()), 3);
         problem.SetParameterBlockConstant(const_cast<double*>(pt.data()));
     }
 
-    // Determine which knots are at the corners of a cell that contains at
-    // least one observation. For cell (ix, iy) that means the 2x2 corner
-    // knots: (ix, iy), (ix+1, iy), (ix, iy+1), (ix+1, iy+1).
-    std::vector<bool> knot_has_obs(n_knots, false);
+    // Filter out observations that project outside the calibrated FOV.
+    std::vector<std::vector<size_t>> valid_observation_indices(frames.size());
     for (size_t cam_idx = 0; cam_idx < frames.size(); cam_idx++) {
         auto& ids = std::get<0>(frames[cam_idx]);
         auto& cam6 = cameras_from_target[cam_idx];
         for (size_t oi = 0; oi < ids.size(); oi++) {
-            const auto& pw = target_points[ids[oi]];
             int ix, iy;
-            map.cell_index(cam6.data(), pw, ix, iy);
-            for (int dy = 0; dy <= 1; dy++) {
-                for (int dx = 0; dx <= 1; dx++) {
-                    const int kx = clamp_int(ix + dx, 0, nx - 1);
-                    const int ky = clamp_int(iy + dy, 0, ny - 1);
-                    knot_has_obs[ky * nx + kx] = true;
-                }
+            map.cell_index(cam6.data(), target_points[ids[oi]], ix, iy);
+            if (map.is_inside_fov(ix, iy)) {
+                valid_observation_indices[cam_idx].push_back(oi);
             }
         }
     }
 
-    // priors: only for knots with no observation influence
-    for (int i = 0; i < n_knots; i++) {
-        if (!knot_has_obs[i]) {
-            problem.AddResidualBlock(
-                new ceres::AutoDiffCostFunction<KnotPrior2D, 2, 1, 1>(
-                    new KnotPrior2D{sqrt_lambda, dx0[i], dy0[i]}
-                ),
-                nullptr,
-                dx_blocks[i],
-                dy_blocks[i]
-            );
-        }
-    }
-
     // reprojection residuals (wired to correct 16 knots for each observation)
+    // Track which cells contain at least one observation.
+    std::vector<bool> cell_has_obs(nx * ny, false);
     obs_records.clear();
     const size_t num_cams = frames.size();
     for (size_t cam_idx = 0; cam_idx < num_cams; cam_idx++) {
@@ -336,7 +286,7 @@ static inline void BuildProblem(
         auto& obs = std::get<1>(frames[cam_idx]);
         auto& cam6 = cameras_from_target[cam_idx];
 
-        for (size_t oi = 0; oi < obs.size(); oi++) {
+        for (size_t oi : valid_observation_indices[cam_idx]) {
             const int pt_idx = ids[oi];
             const auto& pw = target_points[pt_idx];
             const double ox = obs[oi](0, 0);
@@ -345,11 +295,7 @@ static inline void BuildProblem(
             int ix, iy;
             map.cell_index(cam6.data(), pw, ix, iy);
 
-            // Skip observations whose 4x4 support patch would have
-            // duplicate knot indices from boundary clamping.
-            if (!map.has_unique_support(ix, iy)) {
-                continue;
-            }
+            cell_has_obs[iy * nx + ix] = true;
 
             std::array<int, 16> flat{};
             map.support_indices_4x4(ix, iy, flat);
@@ -388,6 +334,81 @@ static inline void BuildProblem(
             );
         }
     }
+
+    // Third-derivative smoothness priors for cells without observations.
+    // For each empty cell (cx, cy), add horizontal and vertical stencils
+    // through both rows/columns of the cell's corner knots.
+    for (int cy = 0; cy < ny; cy++) {
+        for (int cx = 0; cx < nx; cx++) {
+            if (cell_has_obs[cy * nx + cx]) {
+                continue;
+            }
+
+            // Horizontal: 4-knot stencil along rows cy and cy+1
+            if (cx - 1 >= 0 && cx + 2 < nx) {
+                for (int row = cy; row <= cy + 1 && row < ny; row++) {
+                    const int k0 = row * nx + (cx - 1);
+                    const int k1 = row * nx + cx;
+                    const int k2 = row * nx + (cx + 1);
+                    const int k3 = row * nx + (cx + 2);
+                    problem.AddResidualBlock(
+                        new ceres::
+                            AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                                new KnotSmoothness{sqrt_lambda}
+                            ),
+                        nullptr,
+                        dx_blocks[k0],
+                        dx_blocks[k1],
+                        dx_blocks[k2],
+                        dx_blocks[k3]
+                    );
+                    problem.AddResidualBlock(
+                        new ceres::
+                            AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                                new KnotSmoothness{sqrt_lambda}
+                            ),
+                        nullptr,
+                        dy_blocks[k0],
+                        dy_blocks[k1],
+                        dy_blocks[k2],
+                        dy_blocks[k3]
+                    );
+                }
+            }
+
+            // Vertical: 4-knot stencil along columns cx and cx+1
+            if (cy - 1 >= 0 && cy + 2 < ny) {
+                for (int col = cx; col <= cx + 1 && col < nx; col++) {
+                    const int k0 = (cy - 1) * nx + col;
+                    const int k1 = cy * nx + col;
+                    const int k2 = (cy + 1) * nx + col;
+                    const int k3 = (cy + 2) * nx + col;
+                    problem.AddResidualBlock(
+                        new ceres::
+                            AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                                new KnotSmoothness{sqrt_lambda}
+                            ),
+                        nullptr,
+                        dx_blocks[k0],
+                        dx_blocks[k1],
+                        dx_blocks[k2],
+                        dx_blocks[k3]
+                    );
+                    problem.AddResidualBlock(
+                        new ceres::
+                            AutoDiffCostFunction<KnotSmoothness, 1, 1, 1, 1, 1>(
+                                new KnotSmoothness{sqrt_lambda}
+                            ),
+                        nullptr,
+                        dy_blocks[k0],
+                        dy_blocks[k1],
+                        dy_blocks[k2],
+                        dy_blocks[k3]
+                    );
+                }
+            }
+        }
+    }
 }
 
 py::dict fine_tune_pinhole_splined(
@@ -403,13 +424,13 @@ py::dict fine_tune_pinhole_splined(
     auto dxb = intrinsics_parameters.dx_grid.request();
     auto dyb = intrinsics_parameters.dy_grid.request();
     require(
-        (uint32_t)dxb.shape[0] == model_config.num_knots_y &&
-            (uint32_t)dxb.shape[1] == model_config.num_knots_x,
+        static_cast<uint32_t>(dxb.shape[0]) == model_config.num_knots_y &&
+            static_cast<uint32_t>(dxb.shape[1]) == model_config.num_knots_x,
         "dx_grid must have shape (num_knots_y, num_knots_x)"
     );
     require(
-        (uint32_t)dyb.shape[0] == model_config.num_knots_y &&
-            (uint32_t)dyb.shape[1] == model_config.num_knots_x,
+        static_cast<uint32_t>(dyb.shape[0]) == model_config.num_knots_y &&
+            static_cast<uint32_t>(dyb.shape[1]) == model_config.num_knots_x,
         "dy_grid must have shape (num_knots_y, num_knots_x)"
     );
 
@@ -419,19 +440,7 @@ py::dict fine_tune_pinhole_splined(
     double* dxp = static_cast<double*>(dxb.ptr);
     double* dyp = static_cast<double*>(dyb.ptr);
 
-    const int nx = (int)model_config.num_knots_x;
-    const int ny = (int)model_config.num_knots_y;
-    const int n_knots = nx * ny;
-
-    // freeze “initial” prior anchors (true initial values)
-    std::vector<double> dx0(n_knots), dy0(n_knots);
-    for (int i = 0; i < n_knots; i++) {
-        dx0[i] = dxp[i];
-        dy0[i] = dyp[i];
-    }
-
-    const double lambda = 1e-1;
-    const double sqrt_lambda = std::sqrt(lambda);
+    const double sqrt_lambda = std::sqrt(model_config.smoothness_lambda);
 
     double warp_coeffs[5] = {
         warp_coeffs_initial[0],
@@ -445,22 +454,25 @@ py::dict fine_tune_pinhole_splined(
 
     ceres::Solver::Options options;
 
-    options.num_threads = static_cast<int>(std::thread::hardware_concurrency());
+    options.num_threads =
+        std::min(8, static_cast<int>(std::thread::hardware_concurrency()));
     options.linear_solver_type = ceres::ITERATIVE_SCHUR;
-
     options.preconditioner_type = ceres::SCHUR_JACOBI;
 
     options.minimizer_progress_to_stdout = false;
-    options.update_state_every_iteration = true;
 
-    constexpr int max_rebuilds = 25;
+    constexpr int max_rebuilds = 1000;
 
+    // declare these outside the loop so we don't reallocate on every rebuild
     std::vector<double*> dx_blocks, dy_blocks;
+
     std::vector<ObservationRecord> obs_records;
 
     ceres::Solver::Summary last_summary;
 
-    for (int outer = 0; outer < max_rebuilds; outer++) {
+    double prev_cost = std::numeric_limits<double>::max();
+    int outer;
+    for (outer = 0; outer < max_rebuilds; outer++) {
         ceres::Problem problem;
 
         BuildProblem(
@@ -478,32 +490,45 @@ py::dict fine_tune_pinhole_splined(
             dx_blocks,
             dy_blocks,
             obs_records,
-            dx0,
-            dy0,
             sqrt_lambda
         );
 
-        CellChangeCallback
-            cb(map, cameras_from_target, target_points, obs_records);
-        options.callbacks.clear();
-        options.callbacks.push_back(&cb);
-
-        SPDLOG_DEBUG(
+        spdlog::debug(
             "Solve pass {} (residuals wired for current cells)...",
             outer
         );
 
         ceres::Solve(options, &problem, &last_summary);
 
-        if (!cb.changed()) {
-            SPDLOG_DEBUG(
+        if (!any_cell_changed(
+                map,
+                cameras_from_target,
+                target_points,
+                obs_records
+            )) {
+            spdlog::debug(
                 "No cell changes detected. Done after {} rebuild(s).",
                 outer
             );
             break;
         }
-        SPDLOG_DEBUG("Cell change detected -> rebuilding problem.");
+
+        const double cost = last_summary.final_cost;
+        const double rel_improvement = (prev_cost - cost) / (prev_cost + 1e-30);
+        if (outer > 0 && rel_improvement < 1e-6) {
+            spdlog::debug(
+                "Cost converged (rel improvement {:.2e}). Done after {} "
+                "rebuild(s).",
+                rel_improvement,
+                outer
+            );
+            break;
+        }
+        prev_cost = cost;
+
+        spdlog::debug("Cell change detected -> rebuilding problem.");
     }
+    spdlog::debug("Optimization done after {} rebuilds", outer);
 
     py::dict out;
     out["dx_grid"] = intrinsics_parameters.dx_grid;

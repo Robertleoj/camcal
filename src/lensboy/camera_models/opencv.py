@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field, replace
+from importlib.metadata import version as _package_version
 from pathlib import Path
 
 import cv2
@@ -29,7 +30,8 @@ class OpenCVConfig(CameraModelConfig):
     Attributes:
         image_height: Image height in pixels.
         image_width: Image width in pixels.
-        initial_focal_length: Initial focal length guess in pixels.
+        initial_focal_length: Initial focal length guess in pixels, or None to
+            estimate automatically from the calibration data.
         included_distortion_coefficients: Boolean mask selecting which of the 14
             OpenCV distortion coefficients to optimise, shape (14,).
     """
@@ -37,7 +39,7 @@ class OpenCVConfig(CameraModelConfig):
     image_height: int
     image_width: int
 
-    initial_focal_length: float
+    initial_focal_length: float | None = None
     included_distortion_coefficients: np.ndarray = field(
         default_factory=lambda: OpenCVConfig.STANDARD
     )
@@ -72,7 +74,15 @@ class OpenCVConfig(CameraModelConfig):
         return mask
 
     def get_initial_value(self) -> OpenCV:
-        """Construct the initial OpenCV model from this config."""
+        """Construct the initial OpenCV model from this config.
+
+        Raises:
+            ValueError: If initial_focal_length is None.
+        """
+        if self.initial_focal_length is None:
+            raise ValueError(
+                "initial_focal_length must be set before calling get_initial_value()"
+            )
         return OpenCV(
             image_height=self.image_height,
             image_width=self.image_width,
@@ -95,8 +105,8 @@ class OpenCV(CameraModel):
         fy: Focal length along y in pixels.
         cx: Principal point x in pixels.
         cy: Principal point y in pixels.
-        distortion_coeffs: OpenCV distortion vector, shape (N,) with N <= 14.
-            Padded with zeros to length 14 if shorter.
+        distortion_coeffs: OpenCV distortion vector, shape (14,).
+            Inputs shorter than 14 are zero-padded on construction.
     """
 
     image_width: int
@@ -245,6 +255,7 @@ class OpenCV(CameraModel):
         """
         return {
             "type": "opencv",
+            "lensboy-version": _package_version("lensboy"),
             "image_width": self.image_width,
             "image_height": self.image_height,
             "fx": self.fx,
@@ -275,15 +286,17 @@ class OpenCV(CameraModel):
         )
 
     def _compute_fov(self) -> tuple[float, float]:
+        """Compute FOV by undistorting image border pixels."""
+        W, H = self.image_width, self.image_height
         n = 200
-        xs = np.linspace(0, self.image_width, n)
-        ys = np.linspace(0, self.image_height, n)
+        xs = np.linspace(0, W, n)
+        ys = np.linspace(0, H, n)
         border = np.vstack(
             [
                 np.column_stack([xs, np.zeros(n)]),
-                np.column_stack([xs, np.full(n, self.image_height)]),
+                np.column_stack([xs, np.full(n, H)]),
                 np.column_stack([np.zeros(n), ys]),
-                np.column_stack([np.full(n, self.image_width), ys]),
+                np.column_stack([np.full(n, W), ys]),
             ]
         ).astype(np.float64)
 
@@ -294,6 +307,7 @@ class OpenCV(CameraModel):
         ).reshape(-1, 2)
 
         nx, ny = undistorted[:, 0], undistorted[:, 1]
-        fov_x = float(np.degrees(np.arctan(np.max(nx)) + np.arctan(-np.min(nx))))
-        fov_y = float(np.degrees(np.arctan(np.max(ny)) + np.arctan(-np.min(ny))))
-        return fov_x, fov_y
+        fov_x = np.arctan(np.max(nx)) + np.arctan(-np.min(nx))
+        fov_y = np.arctan(np.max(ny)) + np.arctan(-np.min(ny))
+
+        return float(np.degrees(fov_x)), float(np.degrees(fov_y))
