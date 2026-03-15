@@ -284,49 +284,28 @@ class OpenCV(CameraModel):
         )
 
     def _compute_fov(self) -> tuple[float, float]:
-        """Estimate FOV by sampling at two insets and linearly extrapolating.
-
-        Avoids unreliable OpenCV distortion at the image edges by sampling
-        borders at 60% and 80% of the way from center to edge, then
-        extrapolating to 100%.
-        """
+        """Compute FOV by undistorting image border pixels."""
         W, H = self.image_width, self.image_height
-        cx, cy = W / 2.0, H / 2.0
         n = 200
-        fractions = [0.6, 0.8]
-        fov_samples = []
+        xs = np.linspace(0, W, n)
+        ys = np.linspace(0, H, n)
+        border = np.vstack(
+            [
+                np.column_stack([xs, np.zeros(n)]),
+                np.column_stack([xs, np.full(n, H)]),
+                np.column_stack([np.zeros(n), ys]),
+                np.column_stack([np.full(n, W), ys]),
+            ]
+        ).astype(np.float64)
 
-        for frac in fractions:
-            x_lo, x_hi = cx - frac * cx, cx + frac * cx
-            y_lo, y_hi = cy - frac * cy, cy + frac * cy
-            xs = np.linspace(x_lo, x_hi, n)
-            ys = np.linspace(y_lo, y_hi, n)
-            border = np.vstack(
-                [
-                    np.column_stack([xs, np.full(n, y_lo)]),
-                    np.column_stack([xs, np.full(n, y_hi)]),
-                    np.column_stack([np.full(n, x_lo), ys]),
-                    np.column_stack([np.full(n, x_hi), ys]),
-                ]
-            ).astype(np.float64)
+        undistorted = cv2.undistortPoints(
+            border.reshape(-1, 1, 2),
+            self.K(),
+            self.distortion_coeffs,
+        ).reshape(-1, 2)
 
-            undistorted = cv2.undistortPoints(
-                border.reshape(-1, 1, 2),
-                self.K(),
-                self.distortion_coeffs,
-            ).reshape(-1, 2)
-
-            nx, ny = undistorted[:, 0], undistorted[:, 1]
-            fov_x = np.arctan(np.max(nx)) + np.arctan(-np.min(nx))
-            fov_y = np.arctan(np.max(ny)) + np.arctan(-np.min(ny))
-            fov_samples.append((fov_x, fov_y))
-
-        # Linearly extrapolate from the two inset measurements to frac=1.0
-        (fx0, fy0), (fx1, fy1) = fov_samples
-        f0, f1 = fractions
-        slope_x = (fx1 - fx0) / (f1 - f0)
-        slope_y = (fy1 - fy0) / (f1 - f0)
-        fov_x = fx0 + slope_x * (1.0 - f0)
-        fov_y = fy0 + slope_y * (1.0 - f0)
+        nx, ny = undistorted[:, 0], undistorted[:, 1]
+        fov_x = np.arctan(np.max(nx)) + np.arctan(-np.min(nx))
+        fov_y = np.arctan(np.max(ny)) + np.arctan(-np.min(ny))
 
         return float(np.degrees(fov_x)), float(np.degrees(fov_y))

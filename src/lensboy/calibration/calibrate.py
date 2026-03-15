@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 
 from lensboy import lensboy_bindings as lbb
-from lensboy._logging import log, warn
+from lensboy._logging import disable_logs, enable_logs, log, warn
 from lensboy.calibration.type_defs import (
     CalibrationResult,
     Frame,
@@ -127,8 +127,6 @@ def _opencv_calibrate_inner(
     mask = config.optimize_mask()
     intrinsics_param_optimize_mask = mask.tolist()
 
-    log("Running full optimization...")
-    start_time = default_timer()
     result = lbb.calibrate_opencv(
         intrinsics_initial_value=params,
         intrinsics_param_optimize_mask=intrinsics_param_optimize_mask,
@@ -142,7 +140,6 @@ def _opencv_calibrate_inner(
             list(batch.warp_coeffs) if batch.warp_coeffs is not None else [0.0] * 5
         ),
     )
-    log(f"Ran optimizer in {default_timer() - start_time:.2f}s")
 
     out_coeffs: tuple[float, float, float, float, float] | None = None
     if warp_coordinates is not None:
@@ -196,18 +193,28 @@ def _compute_frame_diagnostics(
     return frame_diagnostics
 
 
-def _log_residual_stats(frame_diagnostics: list[FrameDiagnostics | None]) -> None:
-    inlier_norms = np.concatenate(
-        [
-            np.linalg.norm(fi.residuals[fi.inlier_mask], axis=1)
-            for fi in frame_diagnostics
-            if fi is not None and fi.inlier_mask.any()
-        ]
-    )
-    log(
-        f"Residuals (inliers): mean={np.mean(inlier_norms):.3f}px, "
-        f"worst={np.max(inlier_norms):.3f}px"
-    )
+def _compute_mean_reproj(
+    state: _OptimizationState[IntrinsicsT],
+    target_points: np.ndarray,
+    target_warp: TargetWarp | None,
+) -> tuple[float, float]:
+    """Compute mean and worst inlier reprojection error."""
+    norms: list[np.ndarray] = []
+    for i, pose in enumerate(state.cameras_from_target):
+        if pose is None:
+            continue
+        mask = state.inlier_masks[i]
+        frame = _apply_mask(state.frames[i], mask)
+        _, r = _project_and_calculate_residuals(
+            target_points,
+            pose,
+            frame,
+            state.intrinsics,
+            target_warp,
+        )
+        norms.append(np.linalg.norm(r, axis=1))
+    all_norms = np.concatenate(norms)
+    return float(np.mean(all_norms)), float(np.max(all_norms))
 
 
 def _run_with_outlier_filtering(
@@ -218,9 +225,11 @@ def _run_with_outlier_filtering(
     target_points: np.ndarray,
     outlier_threshold_stddevs: float | None,
     warp_coordinates: WarpCoordinates | None = None,
+    label: str = "Optimization",
 ) -> _OptimizationState[IntrinsicsT]:
     state = initial_state
     total_observations = sum(len(f) for f in state.frames)
+    pass_num = 0
 
     for iteration in range(MAX_OUTLIER_FILTER_PASSES + 1):
         active_indices = [
@@ -239,6 +248,8 @@ def _run_with_outlier_filtering(
             for i in active_indices
         ]
 
+        pass_num += 1
+        start = default_timer()
         optimized = optimize_fn(
             _OptimizationBatch(
                 intrinsics=state.intrinsics,
@@ -254,15 +265,25 @@ def _run_with_outlier_filtering(
         state.intrinsics = optimized.intrinsics
         state.warp_coeffs = optimized.warp_coeffs
 
+        curr_target_warp = None
+        if warp_coordinates is not None and state.warp_coeffs is not None:
+            curr_target_warp = TargetWarp(warp_coordinates, state.warp_coeffs)
+
+        elapsed = default_timer() - start
+        mean_reproj, worst_reproj = _compute_mean_reproj(
+            state,
+            target_points,
+            curr_target_warp,
+        )
+        log(
+            f"{label} pass {pass_num}: {elapsed:.1f}s "
+            f"(mean reproj={mean_reproj:.3f}px, worst={worst_reproj:.3f}px)"
+        )
+
         if outlier_threshold_stddevs is None or iteration == MAX_OUTLIER_FILTER_PASSES:
             break
 
         # Compute residuals and update masks
-        curr_target_warp = None
-        if warp_coordinates is not None:
-            assert state.warp_coeffs is not None
-            curr_target_warp = TargetWarp(warp_coordinates, state.warp_coeffs)
-
         residuals = []
         for i in active_indices:
             pose = state.cameras_from_target[i]
@@ -299,7 +320,7 @@ def _run_with_outlier_filtering(
         pct = total_outliers / total_observations * 100
         log(
             f"Outlier filtering: {total_outliers}/{total_observations}"
-            f" ({pct:.1f}%) outliers - going again..."
+            f" ({pct:.1f}%) — re-optimizing..."
         )
 
     return state
@@ -604,6 +625,7 @@ def _opencv_calibrate(
         target_points,
         outlier_threshold_stddevs,
         warp_coordinates=warp_coordinates,
+        label="OpenCV",
     )
 
     target_warp = None
@@ -622,7 +644,6 @@ def _opencv_calibrate(
         inlier_masks=state.inlier_masks,
         target_warp=target_warp,
     )
-    _log_residual_stats(diagnostics)
 
     return CalibrationResult(
         camera_model=state.intrinsics,
@@ -792,7 +813,7 @@ def _fit_opencv_seed(
     target_points: np.ndarray,
     frames: list[Frame],
     config: PinholeSplinedConfig,
-) -> tuple[CalibrationResult[OpenCV], list[Frame]]:
+) -> tuple[CalibrationResult[OpenCV], list[int]]:
     """Fit an OpenCV seed model on a coverage-subsampled set of frames.
 
     Args:
@@ -801,15 +822,11 @@ def _fit_opencv_seed(
         config: Spline config (used for image size and initial focal length).
 
     Returns:
-        Tuple of (calibration result, subsampled frames used).
+        Tuple of (calibration result, indices of subsampled frames).
     """
+    start_time = default_timer()
     sub_indices = _select_covering_frames(frames, config.image_width, config.image_height)
     subsampled_frames = [frames[i] for i in sub_indices]
-    log(
-        f"Subsampled {sum(len(f.target_point_indices) for f in frames)} observations "
-        f"to {sum(len(f.target_point_indices) for f in subsampled_frames)} "
-        f"({len(subsampled_frames)} frames)"
-    )
 
     opencv_config = OpenCVConfig(
         image_height=config.image_height,
@@ -818,20 +835,30 @@ def _fit_opencv_seed(
         included_distortion_coefficients=OpenCVConfig.FULL_14,
     )
 
-    log("Calibrating seed opencv model on subsampled data...")
-    start_time = default_timer()
-    result = _opencv_calibrate(
-        target_points, subsampled_frames, opencv_config, None,
-        estimate_target_warp=False,
+    disable_logs()
+    try:
+        result = _opencv_calibrate(
+            target_points,
+            subsampled_frames,
+            opencv_config,
+            None,
+            estimate_target_warp=False,
+        )
+    finally:
+        enable_logs()
+    fov_x, fov_y = _compute_fov_from_opencv(result.camera_model, padding_fraction=0.0)
+    log(
+        f"Fitted OpenCV seed model: {default_timer() - start_time:.1f}s "
+        f"(FOV: {fov_x:.1f}° x {fov_y:.1f}°)"
     )
-    log(f"OpenCV seed model ready in {default_timer() - start_time:.1f}s")
-    return result, subsampled_frames
+    return result, sub_indices
 
 
 def _estimate_spline_fov(
     opencv_model: OpenCV,
     opencv_result: CalibrationResult[OpenCV],
-    subsampled_frames: list[Frame],
+    frames: list[Frame],
+    sub_indices: list[int],
     target_points: np.ndarray,
     config: PinholeSplinedConfig,
     opencv_fov_x: float,
@@ -842,7 +869,8 @@ def _estimate_spline_fov(
     Args:
         opencv_model: Seed OpenCV model.
         opencv_result: Calibration result from the seed model.
-        subsampled_frames: Frames used for the seed calibration.
+        frames: All calibration frames.
+        sub_indices: Indices of subsampled frames used for the seed model.
         target_points: 3D target points, shape (N, 3).
         config: Spline config.
         opencv_fov_x: OpenCV model's FOV in x (no padding).
@@ -854,14 +882,16 @@ def _estimate_spline_fov(
     coarse_fov_x, coarse_fov_y = _compute_fov_from_opencv(
         opencv_model, padding_fraction=0.30
     )
-    log(f"Coarse spline FOV (+30% padding): {coarse_fov_x:.1f}° x {coarse_fov_y:.1f}°")
 
     coarse_nx = min(config.num_knots_x, 10)
     coarse_ny = min(config.num_knots_y, 8)
     coarse_cpp_config = lbb.PinholeSplinedConfig(
-        config.image_width, config.image_height,
-        coarse_fov_x, coarse_fov_y,
-        coarse_nx, coarse_ny,
+        config.image_width,
+        config.image_height,
+        coarse_fov_x,
+        coarse_fov_y,
+        coarse_nx,
+        coarse_ny,
         1.0,  # strong smoothness for coarse model
     )
 
@@ -877,39 +907,43 @@ def _estimate_spline_fov(
     coarse_model = PinholeSplined(
         image_height=config.image_height,
         image_width=config.image_width,
-        fx=opencv_model.fx, fy=opencv_model.fy,
-        cx=opencv_model.cx, cy=opencv_model.cy,
+        fx=opencv_model.fx,
+        fy=opencv_model.fy,
+        cx=opencv_model.cx,
+        cy=opencv_model.cy,
         dx_grid=coarse_out["x_knots"],
         dy_grid=coarse_out["y_knots"],
-        num_knots_x=coarse_nx, num_knots_y=coarse_ny,
-        fov_deg_x=coarse_fov_x, fov_deg_y=coarse_fov_y,
+        num_knots_x=coarse_nx,
+        num_knots_y=coarse_ny,
+        fov_deg_x=coarse_fov_x,
+        fov_deg_y=coarse_fov_y,
         smoothness_lambda=1.0,
     )
 
-    sub_pnp = opencv_result.cameras_from_target
-    sub_poses = [p for p in sub_pnp if p is not None]
-    sub_frames = [
-        f for f, p in zip(subsampled_frames, sub_pnp) if p is not None
-    ]
+    all_pnp = opencv_result.cameras_from_target
+    sub_frames = [frames[i] for i in sub_indices]
+    solved_poses = [p for p in all_pnp if p is not None]
+    solved_frames = [f for f, p in zip(sub_frames, all_pnp) if p is not None]
 
-    log("Fitting coarse spline model to estimate FOV...")
     start_time = default_timer()
     coarse_result = _pinhole_splined_refine_inner(
         _OptimizationBatch(
             intrinsics=coarse_model,
-            cameras_from_target=sub_poses,
-            frames=sub_frames,
+            cameras_from_target=solved_poses,
+            frames=solved_frames,
             warp_coeffs=None,
         ),
         target_points,
         None,
     )
-    log(f"Coarse spline fit in {default_timer() - start_time:.1f}s")
 
     fov_deg_x, fov_deg_y = _compute_fov_from_spline_model(
         coarse_result.intrinsics, padding_fraction=0.05
     )
-    log(f"Spline FOV (from coarse model +5%): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
+    log(
+        f"Spline FOV estimate: {default_timer() - start_time:.1f}s "
+        f"({fov_deg_x:.1f}° x {fov_deg_y:.1f}°)"
+    )
     return fov_deg_x, fov_deg_y
 
 
@@ -935,14 +969,14 @@ def _build_initial_spline_model(
         Initial PinholeSplined model with knots matched to the OpenCV distortion.
     """
     cpp_config = lbb.PinholeSplinedConfig(
-        config.image_width, config.image_height,
-        fov_deg_x, fov_deg_y,
-        config.num_knots_x, config.num_knots_y,
+        config.image_width,
+        config.image_height,
+        fov_deg_x,
+        fov_deg_y,
+        config.num_knots_x,
+        config.num_knots_y,
         config.smoothness_lambda,
     )
-
-    log("Calculating matching spline model...")
-    start_time = default_timer()
 
     matching_bounds_fov_x = min(fov_deg_x, opencv_fov_x)
     matching_bounds_fov_y = min(fov_deg_y, opencv_fov_y)
@@ -955,18 +989,20 @@ def _build_initial_spline_model(
         float(image_bound_x),
         float(image_bound_y),
     )
-    log(f"Matching spline model ready in {default_timer() - start_time:.1f}s")
 
     return PinholeSplined(
         image_height=config.image_height,
         image_width=config.image_width,
-        fx=opencv_model.fx, fy=opencv_model.fy,
-        cx=opencv_model.cx, cy=opencv_model.cy,
+        fx=opencv_model.fx,
+        fy=opencv_model.fy,
+        cx=opencv_model.cx,
+        cy=opencv_model.cy,
         dx_grid=out_dict["x_knots"],
         dy_grid=out_dict["y_knots"],
         num_knots_x=config.num_knots_x,
         num_knots_y=config.num_knots_y,
-        fov_deg_x=fov_deg_x, fov_deg_y=fov_deg_y,
+        fov_deg_x=fov_deg_x,
+        fov_deg_y=fov_deg_y,
         smoothness_lambda=config.smoothness_lambda,
     )
 
@@ -985,16 +1021,13 @@ def _calibrate_pinhole_splined(
         f"Expected floating dtype for target_points, got {target_points.dtype}"
     )
 
-    # Stage 1: Subsample and fit OpenCV seed
-    opencv_result, subsampled_frames = _fit_opencv_seed(
-        target_points, frames, config
-    )
+    # Stage 1: Fit OpenCV seed on subsampled frames
+    opencv_result, sub_indices = _fit_opencv_seed(target_points, frames, config)
     opencv_model = opencv_result.camera_model
 
     opencv_fov_x, opencv_fov_y = _compute_fov_from_opencv(
         opencv_model, padding_fraction=0.0
     )
-    log(f"OpenCV model FOV: {opencv_fov_x:.1f}° x {opencv_fov_y:.1f}°")
 
     # Stage 2: Determine spline FOV
     if config.fov_deg_xy is not None:
@@ -1002,13 +1035,24 @@ def _calibrate_pinhole_splined(
         log(f"Spline FOV (user-specified): {fov_deg_x:.1f}° x {fov_deg_y:.1f}°")
     else:
         fov_deg_x, fov_deg_y = _estimate_spline_fov(
-            opencv_model, opencv_result, subsampled_frames,
-            target_points, config, opencv_fov_x, opencv_fov_y,
+            opencv_model,
+            opencv_result,
+            frames,
+            sub_indices,
+            target_points,
+            config,
+            opencv_fov_x,
+            opencv_fov_y,
         )
 
     # Stage 3: Build and fit full spline model
     prior_model = _build_initial_spline_model(
-        opencv_model, config, fov_deg_x, fov_deg_y, opencv_fov_x, opencv_fov_y,
+        opencv_model,
+        config,
+        fov_deg_x,
+        fov_deg_y,
+        opencv_fov_x,
+        opencv_fov_y,
     )
 
     # PnP for all frames using the opencv model
@@ -1036,11 +1080,7 @@ def _calibrate_pinhole_splined(
     def optimize_fn(
         batch: _OptimizationBatch[PinholeSplined],
     ) -> _OptimizationBatch[PinholeSplined]:
-        log("Running full optimization...")
-        start = default_timer()
-        result = _pinhole_splined_refine_inner(batch, target_points, warp_coordinates)
-        log(f"Performed full optimization in {default_timer() - start:.2f}s")
-        return result
+        return _pinhole_splined_refine_inner(batch, target_points, warp_coordinates)
 
     state = _run_with_outlier_filtering(
         optimize_fn,
@@ -1048,6 +1088,7 @@ def _calibrate_pinhole_splined(
         target_points,
         outlier_threshold_stddevs,
         warp_coordinates=warp_coordinates,
+        label="Spline",
     )
 
     target_warp = None
@@ -1071,8 +1112,6 @@ def _calibrate_pinhole_splined(
         state.intrinsics,
         seed_opencv_distortion_parameters=opencv_model.distortion_coeffs,
     )
-
-    _log_residual_stats(diagnostics)
 
     return CalibrationResult(
         camera_model=final_intrinsics,

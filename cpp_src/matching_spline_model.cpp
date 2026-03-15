@@ -376,7 +376,7 @@ py::dict get_matching_spline_distortion_model(
         }
     }
 
-    SPDLOG_DEBUG("Created problem");
+    spdlog::debug("Created problem");
     ceres::Solver::Options options;
     options.num_threads = static_cast<int>(std::thread::hardware_concurrency());
     options.linear_solver_type = ceres::ITERATIVE_SCHUR;
@@ -388,8 +388,8 @@ py::dict get_matching_spline_distortion_model(
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 
-    SPDLOG_DEBUG("Solve done");
-    SPDLOG_DEBUG(summary.BriefReport());
+    spdlog::debug("Solve done");
+    spdlog::debug(summary.BriefReport());
 
     // Return NumPy arrays in y-major shape (Y, X)
     py::array_t<double> x_array(

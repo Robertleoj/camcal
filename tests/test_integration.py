@@ -772,6 +772,7 @@ def _generate_edge_frames(
     target_width: float,
     target_height: float,
     samples_per_edge: int = 20,
+    center_samples: int = 0,
     noise_sigma: float = 0.1,
 ) -> list[lb.Frame]:
     """Generate synthetic frames with observations at the absolute image edges.
@@ -857,6 +858,18 @@ def _generate_edge_frames(
         ray = lower_left * edge_interp + lower_right * (1 - edge_interp)
         camera_from_edge = Pose.from_trans(dist * ray).rx(np.pi).rx(rot)
         poses.append(camera_from_edge @ target_from_edge.inverse())
+
+    # Center-coverage frames: target roughly centered with small perturbations
+    center_dist = max(
+        target_width / (2 * np.tan(half_fov_x)),
+        target_height / (2 * np.tan(half_fov_y)),
+    )
+    for _ in range(center_samples):
+        rotvec = rng.normal(scale=0.15, size=3)
+        tz = rng.uniform(center_dist * 0.8, center_dist * 1.5)
+        tx = rng.normal(scale=target_width * 0.05)
+        ty = rng.normal(scale=target_height * 0.05)
+        poses.append(Pose.from_rotvec_trans(rotvec=rotvec, trans=np.array([tx, ty, tz])))
 
     # Project poses into frames
     w, h = model.image_width, model.image_height

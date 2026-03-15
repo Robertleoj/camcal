@@ -184,8 +184,6 @@ py::dict calibrate_opencv(
         problem.SetParameterBlockConstant(pt.data());
     }
 
-    SPDLOG_DEBUG("Added parameter blocks");
-
     size_t num_cameras = frames.size();
 
     for (size_t camera_idx = 0; camera_idx < num_cameras; camera_idx++) {
@@ -217,8 +215,6 @@ py::dict calibrate_opencv(
             );
         }
     }
-
-    SPDLOG_DEBUG("Added residual blocks");
 
     ceres::Solver::Options options;
     options.num_threads = static_cast<int>(std::thread::hardware_concurrency());

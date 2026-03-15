@@ -35,6 +35,17 @@ def enable_logs() -> None:
     _enabled = True
 
 
+def _set_cpp_log_level(level: str) -> None:
+    """Set the spdlog log level for the C++ backend.
+
+    Args:
+        level: One of "trace", "debug", "info", "warn", "error", "critical", "off".
+    """
+    import lensboy.lensboy_bindings as lbb
+
+    lbb.set_log_level(level)
+
+
 def _clamp(v: float, lo: float, hi: float) -> float:
     return lo if v < lo else hi if v > hi else v
 

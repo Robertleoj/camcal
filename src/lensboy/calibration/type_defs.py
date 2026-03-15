@@ -264,7 +264,7 @@ class CalibrationResult(Generic[IntrinsicsT]):
         *,
         title: str = "Coverage",
         s: float = 6.0,
-        grid_cells: int = 20,
+        grid_cells: int = 50,
         return_figure: bool = False,
     ) -> Figure | None:
         """Scatter-plot all detected points with empty grid cells highlighted.
