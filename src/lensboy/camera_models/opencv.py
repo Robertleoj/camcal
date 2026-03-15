@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field, replace
+from importlib.metadata import version as _package_version
 from pathlib import Path
 
 import cv2
@@ -254,6 +255,7 @@ class OpenCV(CameraModel):
         """
         return {
             "type": "opencv",
+            "lensboy-version": _package_version("lensboy"),
             "image_width": self.image_width,
             "image_height": self.image_height,
             "fx": self.fx,

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from importlib.metadata import version as _package_version
 from pathlib import Path
 
-import cv2
 import numpy as np
 
 from lensboy import lensboy_bindings as lbb
@@ -64,8 +64,6 @@ class PinholeSplined(CameraModel):
         num_knots_y: Number of spline knots along the y axis.
         fov_deg_x: Horizontal field of view in degrees.
         fov_deg_y: Vertical field of view in degrees.
-        seed_opencv_distortion_parameters: Seed OpenCV distortion coefficients
-            used during calibration; None otherwise.
     """
 
     image_width: int
@@ -85,7 +83,6 @@ class PinholeSplined(CameraModel):
     fov_deg_x: float
     fov_deg_y: float
 
-    seed_opencv_distortion_parameters: np.ndarray | None = None
     smoothness_lambda: float = 1.0
 
     def __repr__(self) -> str:
@@ -136,6 +133,7 @@ class PinholeSplined(CameraModel):
         """
         return {
             "type": "pinhole_splined",
+            "lensboy-version": _package_version("lensboy"),
             "image_width": self.image_width,
             "image_height": self.image_height,
             "fx": self.fx,
@@ -148,11 +146,6 @@ class PinholeSplined(CameraModel):
             "num_knots_y": self.num_knots_y,
             "fov_deg_x": self.fov_deg_x,
             "fov_deg_y": self.fov_deg_y,
-            "seed_opencv_distortion_parameters": (
-                self.seed_opencv_distortion_parameters.tolist()
-                if self.seed_opencv_distortion_parameters is not None
-                else None
-            ),
         }
 
     @staticmethod
@@ -165,7 +158,12 @@ class PinholeSplined(CameraModel):
         Returns:
             Reconstructed model.
         """
-        seed = data["seed_opencv_distortion_parameters"]
+        version = data.get("lensboy-version")
+        if version is None or int(version.split(".")[0]) < 3:
+            raise ValueError(
+                "This spline model was created with an incompatible version of "
+                "lensboy (< 3.0.0). Please re-calibrate with the current version."
+            )
         return PinholeSplined(
             image_width=data["image_width"],
             image_height=data["image_height"],
@@ -179,9 +177,6 @@ class PinholeSplined(CameraModel):
             num_knots_y=data["num_knots_y"],
             fov_deg_x=data["fov_deg_x"],
             fov_deg_y=data["fov_deg_y"],
-            seed_opencv_distortion_parameters=(
-                np.array(seed, dtype=np.float64) if seed is not None else None
-            ),
         )
 
     @staticmethod
@@ -356,36 +351,66 @@ class PinholeSplined(CameraModel):
         alpha: float,
         image_size_wh: tuple[int, int] | None = None,
     ) -> PinholeRemapped:
-        """Build an undistorted pinhole view using OpenCV's alpha scaling.
+        """Build an undistorted pinhole view with alpha-controlled cropping.
 
-        alpha=0 crops to only valid (non-black) pixels; alpha=1 keeps all
-        pixels with black borders. Requires seed_opencv_distortion_parameters to be set.
+        Unprojects the image border through the spline model to determine the
+        valid field of view, then interpolates between the inner bounding box
+        (no black pixels) and the outer bounding box (all source pixels visible).
 
         Args:
-            alpha: Scaling parameter in [0, 1].
+            alpha: Scaling parameter in [0, 1]. 0 crops to only valid pixels,
+                1 keeps all pixels (with black borders).
             image_size_wh: Output image size as (width, height).
                 Defaults to the model's image size.
 
         Returns:
             Undistorted pinhole model with precomputed remap tables.
         """
-        if self.seed_opencv_distortion_parameters is None:
-            raise ValueError("Require reference opencv distortion coefficients for this")
-
-        dist = self.seed_opencv_distortion_parameters
-        K = self.K()
-
         if image_size_wh is None:
             image_size_wh = (self.image_width, self.image_height)
 
-        new_K, _roi = cv2.getOptimalNewCameraMatrix(
-            K, dist, (self.image_width, self.image_height), alpha, image_size_wh
-        )
+        W, H = self.image_width, self.image_height
+        n = 500
 
-        fx = new_K[0, 0]
-        fy = new_K[1, 1]
-        cx = new_K[0, 2]
-        cy = new_K[1, 2]
+        xs = np.linspace(0, W - 1, n)
+        ys = np.linspace(0, H - 1, n)
+
+        top = np.column_stack([xs, np.zeros(n)])
+        bottom = np.column_stack([xs, np.full(n, H - 1)])
+        left = np.column_stack([np.zeros(n), ys])
+        right = np.column_stack([np.full(n, W - 1), ys])
+
+        top_norm = self.normalize_points(top)[:, :2]
+        bottom_norm = self.normalize_points(bottom)[:, :2]
+        left_norm = self.normalize_points(left)[:, :2]
+        right_norm = self.normalize_points(right)[:, :2]
+
+        all_norm = np.vstack([top_norm, bottom_norm, left_norm, right_norm])
+
+        # Inner box (alpha=0): largest rect with no black pixels.
+        # Each edge curves inward, so the tightest constraint per side is:
+        inner_left = np.max(left_norm[:, 0])
+        inner_right = np.min(right_norm[:, 0])
+        inner_top = np.max(top_norm[:, 1])
+        inner_bottom = np.min(bottom_norm[:, 1])
+
+        # Outer box (alpha=1): bounding box of all border points.
+        outer_left = np.min(all_norm[:, 0])
+        outer_right = np.max(all_norm[:, 0])
+        outer_top = np.min(all_norm[:, 1])
+        outer_bottom = np.max(all_norm[:, 1])
+
+        # Interpolate between inner and outer bounds.
+        bound_left = inner_left + alpha * (outer_left - inner_left)
+        bound_right = inner_right + alpha * (outer_right - inner_right)
+        bound_top = inner_top + alpha * (outer_top - inner_top)
+        bound_bottom = inner_bottom + alpha * (outer_bottom - inner_bottom)
+
+        out_w, out_h = image_size_wh
+        fx = out_w / (bound_right - bound_left)
+        fy = out_h / (bound_bottom - bound_top)
+        cx = -bound_left * fx
+        cy = -bound_top * fy
 
         return self.get_pinhole_model(
             fx=fx, fy=fy, cx=cx, cy=cy, image_size_wh=image_size_wh

@@ -1108,13 +1108,8 @@ def _calibrate_pinhole_splined(
         target_warp=target_warp,
     )
 
-    final_intrinsics = replace(
-        state.intrinsics,
-        seed_opencv_distortion_parameters=opencv_model.distortion_coeffs,
-    )
-
     return CalibrationResult(
-        camera_model=final_intrinsics,
+        camera_model=state.intrinsics,
         cameras_from_target=state.cameras_from_target,
         frame_diagnostics=diagnostics,
         frames=list(frames),

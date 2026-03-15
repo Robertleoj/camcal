@@ -97,7 +97,7 @@ def _plot_coverage(
         image_height: Sensor height in pixels.
         title: Plot title (count suffix is appended automatically).
         s: Marker size passed to ``ax.scatter``.
-        grid_cells: Number of grid cells along the longer image axis.
+        grid_cells: Number of grid cells along the longer axis.
         return_figure: If True, return the figure instead of calling ``plt.show()``.
 
     Returns:
@@ -239,7 +239,7 @@ def plot_detection_coverage(
     image_height: int,
     title: str = "Coverage",
     s: float = 6.0,
-    grid_cells: int = 50,
+    grid_cells: int = 60,
     return_figure: bool = False,
 ) -> Figure | None:
     """Scatter-plot all detected points with empty grid cells highlighted.
@@ -253,7 +253,7 @@ def plot_detection_coverage(
         image_height: Sensor height in pixels, sets the y-axis limit.
         title: Plot title.
         s: Marker size passed to ``ax.scatter``.
-        grid_cells: Number of grid cells along the longer image axis.
+        grid_cells: Number of grid cells along the longer axis.
         return_figure: If True, return the figure instead of calling ``plt.show()``.
 
     Returns:
@@ -279,7 +279,7 @@ def _plot_inlier_coverage(
     image_height: int,
     title: str = "Inlier coverage",
     s: float = 6.0,
-    grid_cells: int = 50,
+    grid_cells: int = 60,
     return_figure: bool = False,
 ) -> Figure | None:
     """Scatter-plot inlier detections with outliers highlighted in red.
@@ -296,7 +296,7 @@ def _plot_inlier_coverage(
         image_height: Sensor height in pixels, sets the y-axis limit.
         title: Plot title.
         s: Marker size passed to ``ax.scatter``.
-        grid_cells: Number of grid cells along the longer image axis.
+        grid_cells: Number of grid cells along the longer axis.
         return_figure: If True, return the figure instead of calling ``plt.show()``.
 
     Returns:
@@ -359,7 +359,7 @@ def _plot_outliers(
 def plot_distortion_grid(
     model: lb.OpenCV | lb.PinholeSplined,
     *,
-    grid_step_norm: float = 0.05,
+    grid_cells: int = 60,
     fov_fraction: float | None = None,
     ux_max: float | None = None,
     uy_max: float | None = None,
@@ -374,7 +374,7 @@ def plot_distortion_grid(
 
     Args:
         model: Camera model instance.
-        grid_step_norm: Spacing between grid lines in normalized coordinates.
+        grid_cells: Number of grid cells along the longer axis.
         fov_fraction: Fraction of the full FOV to sample (0, 1].
         ux_max: Upper bound in normalized x, mirrored to negative.
         uy_max: Upper bound in normalized y, mirrored to negative.
@@ -413,6 +413,8 @@ def plot_distortion_grid(
 
     x_min, x_max = -x_half, +x_half
     y_min, y_max = -y_half, +y_half
+
+    grid_step_norm = max(x_max - x_min, y_max - y_min) / grid_cells
 
     cmap = plt.colormaps[cmap_name]
 
@@ -986,7 +988,7 @@ def _plot_residual_grid(
     *,
     image_width: int,
     image_height: int,
-    grid_cells: int = 40,
+    grid_cells: int = 60,
     arrow_scale: float = 100.0,
     heatmap_max: float | None = None,
     title: str = "Residual grid",
@@ -1003,7 +1005,7 @@ def _plot_residual_grid(
         frame_diagnostics: Matching per-frame reprojection diagnostics.
         image_width: Sensor width in pixels, sets the x-axis limit.
         image_height: Sensor height in pixels, sets the y-axis limit.
-        grid_cells: Number of grid cells along the longer image axis.
+        grid_cells: Number of grid cells along the longer axis.
         arrow_scale: Multiplier applied to the mean-residual arrows.
         heatmap_max: Upper limit for the colour scale. Auto-scaled if None.
         title: Plot title.
@@ -1354,7 +1356,7 @@ def plot_undistortion(
     model: lb.PinholeRemapped,
     *,
     image: np.ndarray | None = None,
-    grid_step_px: int = 50,
+    grid_cells: int = 60,
     line_thickness: int | None = None,
     return_figure: bool = False,
 ) -> Figure | None:
@@ -1369,7 +1371,7 @@ def plot_undistortion(
     Args:
         model: Undistorted pinhole model with remap tables.
         image: Optional distorted input image, shape (H, W) or (H, W, 3).
-        grid_step_px: Spacing between grid lines in pixels.
+        grid_cells: Number of grid cells along the longer axis.
         line_thickness: Line width in pixels.  When None, chosen automatically
             based on the image diagonal.
         return_figure: If True, return the figure instead of calling ``plt.show()``.
@@ -1386,6 +1388,7 @@ def plot_undistortion(
         diag = np.hypot(W_in, H_in)
         line_thickness = max(1, int(round(diag / 800)))
 
+    grid_step_px = max(W_in, H_in) / grid_cells
     cmap = plt.colormaps["jet"]
     x_lines = np.arange(grid_step_px, W_in, grid_step_px)
     y_lines = np.arange(grid_step_px, H_in, grid_step_px)
@@ -1413,7 +1416,7 @@ def plot_undistortion(
     rect_cx = round(W_in / 2.0 / grid_step_px) * grid_step_px
     rect_cy = round(H_in / 2.0 / grid_step_px) * grid_step_px
     aspect = W_in / H_in
-    corner_len = grid_step_px
+    corner_len = int(round(grid_step_px))
     n_rects = max(1, int(min(rect_cx, rect_cy) / rect_step))
     for i in range(1, n_rects + 1):
         half_h = i * rect_step
@@ -1436,8 +1439,9 @@ def plot_undistortion(
     undistorted_img = model.undistort(grid_img, interpolation=cv2.INTER_LANCZOS4)
 
     # --- Row 2: regular grid in undistorted space mapped to distorted space ---
-    x_lines_out = np.arange(grid_step_px, W_out, grid_step_px)
-    y_lines_out = np.arange(grid_step_px, H_out, grid_step_px)
+    grid_step_px_out = max(max(W_out, H_out) / grid_cells, 10.0)
+    x_lines_out = np.arange(grid_step_px_out, W_out, grid_step_px_out)
+    y_lines_out = np.arange(grid_step_px_out, H_out, grid_step_px_out)
 
     def _diag_colored_segments(
         xs: np.ndarray,
@@ -1500,8 +1504,10 @@ def plot_undistortion(
     axes[0, 1].set_aspect("equal")
 
     # Row 2 right: regular grid in undistorted space (diagonal gradient)
-    # Convert cv2 pixel line width to matplotlib points to match row 1
-    mpl_lw = line_thickness * panel_w * 72 / W_out
+    # Recompute line thickness for the output image dimensions
+    diag_out = np.hypot(W_out, H_out)
+    line_thickness_out = max(1, int(round(diag_out / 800)))
+    mpl_lw = line_thickness_out * panel_w * 72 / W_out
     n_subdivide = 64
     for x0 in x_lines_out:
         ys = np.linspace(0, H_out, n_subdivide)
@@ -1515,16 +1521,19 @@ def plot_undistortion(
         axes[1, 1].add_collection(LineCollection(segs, colors=colors, linewidths=mpl_lw))  # type: ignore[reportArgumentType]
 
     # Row 2 right: corner markers in undistorted space
-    px_to_pt = panel_w * 72 / W_out
-    marker_lw_inner = rect_thickness * px_to_pt
-    marker_lw_border = rect_thickness * 3 * px_to_pt
-    rect_cx_out = round(W_out / 2.0 / grid_step_px) * grid_step_px
-    rect_cy_out = round(H_out / 2.0 / grid_step_px) * grid_step_px
+    # Scale marker line widths proportionally to the corner arm length (in points)
+    px_to_pt_out = panel_w * 72 / W_out
+    corner_len_out = grid_step_px_out
+    marker_lw_inner = corner_len_out * px_to_pt_out * 0.16
+    marker_lw_border = corner_len_out * px_to_pt_out * 0.48
+    rect_step_out = grid_step_px_out * 4
+    rect_cx_out = round(W_out / 2.0 / grid_step_px_out) * grid_step_px_out
+    rect_cy_out = round(H_out / 2.0 / grid_step_px_out) * grid_step_px_out
     aspect_out = W_out / H_out
-    n_rects_out = max(1, int(min(rect_cx_out, rect_cy_out) / rect_step))
+    n_rects_out = max(1, int(min(rect_cx_out, rect_cy_out) / rect_step_out))
     for i in range(1, n_rects_out + 1):
-        half_h = i * rect_step
-        half_w = round(half_h * aspect_out / grid_step_px) * grid_step_px
+        half_h = i * rect_step_out
+        half_w = round(half_h * aspect_out / grid_step_px_out) * grid_step_px_out
         x1, y1 = rect_cx_out - half_w, rect_cy_out - half_h
         x2, y2 = rect_cx_out + half_w, rect_cy_out + half_h
         for cx, cy, sx, sy in [
@@ -1535,7 +1544,7 @@ def plot_undistortion(
         ]:
             for color, lw in [("black", marker_lw_border), ("white", marker_lw_inner)]:
                 axes[1, 1].plot(
-                    [cx, cx + sx * corner_len],
+                    [cx, cx + sx * corner_len_out],
                     [cy, cy],
                     color=color,
                     linewidth=lw,
@@ -1543,7 +1552,7 @@ def plot_undistortion(
                 )
                 axes[1, 1].plot(
                     [cx, cx],
-                    [cy, cy + sy * corner_len],
+                    [cy, cy + sy * corner_len_out],
                     color=color,
                     linewidth=lw,
                     solid_capstyle="butt",
@@ -1591,8 +1600,8 @@ def plot_undistortion(
     # Row 2 left: corner markers traced through remap tables
     n_marker_pts = 16
     for i in range(1, n_rects_out + 1):
-        half_h = i * rect_step
-        half_w = round(half_h * aspect_out / grid_step_px) * grid_step_px
+        half_h = i * rect_step_out
+        half_w = round(half_h * aspect_out / grid_step_px_out) * grid_step_px_out
         x1, y1 = rect_cx_out - half_w, rect_cy_out - half_h
         x2, y2 = rect_cx_out + half_w, rect_cy_out + half_h
         for cx, cy, sx, sy in [
@@ -1603,10 +1612,10 @@ def plot_undistortion(
         ]:
             # Sample along each arm and trace through remap
             h_ts = np.linspace(0, 1, n_marker_pts)
-            h_xs = cx + h_ts * sx * corner_len
+            h_xs = cx + h_ts * sx * corner_len_out
             h_ys = np.full_like(h_ts, cy)
             h_d = np.array([_remap_point(model, px, py) for px, py in zip(h_xs, h_ys)])
-            v_ys = cy + h_ts * sy * corner_len
+            v_ys = cy + h_ts * sy * corner_len_out
             v_xs = np.full_like(h_ts, cx)
             v_d = np.array([_remap_point(model, px, py) for px, py in zip(v_xs, v_ys)])
             for color, lw in [("black", marker_lw_border), ("white", marker_lw_inner)]:

@@ -264,7 +264,7 @@ class CalibrationResult(Generic[IntrinsicsT]):
         *,
         title: str = "Coverage",
         s: float = 6.0,
-        grid_cells: int = 50,
+        grid_cells: int = 60,
         return_figure: bool = False,
     ) -> Figure | None:
         """Scatter-plot all detected points with empty grid cells highlighted.
@@ -275,7 +275,7 @@ class CalibrationResult(Generic[IntrinsicsT]):
         Args:
             title: Plot title.
             s: Marker size passed to ``ax.scatter``.
-            grid_cells: Number of grid cells along the longer image axis.
+            grid_cells: Number of grid cells along the longer axis.
             return_figure: If True, return the figure instead of calling ``plt.show()``.
 
         Returns:
@@ -298,7 +298,7 @@ class CalibrationResult(Generic[IntrinsicsT]):
         *,
         title: str = "Inlier coverage",
         s: float = 6.0,
-        grid_cells: int = 50,
+        grid_cells: int = 60,
         return_figure: bool = False,
     ) -> Figure | None:
         """Scatter-plot inlier detections with empty grid cells highlighted.
@@ -309,7 +309,7 @@ class CalibrationResult(Generic[IntrinsicsT]):
         Args:
             title: Plot title.
             s: Marker size passed to ``ax.scatter``.
-            grid_cells: Number of grid cells along the longer image axis.
+            grid_cells: Number of grid cells along the longer axis.
             return_figure: If True, return the figure instead of calling ``plt.show()``.
 
         Returns:
@@ -363,7 +363,7 @@ class CalibrationResult(Generic[IntrinsicsT]):
     def plot_distortion_grid(
         self,
         *,
-        grid_step_norm: float = 0.05,
+        grid_cells: int = 60,
         fov_fraction: float | None = None,
         ux_max: float | None = None,
         uy_max: float | None = None,
@@ -377,7 +377,7 @@ class CalibrationResult(Generic[IntrinsicsT]):
         it, and clips to the image bounds.
 
         Args:
-            grid_step_norm: Spacing between grid lines in normalized coordinates.
+            grid_cells: Number of grid cells along the longer axis.
             fov_fraction: Fraction of the full FOV to sample (0, 1].
             ux_max: Upper bound in normalized x, mirrored to negative.
             uy_max: Upper bound in normalized y, mirrored to negative.
@@ -393,7 +393,7 @@ class CalibrationResult(Generic[IntrinsicsT]):
 
         return plot_distortion_grid(
             self.camera_model,
-            grid_step_norm=grid_step_norm,
+            grid_cells=grid_cells,
             fov_fraction=fov_fraction,
             ux_max=ux_max,
             uy_max=uy_max,
@@ -485,7 +485,7 @@ class CalibrationResult(Generic[IntrinsicsT]):
     def plot_residual_grid(
         self,
         *,
-        grid_cells: int = 40,
+        grid_cells: int = 60,
         arrow_scale: float = 100.0,
         heatmap_max: float | None = None,
         title: str = "Residual grid",
@@ -498,7 +498,7 @@ class CalibrationResult(Generic[IntrinsicsT]):
         vector, revealing spatial bias patterns.
 
         Args:
-            grid_cells: Number of grid cells along the longer image axis.
+            grid_cells: Number of grid cells along the longer axis.
             arrow_scale: Multiplier applied to the mean-residual arrows.
             heatmap_max: Upper limit for the colour scale. Auto-scaled if None.
             title: Plot title.
